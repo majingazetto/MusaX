@@ -1,0 +1,92 @@
+; ************************************************************************
+; * musax_stress.Z8A - Comprehensive Test for MusaX v1.0
+; ************************************************************************
+
+INCLUDE "musax_const.Z8A"
+
+; -- Song Header --
+STRESS_HDR:
+    DEFW    #0500           ; BPM_STEP (Moderate tempo)
+    DEFW    STRESS_CHA
+    DEFW    STRESS_CHB
+    DEFW    STRESS_CHC
+
+; --- CHANNEL A: MELODY & STRUCTURE ---
+STRESS_CHA:
+    DEFB    CMD_VOLUME, 15
+    DEFB    CMD_INST, 1
+.INTRO:
+    DEFB    C4
+    DEFW    LEN_Q
+    DEFB    E4
+    DEFW    LEN_Q
+    DEFB    G4
+    DEFW    LEN_Q
+    DEFB    C5
+    DEFW    LEN_Q
+
+.MAIN_THEME:
+    ; Finite loop: repeat 2 times
+    DEFB    CMD_LOOP_S, 2
+        DEFB    CMD_VOLUME, 15
+        DEFB    A4
+        DEFW    LEN_E
+        DEFB    G4
+        DEFW    LEN_E
+        DEFB    CMD_VOLUME, 10
+        DEFB    F4
+        DEFW    LEN_E
+        DEFB    E4
+        DEFW    LEN_E
+    DEFB    CMD_LOOP_E
+
+    ; Mid-stream jump back to theme start (infinite for now)
+    DEFB    CMD_RESTART
+    DEFW    .MAIN_THEME
+
+; --- CHANNEL B: COUNTER-MELODY ---
+STRESS_CHB:
+    DEFB    CMD_VOLUME, 10
+    DEFB    CMD_INST, 0
+    
+    DEFB    REST
+    DEFW    LEN_W           ; Wait for intro
+
+.B_LOOP:
+    DEFB    CMD_LOOP_S, 4
+        DEFB    C4
+        DEFW    LEN_S
+        DEFB    D4
+        DEFW    LEN_S
+        DEFB    E4
+        DEFW    LEN_S
+        DEFB    F4
+        DEFW    LEN_S
+    DEFB    CMD_LOOP_E
+    
+    DEFB    CMD_RESTART
+    DEFW    .B_LOOP
+
+; --- CHANNEL C: PERCUSSIVE BASS ---
+STRESS_CHC:
+    DEFB    CMD_VOLUME, 12
+    DEFB    CMD_INST, 0
+
+.C_START:
+    ; Using GOTO for technical internal loop
+    DEFB    E2
+    DEFW    LEN_E
+    DEFB    REST
+    DEFW    LEN_E
+    DEFB    CMD_GOTO
+    DEFW    .C_RESTART_ALT
+
+.C_RESTART_ALT:
+    DEFB    G2
+    DEFW    LEN_E
+    DEFB    REST
+    DEFW    LEN_E
+    
+    ; Signal global restart (must match CHA/CHB)
+    DEFB    CMD_RESTART
+    DEFW    .C_START

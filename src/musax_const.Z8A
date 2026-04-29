@@ -148,8 +148,17 @@ As7 EQU 94
 Bb7 EQU 94
 B7  EQU 95
 
-; --- Special Commands ---
-REST    EQU 255
+; --- MusaX Bytecode Commands (#F7 - #FF) ---
+
+CMD_GOTO    EQU #F7     ; [Addr (DEFW)] Absolute jump to label (usually for song restart)
+CMD_LOOP_E  EQU #F8     ; End of loop block
+CMD_LOOP_S  EQU #F9     ; [Count (DEFB)] Start of loop block with repeat count
+CMD_INST    EQU #FA     ; [ID] Set instrument macro index
+CMD_GATE    EQU #FB     ; [Val] Set gate time (note duration multiplier)
+CMD_VOLUME  EQU #FC     ; [Val] Set master volume for the stream (0-15)
+CMD_TEMPO   EQU #FD     ; [Val] Set song tempo (BPM_STEP resolution)
+CMD_RESTART EQU #FE     ; [Addr (DEFW)] Global loop restart point (signals one loop completion)
+REST        EQU #FF     ; [Len (DEFW)] Pause stream for the specified duration
 
 ; --- Common Note Labels (Sharps with #) ---
 C#0  EQU 1
