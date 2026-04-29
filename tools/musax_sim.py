@@ -48,14 +48,17 @@ class MusaXSim:
         self.init_notes()
         self.symbols.update(self.commands)
 
+        self.channel_labels = {}  # stream_name -> [(offset, label)]
+
         self.channels = []
         for _ in range(MAX_CHANNELS):
             self.channels.append({
                 "active": False, "note_val": 255, "freq": 0.0,
                 "vol": 15, "cur_vol": 0, "inst": 0, "inst_pc": 0,
-                "stream": [], "stream_base": 0, "pc": 0, "wait": 0, "sample_idx": 0,
-                "note_name": "---", "loop_count": 0,
-                "loop_stack": [] # Stores (return_pc, count)
+                "stream": [], "stream_base": 0, "stream_name": "",
+                "pc": 0, "wait": 0, "sample_idx": 0,
+                "note_name": "---", "loop_count": 0, "loop_ticks": 0,
+                "loop_stack": []
             })
 
         self.instruments = {
@@ -103,10 +106,14 @@ class MusaXSim:
         if not os.path.exists(filename): print(f"Error: {filename} not found"); sys.exit(1)
         
         def read_with_includes(fname, base_path):
-            full_path = os.path.join(base_path, fname)
-            if not os.path.exists(full_path):
-                full_path = fname
-                if not os.path.exists(full_path): return []
+            candidates = [
+                os.path.join(base_path, fname),
+                fname,
+                os.path.join(base_path, "..", "src", fname),
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src", fname),
+            ]
+            full_path = next((p for p in candidates if os.path.exists(p)), None)
+            if full_path is None: return []
             with open(full_path, "r") as f:
                 lines = f.readlines()
             processed = []
@@ -143,6 +150,7 @@ class MusaXSim:
                 if label.startswith("."):
                     if curr_global:
                         self.symbols[curr_global + label] = stream_bases[curr_global] + current_offset
+                        self.channel_labels.setdefault(curr_global, []).append((current_offset, label))
                 else:
                     curr_global = label
                     stream_bases[curr_global] = base_addr
@@ -177,9 +185,10 @@ class MusaXSim:
         for i, ch_id in enumerate(["CHA", "CHB", "CHC"]):
             match = next((k for k in final_streams if k.endswith(ch_id) and not k.endswith("LP")), None)
             if not match: match = next((k for k in final_streams if ch_id in k and not k.endswith("LP")), None)
-            if match: 
+            if match:
                 self.channels[i]["stream"] = final_streams[match]
                 self.channels[i]["stream_base"] = stream_bases[match]
+                self.channels[i]["stream_name"] = match
                 self.channels[i]["active"] = True
 
         hdr = next((k for k in final_streams if "HDR" in k), None)
@@ -191,7 +200,7 @@ class MusaXSim:
         self.finished_mask = 0
         self.global_loops = 0
         for i, ch in enumerate(self.channels):
-            ch["pc"] = 0; ch["wait"] = 0; ch["loop_count"] = 0; ch["loop_stack"] = []
+            ch["pc"] = 0; ch["wait"] = 0; ch["loop_count"] = 0; ch["loop_stack"] = []; ch["loop_ticks"] = 0
             if ch["stream"]:
                 ch["active"] = True
                 self.active_mask |= (1 << i)
@@ -231,7 +240,7 @@ class MusaXSim:
                             if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{i} | PC:{old_pc:03X} | TEMPO step:{self.bpm_step}\n")
                     elif cmd == 0xF9: # LOOP_S [Count]
                         count = ch["stream"][ch["pc"]]; ch["pc"] += 1
-                        ch["loop_stack"].append({"pc": ch["pc"], "count": count})
+                        ch["loop_stack"].append({"pc": ch["pc"], "count": count, "total": count})
                         if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{i} | PC:{old_pc:03X} | LOOP_S count:{count}\n")
                     elif cmd == 0xF8: # LOOP_E
                         if ch["loop_stack"]:
@@ -242,6 +251,9 @@ class MusaXSim:
                             else:
                                 ch["loop_stack"].pop()
                                 if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{i} | PC:{old_pc:03X} | LOOP_E finished\n")
+                    elif cmd == 0xFB: # GATE [Val]
+                        ch["pc"] += 1  # consume parameter, gate not yet implemented
+                        if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{i} | PC:{old_pc:03X} | GATE (ignored)\n")
                     elif cmd == 0xF7: # GOTO [Addr (DEFW)]
                         if ch["pc"] + 1 < len(ch["stream"]):
                             addr = ch["stream"][ch["pc"]] + (ch["stream"][ch["pc"]+1] << 8)
@@ -251,6 +263,7 @@ class MusaXSim:
                             ch["pc"] = 0
                     elif cmd == 0xFE: # RESTART [Addr (DEFW)]
                         self.finished_mask |= (1 << i)
+                        ch["loop_ticks"] = 0
                         if ch["pc"] + 1 < len(ch["stream"]):
                             addr = ch["stream"][ch["pc"]] + (ch["stream"][ch["pc"]+1] << 8)
                             ch["pc"] = addr - ch["stream_base"]
@@ -276,34 +289,74 @@ class MusaXSim:
         while self.accumulator >= BASE_TICK:
             self.accumulator -= BASE_TICK; self.total_ticks += 1
             for ch in self.channels:
-                if ch["active"] and ch["wait"] > 0: ch["wait"] -= 1
+                if ch["active"]:
+                    if ch["wait"] > 0: ch["wait"] -= 1
+                    ch["loop_ticks"] += 1
             self.process_events()
         for ch in self.channels:
             if not ch["active"] or ch["note_val"] == 255: ch["cur_vol"] = 0; continue
             env = self.instruments.get(ch["inst"], [15])
             ch["cur_vol"] = (env[min(ch["inst_pc"], len(env) - 1)] * ch["vol"]) // 15; ch["inst_pc"] += 1
 
+    def _current_label(self, ch):
+        labels = self.channel_labels.get(ch.get("stream_name", ""), [])
+        result = ""
+        for offset, label in labels:
+            if offset <= ch["pc"]:
+                result = label
+        return result
+
+    def _loop_info(self, ch):
+        if not ch["loop_stack"]:
+            return ""
+        parts = []
+        for e in ch["loop_stack"]:
+            total = e.get("total", e["count"])
+            cur = total - e["count"] + 1
+            parts.append(f"{cur}/{total}")
+        return " ".join(f"[{p}]" for p in parts)
+
+    def _bpm(self):
+        return int(3600 * self.bpm_step / 65536)
+
     def draw(self):
+        W = 96
+        elapsed = time.time() - getattr(self, "start_time", time.time())
+        m, s = divmod(elapsed, 60)
+        bpm = self._bpm()
+
         sys.stdout.write("\033[H")
-        sys.stdout.write(f"\033[1;36m MusaX Sim v1.0 \033[0m | 60Hz | Ticks:{self.total_ticks} | Loops:{self.global_loops}\r\n")
-        sys.stdout.write("-" * 85 + "\r\n")
+        sys.stdout.write(
+            f"\033[1;36m MusaX Sim v1.0 \033[0m"
+            f" 60Hz | T:{self.total_ticks:>7} | {int(m)}:{s:04.1f} | BPM:{bpm:>3} | Loops:{self.global_loops}\r\n"
+        )
+        sys.stdout.write("─" * W + "\r\n")
+
         for i, ch in enumerate(self.channels):
-            status = "\033[32mON \033[0m" if ch["active"] else "\033[31mOFF\033[0m"
-            bar = "█" * ch['cur_vol']
-            
-            # Get a hex snippet of current bytecode
-            pc = ch["pc"]
-            snippet = ""
-            for j in range(4):
-                if pc + j < len(ch["stream"]):
-                    snippet += f"{ch['stream'][pc+j]:02X} "
-                else:
-                    snippet += "-- "
-            
-            wait_info = f"W:{ch['wait']:3}" if ch["active"] else "      "
-            line = f" CH {chr(65 + i)}: [{status}] | {ch['note_name']:4} | {wait_info} | {bar:13} | PC:{pc:03X} | [{snippet}]\r\n"
-            sys.stdout.write(line)
-        sys.stdout.write("-" * 85 + "\r\n [q/Esc] Quit\r\n")
+            ch_name  = f"CH{chr(65 + i)}"
+            status   = "\033[32mON \033[0m" if ch["active"] else "\033[31mOFF\033[0m"
+            note     = ch["note_name"] if ch["active"] else "---"
+            wait_str = f"W:{ch['wait']:4}" if ch["active"] else "     "
+            bar      = ("█" * ch["cur_vol"]).ljust(13)
+            pc       = ch["pc"]
+            hex_snip = " ".join(
+                f"{ch['stream'][pc+j]:02X}" if pc + j < len(ch["stream"]) else "--"
+                for j in range(4)
+            )
+
+            if ch["active"]:
+                bar_n  = ch["loop_ticks"] // 1024 + 1
+                label  = self._current_label(ch)[:8].ljust(8)
+                linfo  = self._loop_info(ch)[:13].ljust(13)
+                extra  = f"B:{bar_n:<3}  {label}  {linfo}"
+            else:
+                extra  = " " * 28
+
+            sys.stdout.write(
+                f" {ch_name} [{status}] {note:3}  {wait_str}  {bar}  {extra}  PC:{pc:03X}  {hex_snip}\r\n"
+            )
+
+        sys.stdout.write("─" * W + "\r\n [q/Esc] Quit\r\n")
         sys.stdout.flush()
 
     def render_audio(self, loops=0, duration_limit=60):
@@ -320,14 +373,8 @@ class MusaXSim:
         max_samples = int(SAMPLE_RATE * duration_limit)
 
         while True:
-            if loops > 0:
-                if self.global_loops >= loops:
-                    break
-            else:
-                if len(all_samples) >= max_samples:
-                    break
-                if not any(ch["active"] for ch in self.channels):
-                    break
+            if not any(ch["active"] for ch in self.channels) and loops == 0:
+                break
 
             self.update()
 
@@ -340,6 +387,11 @@ class MusaXSim:
                     amp = ch["cur_vol"] * 1000
                     mixed += amp if (ch["sample_idx"] % period) < (period / 2) else -amp
                 all_samples.append(max(-32768, min(32767, int(mixed))))
+
+            if loops > 0 and self.global_loops >= loops:
+                break
+            if loops == 0 and len(all_samples) >= max_samples:
+                break
 
         return all_samples
 
@@ -385,7 +437,8 @@ class MusaXSim:
             self._reset_channels()
 
             os.system('clear')
-            start_time = time.time()
+            self.start_time = time.time()
+            start_time = self.start_time
             frames = 0
             
             # Setup non-blocking keyboard input if in a TTY

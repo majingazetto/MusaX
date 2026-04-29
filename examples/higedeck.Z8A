@@ -1,0 +1,378 @@
+; ************************************************************************
+; * higedeck.Z8A - Inspired by Pirate Ship Higemaru Deck BGM (Capcom 1984)
+; ************************************************************************
+; Style: Tamayo Kawamoto / early Capcom arcade, AY-3-8910
+; Key:   A natural minor + harmonic minor (Gs cadences)
+; BPM:   #0C00 (~168 BPM) - urgent arcade march
+; Form:  Intro → [Section A (x2) + Section B] loop
+; Voices: A=lead  B=counter (5-bar async)  C=bass (4-bar async)
+; ************************************************************************
+
+INCLUDE "musax_const.Z8A"
+
+BASE_TICK   EQU 256
+LEN_Q       EQU BASE_TICK
+LEN_H       EQU BASE_TICK * 2
+LEN_W       EQU BASE_TICK * 4
+LEN_E       EQU BASE_TICK / 2
+LEN_S       EQU BASE_TICK / 4
+LEN_ET      EQU BASE_TICK / 3
+
+VOL_MAX     EQU 8
+VOL_MED     EQU 5
+VOL_LOW     EQU 13
+
+HGDHDR:
+    DEFW    #0C00
+    DEFW    HGDCHA
+    DEFW    HGDCHB
+    DEFW    HGDCHC
+
+; ===========================================================
+; CHANNEL A: LEAD MELODY
+; ===========================================================
+HGDCHA:
+    DEFB    CMD_VOLUME, VOL_MAX
+    DEFB    CMD_INST, 1
+
+; --- Intro: 2-bar ascending pickup (plays once) ---
+.INTRO:
+    DEFB    E4
+    DEFW    LEN_Q
+    DEFB    G4
+    DEFW    LEN_Q
+    DEFB    A4
+    DEFW    LEN_Q
+    DEFB    B4
+    DEFW    LEN_Q
+    DEFB    C5
+    DEFW    LEN_Q
+    DEFB    D5
+    DEFW    LEN_Q
+    DEFB    E5
+    DEFW    LEN_H
+
+; --- Main loop: Section A x2, then Section B ---
+.SECTNA:
+    DEFB    CMD_LOOP_S, 2
+
+; -- Phrase A: ascending leap + harmonic-minor descent --
+.PHRSA:
+    ; bar 1: upward leap to E5, land on A4
+    DEFB    A4
+    DEFW    LEN_E
+    DEFB    C5
+    DEFW    LEN_E
+    DEFB    E5
+    DEFW    LEN_E
+    DEFB    D5
+    DEFW    LEN_E
+    DEFB    C5
+    DEFW    LEN_E
+    DEFB    B4
+    DEFW    LEN_E
+    DEFB    A4
+    DEFW    LEN_Q
+    ; bar 2: G# color — harmonic minor descent
+    DEFB    E4
+    DEFW    LEN_E
+    DEFB    Gs4
+    DEFW    LEN_E
+    DEFB    B4
+    DEFW    LEN_E
+    DEFB    Gs4
+    DEFW    LEN_E
+    DEFB    A4
+    DEFW    LEN_E
+    DEFB    G4
+    DEFW    LEN_E
+    DEFB    F4
+    DEFW    LEN_E
+    DEFB    E4
+    DEFW    LEN_E
+    ; bar 3: repeat bar 1 shape, quarter-note landing
+    DEFB    A4
+    DEFW    LEN_E
+    DEFB    C5
+    DEFW    LEN_E
+    DEFB    E5
+    DEFW    LEN_E
+    DEFB    D5
+    DEFW    LEN_E
+    DEFB    C5
+    DEFW    LEN_Q
+    DEFB    Gs4
+    DEFW    LEN_Q
+    ; bar 4: tonic resolution + rest
+    DEFB    A4
+    DEFW    LEN_H
+    DEFB    REST
+    DEFW    LEN_H
+
+; -- Phrase B: relative-major excursion + dominant return --
+.PHRSB:
+    ; bar 5: F major color (C/Am relative)
+    DEFB    F4
+    DEFW    LEN_E
+    DEFB    A4
+    DEFW    LEN_E
+    DEFB    C5
+    DEFW    LEN_E
+    DEFB    A4
+    DEFW    LEN_E
+    DEFB    F4
+    DEFW    LEN_E
+    DEFB    G4
+    DEFW    LEN_E
+    DEFB    A4
+    DEFW    LEN_Q
+    ; bar 6: E major chord (dominant, G# again)
+    DEFB    E4
+    DEFW    LEN_E
+    DEFB    Gs4
+    DEFW    LEN_E
+    DEFB    B4
+    DEFW    LEN_E
+    DEFB    Gs4
+    DEFW    LEN_E
+    DEFB    A4
+    DEFW    LEN_Q
+    DEFB    REST
+    DEFW    LEN_Q
+    ; bar 7: build toward peak
+    DEFB    D5
+    DEFW    LEN_E
+    DEFB    C5
+    DEFW    LEN_E
+    DEFB    B4
+    DEFW    LEN_E
+    DEFB    A4
+    DEFW    LEN_E
+    DEFB    Gs4
+    DEFW    LEN_E
+    DEFB    A4
+    DEFW    LEN_E
+    DEFB    B4
+    DEFW    LEN_Q
+    ; bar 8: peak hold
+    DEFB    E5
+    DEFW    LEN_H
+    DEFB    A4
+    DEFW    LEN_H
+
+    DEFB    CMD_LOOP_E      ; end of Section A x2
+
+; --- Section B: stepwise descent → climbing sweep ---
+.SECTNB:
+    DEFB    CMD_VOLUME, VOL_MED
+    ; bar 1: descending line (Dm feel)
+    DEFB    D5
+    DEFW    LEN_E
+    DEFB    C5
+    DEFW    LEN_E
+    DEFB    B4
+    DEFW    LEN_E
+    DEFB    A4
+    DEFW    LEN_E
+    DEFB    G4
+    DEFW    LEN_E
+    DEFB    F4
+    DEFW    LEN_E
+    DEFB    E4
+    DEFW    LEN_Q
+    ; bar 2: ascending call-and-response
+    DEFB    F4
+    DEFW    LEN_E
+    DEFB    E4
+    DEFW    LEN_E
+    DEFB    D4
+    DEFW    LEN_E
+    DEFB    E4
+    DEFW    LEN_E
+    DEFB    F4
+    DEFW    LEN_E
+    DEFB    G4
+    DEFW    LEN_E
+    DEFB    A4
+    DEFW    LEN_Q
+    ; bar 3: Em dominant buildup
+    DEFB    B4
+    DEFW    LEN_E
+    DEFB    C5
+    DEFW    LEN_E
+    DEFB    D5
+    DEFW    LEN_E
+    DEFB    C5
+    DEFW    LEN_E
+    DEFB    B4
+    DEFW    LEN_E
+    DEFB    A4
+    DEFW    LEN_E
+    DEFB    Gs4
+    DEFW    LEN_Q
+    ; bar 4: suspension
+    DEFB    A4
+    DEFW    LEN_H
+    DEFB    REST
+    DEFW    LEN_H
+    DEFB    CMD_VOLUME, VOL_MAX
+    ; bar 5: big sweep up (climax)
+    DEFB    A4
+    DEFW    LEN_E
+    DEFB    B4
+    DEFW    LEN_E
+    DEFB    C5
+    DEFW    LEN_E
+    DEFB    D5
+    DEFW    LEN_E
+    DEFB    E5
+    DEFW    LEN_E
+    DEFB    D5
+    DEFW    LEN_E
+    DEFB    C5
+    DEFW    LEN_Q
+    ; bar 6: flowing answer
+    DEFB    B4
+    DEFW    LEN_E
+    DEFB    A4
+    DEFW    LEN_E
+    DEFB    Gs4
+    DEFW    LEN_E
+    DEFB    A4
+    DEFW    LEN_E
+    DEFB    B4
+    DEFW    LEN_E
+    DEFB    C5
+    DEFW    LEN_E
+    DEFB    D5
+    DEFW    LEN_Q
+    ; bar 7: full chromatic tumble back down
+    DEFB    E5
+    DEFW    LEN_E
+    DEFB    D5
+    DEFW    LEN_E
+    DEFB    C5
+    DEFW    LEN_E
+    DEFB    B4
+    DEFW    LEN_E
+    DEFB    A4
+    DEFW    LEN_E
+    DEFB    G4
+    DEFW    LEN_E
+    DEFB    F4
+    DEFW    LEN_E
+    DEFB    E4
+    DEFW    LEN_E
+    ; bar 8: final tonic, restart to main loop
+    DEFB    A4
+    DEFW    LEN_W
+
+    DEFB    CMD_RESTART
+    DEFW    .SECTNA
+
+; ===========================================================
+; CHANNEL B: COUNTER-MELODY  (5-bar loop, async vs CHA)
+; ===========================================================
+HGDCHB:
+    DEFB    CMD_VOLUME, VOL_MED
+    DEFB    CMD_INST, 0
+    DEFB    REST
+    DEFW    LEN_W + LEN_W   ; wait through intro (2 bars)
+
+.BMAIN:
+    ; bar 1: tonic pedal, steps down
+    DEFB    E4
+    DEFW    LEN_Q
+    DEFB    E4
+    DEFW    LEN_Q
+    DEFB    D4
+    DEFW    LEN_Q
+    DEFB    C4
+    DEFW    LEN_Q
+    ; bar 2: inner movement
+    DEFB    E4
+    DEFW    LEN_Q
+    DEFB    B3
+    DEFW    LEN_Q
+    DEFB    C4
+    DEFW    LEN_Q
+    DEFB    D4
+    DEFW    LEN_Q
+    ; bar 3: F/E color
+    DEFB    E4
+    DEFW    LEN_Q
+    DEFB    E4
+    DEFW    LEN_Q
+    DEFB    F4
+    DEFW    LEN_Q
+    DEFB    E4
+    DEFW    LEN_Q
+    ; bar 4: descending resolution
+    DEFB    D4
+    DEFW    LEN_Q
+    DEFB    C4
+    DEFW    LEN_Q
+    DEFB    B3
+    DEFW    LEN_Q
+    DEFB    A3
+    DEFW    LEN_Q
+    ; bar 5: low sustained resolve
+    DEFB    A3
+    DEFW    LEN_H
+    DEFB    E3
+    DEFW    LEN_H
+
+    DEFB    CMD_RESTART
+    DEFW    .BMAIN
+
+; ===========================================================
+; CHANNEL C: BASS  (4-bar loop, many restarts = async stress)
+; Root-fifth alternation typical of Capcom arcade bass
+; ===========================================================
+HGDCHC:
+    DEFB    CMD_VOLUME, VOL_LOW
+    DEFB    CMD_INST, 0
+
+; Pattern A: steady Am root-fifth (2 bars)
+.CAPT:
+    DEFB    A2
+    DEFW    LEN_Q
+    DEFB    E2
+    DEFW    LEN_Q
+    DEFB    A2
+    DEFW    LEN_Q
+    DEFB    E2
+    DEFW    LEN_Q
+    DEFB    A2
+    DEFW    LEN_Q
+    DEFB    E2
+    DEFW    LEN_Q
+    DEFB    A2
+    DEFW    LEN_Q
+    DEFB    E2
+    DEFW    LEN_Q
+
+    DEFB    CMD_GOTO
+    DEFW    .CVAR
+
+; Pattern B: adds C3 passing tone and D2 walkdown (2 bars)
+.CVAR:
+    DEFB    A2
+    DEFW    LEN_Q
+    DEFB    C3
+    DEFW    LEN_Q
+    DEFB    E2
+    DEFW    LEN_Q
+    DEFB    A2
+    DEFW    LEN_Q
+    DEFB    A2
+    DEFW    LEN_Q
+    DEFB    E2
+    DEFW    LEN_Q
+    DEFB    D2
+    DEFW    LEN_Q
+    DEFB    A2
+    DEFW    LEN_Q
+
+    DEFB    CMD_RESTART
+    DEFW    .CAPT

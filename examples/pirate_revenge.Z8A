@@ -1,104 +1,227 @@
 ; ************************************************************************
-; * pirate_revenge.Z8A - Corrected Pirate Song for MusaX Stress Test
+; * pirate_revenge.Z8A - Pirate Shanty / MusaX Stress Test v1.0
+; ************************************************************************
+; Stress coverage:
+;   CMD_TEMPO  : lively intro/verse/chorus, slow bridge
+;   CMD_GATE   : staccato coda
+;   CMD_INST   : instrument swap intro/verse/chorus
+;   CMD_VOLUME : dynamics throughout
+;   CMD_LOOP_S : 3-deep nesting (VERSE > RESP, CHORUS > PHRASE > inner)
+;   CMD_GOTO   : internal variation in CHB (skips unreachable bytes)
+;   CMD_RESTART: all channels, very different loop lengths (async stress)
+;   REST       : strategic gaps in CHB and CHC
+;   LEN_ET     : triplets (intro, bridge, coda)
+;   LEN_ED     : dotted eighth (verse syncopation)
 ; ************************************************************************
 
 INCLUDE "musax_const.Z8A"
 
-; -- Custom Volume Constraint (Max 13 for PSG safety) --
+; --- Duration constants ---
+BASE_TICK   EQU 256
+LEN_Q       EQU BASE_TICK
+LEN_H       EQU BASE_TICK * 2
+LEN_W       EQU BASE_TICK * 4
+LEN_E       EQU BASE_TICK / 2
+LEN_S       EQU BASE_TICK / 4
+LEN_ET      EQU BASE_TICK / 3
+LEN_QT      EQU BASE_TICK * 2 / 3
+LEN_ED      EQU LEN_E + LEN_S
+
+; --- Volume levels ---
 VOL_MAX     EQU 13
 VOL_MED     EQU 10
 VOL_LOW     EQU 7
+VOL_FAINT   EQU 4
 
-; -- Song Header --
-PIRATE_HDR:
-    DEFW    #0580           ; BPM_STEP
-    DEFW    PIR_CHA
-    DEFW    PIR_CHB
-    DEFW    PIR_CHC
+; --- BPM steps ---
+TMP_FAST    EQU #0900           ; ~127 BPM (lively jig)
+TMP_SLOW    EQU #0480           ; ~63 BPM  (ominous bridge)
 
-; --- CHANNEL A: LEAD ---
-PIR_CHA:
+; --- Song Header ---
+PIREHDR:
+    DEFW    TMP_FAST
+    DEFW    PIRCHA
+    DEFW    PIRCHB
+    DEFW    PIRCHC
+
+; ===========================================================
+; CHANNEL A: LEAD MELODY  (long loop — anchor for global sync)
+; ===========================================================
+PIRCHA:
     DEFB    CMD_VOLUME, VOL_MAX
     DEFB    CMD_INST, 1
+
+; --- Intro: triplet ascending run, instrument swap mid-run ---
 .INTRO:
     DEFB    D4
-    DEFW    LEN_E
+    DEFW    LEN_ET
     DEFB    F4
-    DEFW    LEN_E
+    DEFW    LEN_ET
     DEFB    A4
-    DEFW    LEN_Q
-    DEFB    G4
-    DEFW    LEN_E
-    DEFB    F4
-    DEFW    LEN_E
-    DEFB    E4
+    DEFW    LEN_ET
+    DEFB    CMD_INST, 0
+    DEFB    D5
+    DEFW    LEN_ET
+    DEFB    C5
+    DEFW    LEN_ET
+    DEFB    Bb4
+    DEFW    LEN_ET
+    DEFB    CMD_INST, 1
+    DEFB    A4
     DEFW    LEN_H
 
-    ; Loop Verse + Chorus 2 times total
-    DEFB    CMD_LOOP_S, 2
+; --- Main shanty: outer loop x3, inner response x2 ---
+    DEFB    CMD_LOOP_S, 3
 .VERSE:
-        DEFB    CMD_INST, 0
+        DEFB    CMD_VOLUME, VOL_MAX
         DEFB    D4
         DEFW    LEN_Q
         DEFB    D4
         DEFW    LEN_Q
         DEFB    D4
-        DEFW    LEN_E
+        DEFW    LEN_ED
         DEFB    E4
-        DEFW    LEN_E
+        DEFW    LEN_S
         DEFB    F4
         DEFW    LEN_Q
-        DEFB    E4
+        DEFB    A4
+        DEFW    LEN_H
+        DEFB    Bb4
         DEFW    LEN_Q
-        DEFB    C4
+        DEFB    Bb4
         DEFW    LEN_Q
-        DEFB    C4
+        DEFB    A4
+        DEFW    LEN_Q
+        DEFB    G4
+        DEFW    LEN_ED
+        DEFB    F4
+        DEFW    LEN_S
+        DEFB    G4
         DEFW    LEN_H
 
-.CHORUS:
-        DEFB    CMD_VOLUME, VOL_MAX
-        DEFB    CMD_INST, 1
+        ; call-and-response phrase, repeated twice
+        DEFB    CMD_VOLUME, VOL_MED
         DEFB    CMD_LOOP_S, 2
-            DEFB    D4
-            DEFW    LEN_Q
+.RESP:
+            DEFB    E4
+            DEFW    LEN_ET
             DEFB    F4
-            DEFW    LEN_Q
+            DEFW    LEN_ET
+            DEFB    G4
+            DEFW    LEN_ET
             DEFB    A4
-            DEFW    LEN_H
+            DEFW    LEN_Q
             DEFB    G4
             DEFW    LEN_Q
-            DEFB    E4
-            DEFW    LEN_Q
-            DEFB    D4
+            DEFB    F4
             DEFW    LEN_H
         DEFB    CMD_LOOP_E
     DEFB    CMD_LOOP_E
 
-.ENDING:
-    DEFB    CMD_VOLUME, VOL_MED
-    DEFB    A4
+; --- Bridge: tempo drop, ominous descent ---
+    DEFB    CMD_TEMPO
+    DEFW    TMP_SLOW
+    DEFB    CMD_VOLUME, VOL_FAINT
+    DEFB    CMD_INST, 0
+
+.BRIDGE:
+    DEFB    D4
     DEFW    LEN_Q
-    DEFB    G4
+    DEFB    C4
     DEFW    LEN_Q
-    DEFB    F4
+    DEFB    Bb3
+    DEFW    LEN_H
+    DEFB    A3
     DEFW    LEN_Q
-    DEFB    E4
+    DEFB    G3
     DEFW    LEN_Q
+    DEFB    F3
+    DEFW    LEN_H
+    DEFB    E3
+    DEFW    LEN_QT
+    DEFB    F3
+    DEFW    LEN_QT
+    DEFB    G3
+    DEFW    LEN_QT
+    DEFB    A3
+    DEFW    LEN_H
     DEFB    D4
     DEFW    LEN_W
-    
+
+; --- Chorus: tempo restored, 3-deep nested loops ---
+    DEFB    CMD_TEMPO
+    DEFW    TMP_FAST
+    DEFB    CMD_VOLUME, VOL_MAX
+    DEFB    CMD_INST, 1
+
+    DEFB    CMD_LOOP_S, 2       ; outer x2
+.CHORUS:
+        DEFB    CMD_LOOP_S, 2   ; phrase x2
+.PHRASE:
+            DEFB    D5
+            DEFW    LEN_Q
+            DEFB    C5
+            DEFW    LEN_E
+            DEFB    Bb4
+            DEFW    LEN_E
+            DEFB    A4
+            DEFW    LEN_Q
+            DEFB    G4
+            DEFW    LEN_Q
+            DEFB    A4
+            DEFW    LEN_H
+        DEFB    CMD_LOOP_E
+        DEFB    CMD_VOLUME, VOL_MED
+        DEFB    G4
+        DEFW    LEN_Q
+        DEFB    F4
+        DEFW    LEN_Q
+        DEFB    E4
+        DEFW    LEN_Q
+        DEFB    D4
+        DEFW    LEN_Q
+    DEFB    CMD_LOOP_E
+
+; --- Coda: CMD_GATE staccato + triplet descent ---
+.CODA:
+    DEFB    CMD_GATE, #08       ; short gate: staccato
+    DEFB    CMD_VOLUME, VOL_MED
+    DEFB    D5
+    DEFW    LEN_ET
+    DEFB    C5
+    DEFW    LEN_ET
+    DEFB    Bb4
+    DEFW    LEN_ET
+    DEFB    A4
+    DEFW    LEN_ET
+    DEFB    G4
+    DEFW    LEN_ET
+    DEFB    F4
+    DEFW    LEN_ET
+    DEFB    E4
+    DEFW    LEN_ET
+    DEFB    D4
+    DEFW    LEN_ET
+    DEFB    CMD_GATE, #0F       ; restore gate: full
+    DEFB    D4
+    DEFW    LEN_W
+
     DEFB    CMD_RESTART
     DEFW    .INTRO
 
-; --- CHANNEL B: HARMONY ---
-PIR_CHB:
+; ===========================================================
+; CHANNEL B: HARMONY  (medium loop, async vs CHA)
+; Tests CMD_GOTO skipping over unreachable bytes mid-stream.
+; ===========================================================
+PIRCHB:
     DEFB    CMD_VOLUME, VOL_LOW
     DEFB    CMD_INST, 0
     DEFB    REST
-    DEFW    LEN_W
+    DEFW    LEN_W + LEN_H       ; wait through intro
 
-.B_MAIN:
-    DEFB    CMD_LOOP_S, 8
+; 5-bar loop x6 — asymmetric vs CHA 4-bar grid
+.BMAIN:
+    DEFB    CMD_LOOP_S, 6
         DEFB    D3
         DEFW    LEN_Q
         DEFB    A3
@@ -107,25 +230,78 @@ PIR_CHB:
         DEFW    LEN_Q
         DEFB    A3
         DEFW    LEN_Q
+        DEFB    D3
+        DEFW    LEN_H
+        DEFB    REST
+        DEFW    LEN_H
     DEFB    CMD_LOOP_E
-    
-    DEFB    CMD_RESTART
-    DEFW    .B_MAIN
 
-; --- CHANNEL C: BASS ---
-PIR_CHC:
+    ; GOTO skips .BFILL bytes — tests jump over live stream data
+    DEFB    CMD_VOLUME, VOL_MED
+    DEFB    CMD_GOTO
+    DEFW    .BVAR
+
+.BFILL:
+    ; unreachable — skipped by CMD_GOTO above
+    DEFB    G3
+    DEFW    LEN_W
+    DEFB    F3
+    DEFW    LEN_W
+
+.BVAR:
+    DEFB    CMD_LOOP_S, 3
+        DEFB    F3
+        DEFW    LEN_Q
+        DEFB    A3
+        DEFW    LEN_Q
+        DEFB    C4
+        DEFW    LEN_H
+    DEFB    CMD_LOOP_E
+    DEFB    REST
+    DEFW    LEN_H
+
+    DEFB    CMD_RESTART
+    DEFW    .BMAIN
+
+; ===========================================================
+; CHANNEL C: BASS  (short loop — hits CMD_RESTART many times
+;            before CHA completes one loop; max async stress)
+; Tests CMD_GOTO between two rhythmic patterns.
+; ===========================================================
+PIRCHC:
     DEFB    CMD_VOLUME, VOL_MED
     DEFB    CMD_INST, 0
 
-.C_START:
-    DEFB    D2
-    DEFW    LEN_H
-    DEFB    A1
-    DEFW    LEN_H
-    DEFB    D2
-    DEFW    LEN_H
-    DEFB    A1
-    DEFW    LEN_H
-    
+; Pattern A: strong-off-beat bass, 8 reps
+.CA:
+    DEFB    CMD_LOOP_S, 8
+        DEFB    D2
+        DEFW    LEN_E
+        DEFB    REST
+        DEFW    LEN_S
+        DEFB    A1
+        DEFW    LEN_S
+        DEFB    REST
+        DEFW    LEN_E
+    DEFB    CMD_LOOP_E
+
+    DEFB    CMD_GOTO
+    DEFW    .CB
+
+; Pattern B: passing-tone variation, 4 reps
+.CB:
+    DEFB    CMD_LOOP_S, 4
+        DEFB    G2
+        DEFW    LEN_E
+        DEFB    REST
+        DEFW    LEN_S
+        DEFB    D2
+        DEFW    LEN_S
+        DEFB    A2
+        DEFW    LEN_E
+        DEFB    REST
+        DEFW    LEN_E
+    DEFB    CMD_LOOP_E
+
     DEFB    CMD_RESTART
-    DEFW    .C_START
+    DEFW    .CA
