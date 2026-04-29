@@ -1,0 +1,131 @@
+; ************************************************************************
+; * pirate_revenge.Z8A - Corrected Pirate Song for MusaX Stress Test
+; ************************************************************************
+
+INCLUDE "musax_const.Z8A"
+
+; -- Custom Volume Constraint (Max 13 for PSG safety) --
+VOL_MAX     EQU 13
+VOL_MED     EQU 10
+VOL_LOW     EQU 7
+
+; -- Song Header --
+PIRATE_HDR:
+    DEFW    #0580           ; BPM_STEP
+    DEFW    PIR_CHA
+    DEFW    PIR_CHB
+    DEFW    PIR_CHC
+
+; --- CHANNEL A: LEAD ---
+PIR_CHA:
+    DEFB    CMD_VOLUME, VOL_MAX
+    DEFB    CMD_INST, 1
+.INTRO:
+    DEFB    D4
+    DEFW    LEN_E
+    DEFB    F4
+    DEFW    LEN_E
+    DEFB    A4
+    DEFW    LEN_Q
+    DEFB    G4
+    DEFW    LEN_E
+    DEFB    F4
+    DEFW    LEN_E
+    DEFB    E4
+    DEFW    LEN_H
+
+    ; Loop Verse + Chorus 2 times total
+    DEFB    CMD_LOOP_S, 2
+.VERSE:
+        DEFB    CMD_INST, 0
+        DEFB    D4
+        DEFW    LEN_Q
+        DEFB    D4
+        DEFW    LEN_Q
+        DEFB    D4
+        DEFW    LEN_E
+        DEFB    E4
+        DEFW    LEN_E
+        DEFB    F4
+        DEFW    LEN_Q
+        DEFB    E4
+        DEFW    LEN_Q
+        DEFB    C4
+        DEFW    LEN_Q
+        DEFB    C4
+        DEFW    LEN_H
+
+.CHORUS:
+        DEFB    CMD_VOLUME, VOL_MAX
+        DEFB    CMD_INST, 1
+        DEFB    CMD_LOOP_S, 2
+            DEFB    D4
+            DEFW    LEN_Q
+            DEFB    F4
+            DEFW    LEN_Q
+            DEFB    A4
+            DEFW    LEN_H
+            DEFB    G4
+            DEFW    LEN_Q
+            DEFB    E4
+            DEFW    LEN_Q
+            DEFB    D4
+            DEFW    LEN_H
+        DEFB    CMD_LOOP_E
+    DEFB    CMD_LOOP_E
+
+.ENDING:
+    DEFB    CMD_VOLUME, VOL_MED
+    DEFB    A4
+    DEFW    LEN_Q
+    DEFB    G4
+    DEFW    LEN_Q
+    DEFB    F4
+    DEFW    LEN_Q
+    DEFB    E4
+    DEFW    LEN_Q
+    DEFB    D4
+    DEFW    LEN_W
+    
+    DEFB    CMD_RESTART
+    DEFW    .INTRO
+
+; --- CHANNEL B: HARMONY ---
+PIR_CHB:
+    DEFB    CMD_VOLUME, VOL_LOW
+    DEFB    CMD_INST, 0
+    DEFB    REST
+    DEFW    LEN_W
+
+.B_MAIN:
+    DEFB    CMD_LOOP_S, 8
+        DEFB    D3
+        DEFW    LEN_Q
+        DEFB    A3
+        DEFW    LEN_Q
+        DEFB    F3
+        DEFW    LEN_Q
+        DEFB    A3
+        DEFW    LEN_Q
+    DEFB    CMD_LOOP_E
+    
+    DEFB    CMD_RESTART
+    DEFW    .B_MAIN
+
+; --- CHANNEL C: BASS ---
+PIR_CHC:
+    DEFB    CMD_VOLUME, VOL_MED
+    DEFB    CMD_INST, 0
+
+.C_START:
+    DEFB    D2
+    DEFW    LEN_H
+    DEFB    A1
+    DEFW    LEN_H
+    DEFB    D2
+    DEFW    LEN_H
+    DEFB    A1
+    DEFW    LEN_H
+    
+    DEFB    CMD_RESTART
+    DEFW    .C_START
