@@ -1,0 +1,204 @@
+; ************************************************************************
+; * MusaX_Notes.Z8A - Universal Note Definitions for MusaX
+; ************************************************************************
+
+; --- Note Indexes (Scientific Notation) ---
+
+C0  EQU 0
+Cs0 EQU 1
+Db0 EQU 1
+D0  EQU 2
+Ds0 EQU 3
+Eb0 EQU 3
+E0  EQU 4
+F0  EQU 5
+Fs0 EQU 6
+Gb0 EQU 6
+G0  EQU 7
+Gs0 EQU 8
+Ab0 EQU 8
+A0  EQU 9
+As0 EQU 10
+Bb0 EQU 10
+B0  EQU 11
+
+C1  EQU 12
+Cs1 EQU 13
+Db1 EQU 13
+D1  EQU 14
+Ds1 EQU 15
+Eb1 EQU 15
+E1  EQU 16
+F1  EQU 17
+Fs1 EQU 18
+Gb1 EQU 18
+G1  EQU 19
+Gs1 EQU 20
+Ab1 EQU 20
+A1  EQU 21
+As1 EQU 22
+Bb1 EQU 22
+B1  EQU 23
+
+C2  EQU 24
+Cs2 EQU 25
+Db2 EQU 25
+D2  EQU 26
+Ds2 EQU 27
+Eb2 EQU 27
+E2  EQU 28
+F2  EQU 29
+Fs2 EQU 30
+Gb2 EQU 30
+G2  EQU 31
+Gs2 EQU 32
+Ab2 EQU 32
+A2  EQU 33
+As2 EQU 34
+Bb2 EQU 34
+B2  EQU 35
+
+C3  EQU 36
+Cs3 EQU 37
+Db3 EQU 37
+D3  EQU 38
+Ds3 EQU 39
+Eb3 EQU 39
+E3  EQU 40
+F3  EQU 41
+Fs3 EQU 42
+Gb3 EQU 42
+G3  EQU 43
+Gs3 EQU 44
+Ab3 EQU 44
+A3  EQU 45
+As3 EQU 46
+Bb3 EQU 46
+B3  EQU 47
+
+C4  EQU 48
+Cs4 EQU 49
+Db4 EQU 49
+D4  EQU 50
+Ds4 EQU 51
+Eb4 EQU 51
+E4  EQU 52
+F4  EQU 53
+Fs4 EQU 54
+Gb4 EQU 54
+G4  EQU 55
+Gs4 EQU 56
+Ab4 EQU 56
+A4  EQU 57
+As4 EQU 58
+Bb4 EQU 58
+B4  EQU 59
+
+C5  EQU 60
+Cs5 EQU 61
+Db5 EQU 61
+D5  EQU 62
+Ds5 EQU 63
+Eb5 EQU 63
+E5  EQU 64
+F5  EQU 65
+Fs5 EQU 66
+Gb5 EQU 66
+G5  EQU 67
+Gs5 EQU 68
+Ab5 EQU 68
+A5  EQU 69
+As5 EQU 70
+Bb5 EQU 70
+B5  EQU 71
+
+C6  EQU 72
+Cs6 EQU 73
+Db6 EQU 73
+D6  EQU 74
+Ds6 EQU 75
+Eb6 EQU 75
+E6  EQU 76
+F6  EQU 77
+Fs6 EQU 78
+Gb6 EQU 78
+G6  EQU 79
+Gs6 EQU 80
+Ab6 EQU 80
+A6  EQU 81
+As6 EQU 82
+Bb6 EQU 82
+B6  EQU 83
+
+C7  EQU 84
+Cs7 EQU 85
+Db7 EQU 85
+D7  EQU 86
+Ds7 EQU 87
+Eb7 EQU 87
+E7  EQU 88
+F7  EQU 89
+Fs7 EQU 90
+Gb7 EQU 90
+G7  EQU 91
+Gs7 EQU 92
+Ab7 EQU 92
+A7  EQU 93
+As7 EQU 94
+Bb7 EQU 94
+B7  EQU 95
+
+; --- Special Commands ---
+REST    EQU 255
+
+; --- Common Note Labels (Sharps with #) ---
+C#0  EQU 1
+D#0  EQU 3
+F#0  EQU 6
+G#0  EQU 8
+A#0  EQU 10
+C#1  EQU 13
+D#1  EQU 15
+F#1  EQU 18
+G#1  EQU 20
+A#1  EQU 22
+C#2  EQU 25
+D#2  EQU 27
+F#2  EQU 30
+G#2  EQU 32
+A#2  EQU 34
+C#3  EQU 37
+D#3  EQU 39
+F#3  EQU 42
+G#3  EQU 44
+A#3  EQU 46
+C#4  EQU 49
+D#4  EQU 51
+F#4  EQU 54
+G#4  EQU 56
+A#4  EQU 58
+C#5  EQU 61
+D#5  EQU 63
+F#5  EQU 66
+G#5  EQU 68
+A#5  EQU 70
+C#6  EQU 73
+D#6  EQU 75
+F#6  EQU 78
+G#6  EQU 80
+A#6  EQU 82
+C#7  EQU 85
+D#7  EQU 87
+F#7  EQU 90
+G#7  EQU 92
+A#7  EQU 94
+
+; --- Common Note Labels (User requested alias) ---
+Rb0 EQU 1
+Rb1 EQU 13
+Rb2 EQU 25
+Rb3 EQU 37
+Rb4 EQU 49
+Rb5 EQU 61
+Rb6 EQU 73
+Rb7 EQU 85
