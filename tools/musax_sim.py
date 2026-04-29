@@ -22,7 +22,7 @@ SAMPLES_PER_INT = SAMPLE_RATE // INTERRUPT_FREQ
 
 
 class MusaXSim:
-    def __init__(self, filename=None, silent=False):
+    def __init__(self, filename=None, silent=False, debug_log=None):
         self.bpm_step = 0x0200
         self.accumulator = 0
         self.silent = silent
@@ -31,6 +31,10 @@ class MusaXSim:
         self.global_loops = 0
         self.active_mask = 0
         self.finished_mask = 0
+        self.log_file = None
+        if debug_log:
+            self.log_file = open(debug_log, "w")
+            self.log_file.write(f"--- MusaX Trace Log: {filename} ---\n")
 
         self.symbols = {
             "REST": 255, "LEN_Q": 256, "LEN_H": 512, "LEN_E": 128, "LEN_S": 64,
@@ -202,36 +206,47 @@ class MusaXSim:
                 if ch["pc"] >= len(ch["stream"]): 
                     ch["active"] = False
                     self.finished_mask |= (1 << i)
+                    if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{i} | PC:{ch['pc']:03X} | END OF STREAM\n")
                     break
+                
+                old_pc = ch["pc"]
                 cmd = ch["stream"][ch["pc"]]; ch["pc"] += 1
                 
                 if cmd == 0xFF:  # REST [Len (DEFW)]
                     ch["note_val"] = 255; ch["freq"] = 0.0
                     if ch["pc"] + 1 < len(ch["stream"]):
                         ch["wait"] = ch["stream"][ch["pc"]] + (ch["stream"][ch["pc"] + 1] << 8); ch["pc"] += 2
+                        if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{i} | PC:{old_pc:03X} | REST len:{ch['wait']}\n")
                     else: ch["active"] = False
                 elif cmd >= 0xF7:
                     if cmd == 0xFC: # VOLUME [Val]
                         ch["vol"] = ch["stream"][ch["pc"]]; ch["pc"] += 1
+                        if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{i} | PC:{old_pc:03X} | VOLUME val:{ch['vol']}\n")
                     elif cmd == 0xFA: # INST [ID]
                         ch["inst"] = ch["stream"][ch["pc"]]; ch["pc"] += 1
+                        if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{i} | PC:{old_pc:03X} | INST id:{ch['inst']}\n")
                     elif cmd == 0xFD: # TEMPO [Val]
                         if ch["pc"] + 1 < len(ch["stream"]):
                             self.bpm_step = ch["stream"][ch["pc"]] + (ch["stream"][ch["pc"]+1] << 8); ch["pc"] += 2
+                            if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{i} | PC:{old_pc:03X} | TEMPO step:{self.bpm_step}\n")
                     elif cmd == 0xF9: # LOOP_S [Count]
                         count = ch["stream"][ch["pc"]]; ch["pc"] += 1
                         ch["loop_stack"].append({"pc": ch["pc"], "count": count})
+                        if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{i} | PC:{old_pc:03X} | LOOP_S count:{count}\n")
                     elif cmd == 0xF8: # LOOP_E
                         if ch["loop_stack"]:
                             ch["loop_stack"][-1]["count"] -= 1
                             if ch["loop_stack"][-1]["count"] > 0:
                                 ch["pc"] = ch["loop_stack"][-1]["pc"]
+                                if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{i} | PC:{old_pc:03X} | LOOP_E repeat -> PC:{ch['pc']:03X}\n")
                             else:
                                 ch["loop_stack"].pop()
+                                if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{i} | PC:{old_pc:03X} | LOOP_E finished\n")
                     elif cmd == 0xF7: # GOTO [Addr (DEFW)]
                         if ch["pc"] + 1 < len(ch["stream"]):
                             addr = ch["stream"][ch["pc"]] + (ch["stream"][ch["pc"]+1] << 8)
                             ch["pc"] = addr - ch["stream_base"]
+                            if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{i} | PC:{old_pc:03X} | GOTO -> PC:{ch['pc']:03X}\n")
                         else:
                             ch["pc"] = 0
                     elif cmd == 0xFE: # RESTART [Addr (DEFW)]
@@ -239,18 +254,21 @@ class MusaXSim:
                         if ch["pc"] + 1 < len(ch["stream"]):
                             addr = ch["stream"][ch["pc"]] + (ch["stream"][ch["pc"]+1] << 8)
                             ch["pc"] = addr - ch["stream_base"]
+                            if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{i} | PC:{old_pc:03X} | RESTART -> PC:{ch['pc']:03X}\n")
                         else:
                             ch["pc"] = 0
                         
                         if (self.finished_mask & self.active_mask) == self.active_mask:
                             self.global_loops += 1
                             self.finished_mask = 0
+                            if self.log_file: self.log_file.write(f"T:{self.total_ticks} | --- GLOBAL LOOP {self.global_loops} COMPLETED ---\n")
                 else:
                     ch["note_val"] = cmd; ch["freq"] = self.note_to_freq(cmd); ch["inst_pc"] = 0; ch["sample_idx"] = 0
                     notes = ["C-", "Cs", "D-", "Ds", "E-", "F-", "Fs", "G-", "Gs", "A-", "As", "B-"]
                     ch["note_name"] = f"{notes[cmd % 12]}{cmd // 12}"
                     if ch["pc"] + 1 < len(ch["stream"]):
                         ch["wait"] = ch["stream"][ch["pc"]] + (ch["stream"][ch["pc"] + 1] << 8); ch["pc"] += 2
+                        if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{i} | PC:{old_pc:03X} | NOTE {ch['note_name']} wait:{ch['wait']}\n")
                     else: ch["active"] = False
 
     def update(self):
@@ -268,12 +286,24 @@ class MusaXSim:
     def draw(self):
         sys.stdout.write("\033[H")
         sys.stdout.write(f"\033[1;36m MusaX Sim v1.0 \033[0m | 60Hz | Ticks:{self.total_ticks} | Loops:{self.global_loops}\r\n")
-        sys.stdout.write("-" * 75 + "\r\n")
+        sys.stdout.write("-" * 85 + "\r\n")
         for i, ch in enumerate(self.channels):
             status = "\033[32mON \033[0m" if ch["active"] else "\033[31mOFF\033[0m"
             bar = "█" * ch['cur_vol']
-            sys.stdout.write(f" CH {chr(65 + i)}: [{status}] | {ch['note_name']:4} | Vol:{ch['vol']:2} | Out:{ch['cur_vol']:2} {bar:15} | PC:{ch['pc']:3}\r\n")
-        sys.stdout.write("-" * 75 + "\r\n [q/Esc] Quit\r\n")
+            
+            # Get a hex snippet of current bytecode
+            pc = ch["pc"]
+            snippet = ""
+            for j in range(4):
+                if pc + j < len(ch["stream"]):
+                    snippet += f"{ch['stream'][pc+j]:02X} "
+                else:
+                    snippet += "-- "
+            
+            wait_info = f"W:{ch['wait']:3}" if ch["active"] else "      "
+            line = f" CH {chr(65 + i)}: [{status}] | {ch['note_name']:4} | {wait_info} | {bar:13} | PC:{pc:03X} | [{snippet}]\r\n"
+            sys.stdout.write(line)
+        sys.stdout.write("-" * 85 + "\r\n [q/Esc] Quit\r\n")
         sys.stdout.flush()
 
     def render_audio(self, loops=0, duration_limit=60):
@@ -407,9 +437,10 @@ if __name__ == "__main__":
                    help="Duration in seconds for export (default: 30)")
     p.add_argument("--loops", "-l", type=int, default=0,
                    help="Number of loops for export/play (default: 0 = infinite/limit)")
+    p.add_argument("--debug-log", type=str, help="Output file for execution trace")
     args = p.parse_args()
 
-    sim = MusaXSim(args.file)
+    sim = MusaXSim(args.file, debug_log=args.debug_log)
     if args.export is not None:
         if args.export:
             output = args.export
@@ -418,3 +449,7 @@ if __name__ == "__main__":
         sim.export(output, time_limit=args.time, loops=args.loops)
     else:
         sim.run(loops=args.loops)
+    
+    if sim.log_file:
+        sim.log_file.close()
+        print(f"[*] Trace log saved to {args.debug_log}")
