@@ -331,48 +331,152 @@ HGDCHB:
 ; ===========================================================
 HGDCHC:
     DEFB    CMD_VOLUME, VOL_LOW
-    DEFB    CMD_INST, 0
+    DEFB    CMD_INST, 1
 
-; Pattern A: steady Am root-fifth (2 bars)
+; Pattern A: running Am arpeggio with chromatic color (4 bars)
 .CAPT:
+    ; bar 1: Am arpeggio up and back
     DEFB    A2
-    DEFW    LEN_Q
-    DEFB    E2
-    DEFW    LEN_Q
+    DEFW    LEN_E
+    DEFB    C3
+    DEFW    LEN_E
+    DEFB    E3
+    DEFW    LEN_E
+    DEFB    C3
+    DEFW    LEN_E
     DEFB    A2
-    DEFW    LEN_Q
+    DEFW    LEN_E
     DEFB    E2
-    DEFW    LEN_Q
+    DEFW    LEN_E
+    DEFB    G2
+    DEFW    LEN_E
     DEFB    A2
-    DEFW    LEN_Q
-    DEFB    E2
-    DEFW    LEN_Q
+    DEFW    LEN_E
+    ; bar 2: chromatic approach + inner fill
+    DEFB    Gs2
+    DEFW    LEN_E
     DEFB    A2
-    DEFW    LEN_Q
+    DEFW    LEN_E
+    DEFB    B2
+    DEFW    LEN_E
+    DEFB    A2
+    DEFW    LEN_E
+    DEFB    C3
+    DEFW    LEN_E
+    DEFB    E3
+    DEFW    LEN_E
+    DEFB    D3
+    DEFW    LEN_E
+    DEFB    C3
+    DEFW    LEN_E
+    ; bar 3: F major excursion
+    DEFB    A2
+    DEFW    LEN_E
+    DEFB    C3
+    DEFW    LEN_E
+    DEFB    F3
+    DEFW    LEN_E
+    DEFB    E3
+    DEFW    LEN_E
+    DEFB    D3
+    DEFW    LEN_E
+    DEFB    C3
+    DEFW    LEN_E
+    DEFB    B2
+    DEFW    LEN_E
+    DEFB    A2
+    DEFW    LEN_E
+    ; bar 4: E dominant push (harmonic minor feel)
     DEFB    E2
-    DEFW    LEN_Q
+    DEFW    LEN_E
+    DEFB    Gs2
+    DEFW    LEN_E
+    DEFB    B2
+    DEFW    LEN_E
+    DEFB    E3
+    DEFW    LEN_E
+    DEFB    D3
+    DEFW    LEN_E
+    DEFB    C3
+    DEFW    LEN_E
+    DEFB    B2
+    DEFW    LEN_E
+    DEFB    Gs2
+    DEFW    LEN_E
 
     DEFB    CMD_GOTO
     DEFW    .CVAR
 
-; Pattern B: adds C3 passing tone and D2 walkdown (2 bars)
+; Pattern B: full octave sweep + upper arpeggios + cadential fall (4 bars)
 .CVAR:
+    ; bar 5: full octave ascent
     DEFB    A2
-    DEFW    LEN_Q
+    DEFW    LEN_E
+    DEFB    B2
+    DEFW    LEN_E
     DEFB    C3
-    DEFW    LEN_Q
-    DEFB    E2
-    DEFW    LEN_Q
+    DEFW    LEN_E
+    DEFB    D3
+    DEFW    LEN_E
+    DEFB    E3
+    DEFW    LEN_E
+    DEFB    F3
+    DEFW    LEN_E
+    DEFB    G3
+    DEFW    LEN_E
+    DEFB    A3
+    DEFW    LEN_E
+    ; bar 6: full octave descent
+    DEFB    A3
+    DEFW    LEN_E
+    DEFB    G3
+    DEFW    LEN_E
+    DEFB    F3
+    DEFW    LEN_E
+    DEFB    E3
+    DEFW    LEN_E
+    DEFB    D3
+    DEFW    LEN_E
+    DEFB    C3
+    DEFW    LEN_E
+    DEFB    B2
+    DEFW    LEN_E
     DEFB    A2
-    DEFW    LEN_Q
+    DEFW    LEN_E
+    ; bar 7: Am upper register arpeggios
     DEFB    A2
-    DEFW    LEN_Q
-    DEFB    E2
-    DEFW    LEN_Q
-    DEFB    D2
-    DEFW    LEN_Q
+    DEFW    LEN_E
+    DEFB    C3
+    DEFW    LEN_E
+    DEFB    E3
+    DEFW    LEN_E
+    DEFB    A3
+    DEFW    LEN_E
+    DEFB    E3
+    DEFW    LEN_E
+    DEFB    C3
+    DEFW    LEN_E
+    DEFB    E3
+    DEFW    LEN_E
+    DEFB    C3
+    DEFW    LEN_E
+    ; bar 8: cadential sweep back to root
+    DEFB    A3
+    DEFW    LEN_E
+    DEFB    Gs3
+    DEFW    LEN_E
+    DEFB    G3
+    DEFW    LEN_E
+    DEFB    F3
+    DEFW    LEN_E
+    DEFB    E3
+    DEFW    LEN_E
+    DEFB    D3
+    DEFW    LEN_E
+    DEFB    C3
+    DEFW    LEN_E
     DEFB    A2
-    DEFW    LEN_Q
+    DEFW    LEN_E
 
     DEFB    CMD_RESTART
     DEFW    .CAPT
