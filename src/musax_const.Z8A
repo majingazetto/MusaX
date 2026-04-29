@@ -193,12 +193,3 @@ F#7  EQU 90
 G#7  EQU 92
 A#7  EQU 94
 
-; --- Common Note Labels (User requested alias) ---
-Rb0 EQU 1
-Rb1 EQU 13
-Rb2 EQU 25
-Rb3 EQU 37
-Rb4 EQU 49
-Rb5 EQU 61
-Rb6 EQU 73
-Rb7 EQU 85
