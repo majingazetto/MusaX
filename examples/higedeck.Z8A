@@ -15,10 +15,9 @@ VOL_MED     EQU 5
 VOL_LOW     EQU 13
 
 HGDHDR:
-    DEFW    #2400
-    DEFW    HGDCHA
-    DEFW    HGDCHB
-    DEFW    HGDCHC
+    DEFW    #2400, HGDCHA  ; BPM_A, PTR_A
+    DEFW    #2400, HGDCHB  ; BPM_B, PTR_B
+    DEFW    #2400, HGDCHC  ; BPM_C, PTR_C
 
 ; ===========================================================
 ; CHANNEL A: LEAD MELODY

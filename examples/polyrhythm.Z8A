@@ -12,10 +12,9 @@ INCLUDE "musax_const.Z8A"
 ; --- BPM: 120 BPM (#1400 for 768-tick base) ---
 
 POLYHDR:
-    DEFW    #1400           
-    DEFW    POLYCHA
-    DEFW    POLYCHB
-    DEFW    POLYCHC
+    DEFW    #1400, POLYCHA  ; BPM_A, PTR_A
+    DEFW    #1400, POLYCHB  ; BPM_B, PTR_B
+    DEFW    #1400, POLYCHC  ; BPM_C, PTR_C
 
 ; --- CHANNEL A: STEADY QUARTERS ---
 POLYCHA:

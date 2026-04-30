@@ -52,8 +52,6 @@ SAMPLES_PER_INT = SAMPLE_RATE // INTERRUPT_FREQ
 
 class MusaXSim:
     def __init__(self, silent=False, debug_log=None):
-        self.bpm_step = 0x0600
-        self.accumulator = 0
         self.sfx_mask = 0  # Bitmask for active FX on channels A, B, C
         self.current_fx_priority = 0
         self.fx_library = [] # List of {"pointers": [A, B, C], "priority": P}
@@ -91,7 +89,8 @@ class MusaXSim:
                 "stream": [], "stream_base": 0, "stream_name": "",
                 "pc": 0, "wait": 0, "sample_idx": 0,
                 "note_name": "---", "loop_count": 0, "loop_ticks": 0,
-                "loop_stack": []
+                "loop_stack": [],
+                "bpm_step": 0x0600, "accumulator": 0
             })
 
         self.instruments = {
@@ -228,18 +227,22 @@ class MusaXSim:
         if not is_fx_only:
             # Pass 4: Assign Music Streams
             music_hdr_name = next((k for k in self.all_streams if "HDR" in k and "FX" not in k), None)
-            if music_hdr_name and len(self.all_streams[music_hdr_name]) >= 8:
+            if music_hdr_name and len(self.all_streams[music_hdr_name]) >= 12:
                 hdr_bytes = self.all_streams[music_hdr_name]
-                self.bpm_step = hdr_bytes[0] + (hdr_bytes[1] << 8)
                 for i in range(3):
-                    ptr = hdr_bytes[2 + i*2] + (hdr_bytes[3 + i*2] << 8)
+                    # Each channel has [BPM (2b), PTR (2b)]
+                    bpm = hdr_bytes[i*4] + (hdr_bytes[i*4 + 1] << 8)
+                    ptr = hdr_bytes[i*4 + 2] + (hdr_bytes[i*4 + 3] << 8)
+                    
+                    ch = self.channels[i]
+                    ch["bpm_step"] = bpm
                     if ptr != 0:
                         s_name = next((name for name, addr in self.stream_bases.items() if addr == ptr), None)
                         if s_name:
-                            self.channels[i]["stream"] = self.all_streams[s_name]
-                            self.channels[i]["stream_base"] = self.stream_bases[s_name]
-                            self.channels[i]["stream_name"] = s_name
-                            self.channels[i]["active"] = True
+                            ch["stream"] = self.all_streams[s_name]
+                            ch["stream_base"] = self.stream_bases[s_name]
+                            ch["stream_name"] = s_name
+                            ch["active"] = True
             
         # Pass 5: FX Logic (either from main file or dedicated FX file)
         # Structure: DEFW PTR_FXHDR, PRIORITY
@@ -339,103 +342,106 @@ class MusaXSim:
         self.current_fx_priority = 0
         for i, ch in enumerate(self.channels):
             ch["pc"] = 0; ch["wait"] = 0; ch["loop_count"] = 0; ch["loop_stack"] = []; ch["loop_ticks"] = 0
+            ch["accumulator"] = 0
             if ch["stream"]:
                 ch["active"] = True
                 if i < 3: self.active_mask |= (1 << i)
             else:
                 ch["active"] = False
 
-    def process_events(self):
-        for i in range(MAX_STREAMS):
-            ch = self.channels[i]
-            if not ch["active"]: continue
-            safety_counter = 0
-            while ch["active"] and ch["wait"] <= 0:
-                safety_counter += 1
-                if safety_counter > 2000:
-                    print(f"Error: Infinite loop detected in CH:{i} (PC:{ch['pc']:03X}). Check wait times.")
-                    ch["active"] = False
-                    break
-                
-                if ch["pc"] >= len(ch["stream"]): 
-                    ch["active"] = False
-                    if i < 3: self.finished_mask |= (1 << i)
-                    if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{i} | PC:{ch['pc']:03X} | END OF STREAM\n")
-                    continue
-                
-                old_pc = ch["pc"]
-                cmd = ch["stream"][ch["pc"]]; ch["pc"] += 1
-                
-                if cmd == 0xFF:  # REST [Len (DEFW)]
-                    ch["note_val"] = 255; ch["freq"] = 0.0
+    def process_events(self, ch_idx):
+        ch = self.channels[ch_idx]
+        if not ch["active"]: return
+        safety_counter = 0
+        while ch["active"] and ch["wait"] <= 0:
+            safety_counter += 1
+            if safety_counter > 2000:
+                print(f"Error: Infinite loop detected in CH:{ch_idx} (PC:{ch['pc']:03X}). Check wait times.")
+                ch["active"] = False
+                break
+            
+            if ch["pc"] >= len(ch["stream"]): 
+                ch["active"] = False
+                if ch_idx < 3: self.finished_mask |= (1 << ch_idx)
+                if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{ch_idx} | PC:{ch['pc']:03X} | END OF STREAM\n")
+                continue
+            
+            old_pc = ch["pc"]
+            cmd = ch["stream"][ch["pc"]]; ch["pc"] += 1
+            
+            if cmd == 0xFF:  # REST [Len (DEFW)]
+                ch["note_val"] = 255; ch["freq"] = 0.0
+                if ch["pc"] + 1 < len(ch["stream"]):
+                    wait_val = ch["stream"][ch["pc"]] + (ch["stream"][ch["pc"] + 1] << 8); ch["pc"] += 2
+                    if wait_val == 0: # Zero wait = STOP
+                        ch["active"] = False
+                        if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{ch_idx} | PC:{old_pc:03X} | STOP via REST 0\n")
+                        continue
+                    else:
+                        ch["wait"] = wait_val
+                    if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{ch_idx} | PC:{old_pc:03X} | REST len:{ch['wait']}\n")
+                else: ch["active"] = False
+            elif cmd >= 0xF7:
+                if cmd == 0xFC: # VOLUME [Val]
+                    ch["vol"] = ch["stream"][ch["pc"]]; ch["pc"] += 1
+                elif cmd == 0xFA: # INST [ID]
+                    ch["inst"] = ch["stream"][ch["pc"]]; ch["pc"] += 1
+                elif cmd == 0xFD: # TEMPO [Val]
                     if ch["pc"] + 1 < len(ch["stream"]):
-                        wait_val = ch["stream"][ch["pc"]] + (ch["stream"][ch["pc"] + 1] << 8); ch["pc"] += 2
-                        if wait_val == 0: # Zero wait = STOP
-                            ch["active"] = False
-                            if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{i} | PC:{old_pc:03X} | STOP via REST 0\n")
-                            continue
+                        ch["bpm_step"] = ch["stream"][ch["pc"]] + (ch["stream"][ch["pc"]+1] << 8); ch["pc"] += 2
+                elif cmd == 0xF9: # LOOP_S [Count]
+                    count = ch["stream"][ch["pc"]]; ch["pc"] += 1
+                    ch["loop_stack"].append({"pc": ch["pc"], "count": count, "total": count})
+                elif cmd == 0xF8: # LOOP_E
+                    if ch["loop_stack"]:
+                        ch["loop_stack"][-1]["count"] -= 1
+                        if ch["loop_stack"][-1]["count"] > 0:
+                            ch["pc"] = ch["loop_stack"][-1]["pc"]
                         else:
-                            ch["wait"] = wait_val
-                        if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{i} | PC:{old_pc:03X} | REST len:{ch['wait']}\n")
-                    else: ch["active"] = False
-                elif cmd >= 0xF7:
-                    if cmd == 0xFC: # VOLUME [Val]
-                        ch["vol"] = ch["stream"][ch["pc"]]; ch["pc"] += 1
-                    elif cmd == 0xFA: # INST [ID]
-                        ch["inst"] = ch["stream"][ch["pc"]]; ch["pc"] += 1
-                    elif cmd == 0xFD: # TEMPO [Val]
-                        if ch["pc"] + 1 < len(ch["stream"]):
-                            self.bpm_step = ch["stream"][ch["pc"]] + (ch["stream"][ch["pc"]+1] << 8); ch["pc"] += 2
-                    elif cmd == 0xF9: # LOOP_S [Count]
-                        count = ch["stream"][ch["pc"]]; ch["pc"] += 1
-                        ch["loop_stack"].append({"pc": ch["pc"], "count": count, "total": count})
-                    elif cmd == 0xF8: # LOOP_E
-                        if ch["loop_stack"]:
-                            ch["loop_stack"][-1]["count"] -= 1
-                            if ch["loop_stack"][-1]["count"] > 0:
-                                ch["pc"] = ch["loop_stack"][-1]["pc"]
-                            else:
-                                ch["loop_stack"].pop()
-                    elif cmd == 0xFB: # GATE [Val]
-                        ch["pc"] += 1 
-                    elif cmd == 0xF7: # GOTO [Addr (DEFW)]
+                            ch["loop_stack"].pop()
+                elif cmd == 0xFB: # GATE [Val]
+                    ch["pc"] += 1 
+                elif cmd == 0xF7: # GOTO [Addr (DEFW)]
+                    if ch["pc"] + 1 < len(ch["stream"]):
+                        addr = ch["stream"][ch["pc"]] + (ch["stream"][ch["pc"]+1] << 8)
+                        ch["pc"] = addr - ch["stream_base"]
+                    else:
+                        ch["pc"] = 0
+                elif cmd == 0xFE: # RESTART [Addr (DEFW)]
+                    if ch_idx < 3: 
+                        self.finished_mask |= (1 << ch_idx)
+                        ch["loop_ticks"] = 0
                         if ch["pc"] + 1 < len(ch["stream"]):
                             addr = ch["stream"][ch["pc"]] + (ch["stream"][ch["pc"]+1] << 8)
                             ch["pc"] = addr - ch["stream_base"]
                         else:
                             ch["pc"] = 0
-                    elif cmd == 0xFE: # RESTART [Addr (DEFW)]
-                        if i < 3: 
-                            self.finished_mask |= (1 << i)
-                            ch["loop_ticks"] = 0
-                            if ch["pc"] + 1 < len(ch["stream"]):
-                                addr = ch["stream"][ch["pc"]] + (ch["stream"][ch["pc"]+1] << 8)
-                                ch["pc"] = addr - ch["stream_base"]
-                            else:
-                                ch["pc"] = 0
-                        else: # FX should NOT restart unless explicitly coded. RESTART in FX = STOP
-                            ch["active"] = False
-                        
-                        if i < 3 and (self.finished_mask & self.active_mask) == self.active_mask:
-                            self.global_loops += 1
-                            self.finished_mask = 0
-                else:
-                    ch["note_val"] = cmd; ch["freq"] = self.note_to_freq(cmd); ch["inst_pc"] = 0; ch["sample_idx"] = 0
-                    notes = ["C-", "C#", "D-", "D#", "E-", "F-", "F#", "G-", "G#", "A-", "A#", "B-"]
-                    ch["note_name"] = f"{notes[cmd % 12]}{cmd // 12}"
-                    if ch["pc"] + 1 < len(ch["stream"]):
-                        ch["wait"] = ch["stream"][ch["pc"]] + (ch["stream"][ch["pc"] + 1] << 8); ch["pc"] += 2
-                    else: ch["active"] = False
+                    else: # FX should NOT restart unless explicitly coded. RESTART in FX = STOP
+                        ch["active"] = False
+                    
+                    if ch_idx < 3 and (self.finished_mask & self.active_mask) == self.active_mask:
+                        self.global_loops += 1
+                        self.finished_mask = 0
+            else:
+                ch["note_val"] = cmd; ch["freq"] = self.note_to_freq(cmd); ch["inst_pc"] = 0; ch["sample_idx"] = 0
+                notes = ["C-", "C#", "D-", "D#", "E-", "F-", "F#", "G-", "G#", "A-", "A#", "B-"]
+                ch["note_name"] = f"{notes[cmd % 12]}{cmd // 12}"
+                if ch["pc"] + 1 < len(ch["stream"]):
+                    ch["wait"] = ch["stream"][ch["pc"]] + (ch["stream"][ch["pc"] + 1] << 8); ch["pc"] += 2
+                else: ch["active"] = False
 
     def update(self):
-        self.accumulator += self.bpm_step
-        while self.accumulator >= 256:
-            self.accumulator -= 256; self.total_ticks += 1
-            for ch in self.channels:
+        # Global frame counter
+        self.total_ticks += 1 
+        
+        for i, ch in enumerate(self.channels):
+            ch["accumulator"] += ch["bpm_step"]
+            while ch["accumulator"] >= 256:
+                ch["accumulator"] -= 256
                 if ch["active"]:
                     if ch["wait"] > 0: ch["wait"] -= 1
                     ch["loop_ticks"] += 1
-            self.process_events()
+                self.process_events(i)
         
         self.sfx_mask = 0
         for i in range(MAX_CHANNELS):
@@ -476,29 +482,28 @@ class MusaXSim:
             parts.append(f"{cur}/{total}")
         return " ".join(f"[{p}]" for p in parts)
 
-    def _bpm(self):
-        return int(3600 * self.bpm_step / (BASE_TICK * 256))
+    def _bpm(self, ch):
+        return int(3600 * ch["bpm_step"] / (BASE_TICK * 256))
 
     def draw(self):
         W = 105
         elapsed = time.time() - getattr(self, "start_time", time.time())
         m, s = divmod(elapsed, 60)
-        bpm = self._bpm()
         
-        # Beat blink logic (every 4 quarter notes)
-        beat_active = (self.total_ticks // BASE_TICK) % 2 == 0
+        # Beat blink logic (using Channel A for global visual sync)
+        beat_active = (self.channels[0]["loop_ticks"] // BASE_TICK) % 2 == 0
         bpm_style = "\033[1;32;5m" if beat_active else "\033[1;32m"
 
         sys.stdout.write("\033[H")
         sys.stdout.write(
             f"\033[1;44;37m MusaX Simulator v1.5 \033[0m"
-            f" 60Hz | T:{self.total_ticks:>7} | {int(m)}:{s:04.1f} | {bpm_style}BPM:{bpm:>3}\033[0m | SFX:{self.sfx_mask:03b} | \033[1;33mP:{self.current_fx_priority:>2}\033[0m | Loops:{self.global_loops}\r\n"
+            f" 60Hz | T:{self.total_ticks:>7} | {int(m)}:{s:04.1f} | SFX:{self.sfx_mask:03b} | \033[1;33mP:{self.current_fx_priority:>2}\033[0m | Loops:{self.global_loops}\r\n"
         )
         sys.stdout.write("\033[94m━\033[0m" * W + "\r\n")
 
         # Table Header - Precisely aligned
         # Indices: CH:2, STATE:6, NOTE:14, WAIT:20, VOLUME:27, BEAT:51, LABEL:58, LOOPS:67, PC:81
-        sys.stdout.write("\033[1m  CH  STATE   NOTE  WAIT   VOLUME / ENVELOPE       BEAT  LABEL     LOOPS          PC   HEX SNIP\033[0m\r\n")
+        sys.stdout.write("\033[1m  CH  STATE   NOTE  WAIT   VOLUME / ENVELOPE       BPM   LABEL     LOOPS          PC   HEX SNIP\033[0m\r\n")
         sys.stdout.write("  " + "\033[90m─\033[0m" * (W-2) + "\r\n")
 
         for i in range(MAX_CHANNELS):
@@ -532,18 +537,18 @@ class MusaXSim:
                 ) + "\033[0m"
 
                 if ch["active"]:
-                    bar_n  = f"{ch['loop_ticks'] // (BASE_TICK * 4) + 1:<3}"
+                    bpm_n  = f"{self._bpm(ch):>3}"
                     label  = f"\033[36m{self._current_label(ch)[:8]:8}\033[0m"
                     linfo  = f"\033[35m{self._loop_info(ch)[:12]:12}\033[0m"
                 else:
-                    bar_n = "   "; label = " " * 8; linfo = " " * 12
+                    bpm_n = "   "; label = " " * 8; linfo = " " * 12
 
                 # Row construction with precise visible padding
                 row = f"{audible_marker} {ch_name} [{status_color}{status_text}\033[0m]   "
                 row += f"{note}   "
                 row += f"{wait_str}   "
                 row += f"{self._pad(bar, 24)}"
-                row += f"{bar_n}    "
+                row += f"{bpm_n}    "
                 row += f"{self._pad(label, 9)}"
                 row += f"{self._pad(linfo, 14)}"
                 row += f"{pc}  "

@@ -6,10 +6,9 @@ INCLUDE "musax_const.Z8A"
 
 ; Music Header
 MUSHDR:
-    DEFW    #0800       ; BPM_STEP (Slow for testing)
-    DEFW    MUSCHA
-    DEFW    MUSCHB
-    DEFW    MUSCHC
+    DEFW    #0800, MUSCHA  ; BPM_A, PTR_A
+    DEFW    #0800, MUSCHB  ; BPM_B, PTR_B
+    DEFW    #0800, MUSCHC  ; BPM_C, PTR_C
 
 ; FX Header
 FXHDR:

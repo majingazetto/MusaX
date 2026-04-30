@@ -12,10 +12,9 @@ VOL_LOW     EQU 5
 
 ; -- Song Header --
 JIG_HDR:
-    DEFW    #12C0           ; BPM_STEP
-    DEFW    JIG_CHA
-    DEFW    JIG_CHB
-    DEFW    JIG_CHC
+    DEFW    #12C0, JIG_CHA  ; BPM_A, PTR_A
+    DEFW    #12C0, JIG_CHB  ; BPM_B, PTR_B
+    DEFW    #12C0, JIG_CHC  ; BPM_C, PTR_C
 
 ; --- CHANNEL A: LEAD ---
 JIG_CHA:
