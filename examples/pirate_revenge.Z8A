@@ -16,16 +16,8 @@
 
 INCLUDE "musax_const.Z8A"
 
-; --- Duration constants ---
-BASE_TICK   EQU 256
-LEN_Q       EQU BASE_TICK
-LEN_H       EQU BASE_TICK * 2
-LEN_W       EQU BASE_TICK * 4
-LEN_E       EQU BASE_TICK / 2
-LEN_S       EQU BASE_TICK / 4
-LEN_ET      EQU BASE_TICK / 3
-LEN_QT      EQU BASE_TICK * 2 / 3
-LEN_ED      EQU LEN_E + LEN_S
+; --- Duration constants (overrides/specifics) ---
+LEN_QT      EQU BASE_TICK * 2 / 3  ; Exact 512
 
 ; --- Volume levels ---
 VOL_MAX     EQU 13
@@ -33,9 +25,9 @@ VOL_MED     EQU 10
 VOL_LOW     EQU 7
 VOL_FAINT   EQU 4
 
-; --- BPM steps ---
-TMP_FAST    EQU #0900           ; ~127 BPM (lively jig)
-TMP_SLOW    EQU #0480           ; ~63 BPM  (ominous bridge)
+; --- BPM steps (multiplied by 3 for 768-tick base) ---
+TMP_FAST    EQU #1B00           ; ~127 BPM (lively jig)
+TMP_SLOW    EQU #0D80           ; ~63 BPM  (ominous bridge)
 
 ; --- Song Header ---
 PIREHDR:

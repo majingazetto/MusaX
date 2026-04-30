@@ -14,7 +14,7 @@ import tty
 import select
 
 # --- MUSAX CONSTANTS ---
-BASE_TICK = 256
+BASE_TICK = 768
 MAX_CHANNELS = 3
 SAMPLE_RATE = 44100
 INTERRUPT_FREQ = 60
@@ -23,7 +23,7 @@ SAMPLES_PER_INT = SAMPLE_RATE // INTERRUPT_FREQ
 
 class MusaXSim:
     def __init__(self, filename=None, silent=False, debug_log=None):
-        self.bpm_step = 0x0200
+        self.bpm_step = 0x0600
         self.accumulator = 0
         self.silent = silent
         self.total_ticks = 0
@@ -37,8 +37,8 @@ class MusaXSim:
             self.log_file.write(f"--- MusaX Trace Log: {filename} ---\n")
 
         self.symbols = {
-            "REST": 255, "LEN_Q": 256, "LEN_H": 512, "LEN_E": 128, "LEN_S": 64,
-            "LEN_W": 1024, "LEN_ET": 85, "LEN_QT": 170
+            "REST": 255, "LEN_Q": 768, "LEN_H": 1536, "LEN_E": 384, "LEN_S": 192,
+            "LEN_W": 3072, "LEN_ET": 256, "LEN_QT": 512
         }
         self.commands = {
             "CMD_TEMPO": 0xFD, "CMD_VOLUME": 0xFC, "CMD_GATE": 0xFB,
@@ -286,8 +286,8 @@ class MusaXSim:
 
     def update(self):
         self.accumulator += self.bpm_step
-        while self.accumulator >= BASE_TICK:
-            self.accumulator -= BASE_TICK; self.total_ticks += 1
+        while self.accumulator >= 256:
+            self.accumulator -= 256; self.total_ticks += 1
             for ch in self.channels:
                 if ch["active"]:
                     if ch["wait"] > 0: ch["wait"] -= 1
@@ -317,7 +317,8 @@ class MusaXSim:
         return " ".join(f"[{p}]" for p in parts)
 
     def _bpm(self):
-        return int(3600 * self.bpm_step / 65536)
+        # Formula: 3600 * bpm_step / (BASE_TICK * 256)
+        return int(3600 * self.bpm_step / (BASE_TICK * 256))
 
     def draw(self):
         W = 96
@@ -345,7 +346,8 @@ class MusaXSim:
             )
 
             if ch["active"]:
-                bar_n  = ch["loop_ticks"] // 1024 + 1
+                # Bar is BASE_TICK * 4 (a whole note)
+                bar_n  = ch["loop_ticks"] // (BASE_TICK * 4) + 1
                 label  = self._current_label(ch)[:8].ljust(8)
                 linfo  = self._loop_info(ch)[:13].ljust(13)
                 extra  = f"B:{bar_n:<3}  {label}  {linfo}"

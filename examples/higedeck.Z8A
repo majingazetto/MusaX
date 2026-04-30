@@ -3,27 +3,19 @@
 ; ************************************************************************
 ; Style: Tamayo Kawamoto / early Capcom arcade, AY-3-8910
 ; Key:   A natural minor + harmonic minor (Gs cadences)
-; BPM:   #0C00 (~168 BPM) - urgent arcade march
+; BPM:   #2400 (~168 BPM) - urgent arcade march
 ; Form:  Intro → [Section A (x2) + Section B] loop
 ; Voices: A=lead  B=counter (5-bar async)  C=bass (4-bar async)
 ; ************************************************************************
 
 INCLUDE "musax_const.Z8A"
 
-BASE_TICK   EQU 256
-LEN_Q       EQU BASE_TICK
-LEN_H       EQU BASE_TICK * 2
-LEN_W       EQU BASE_TICK * 4
-LEN_E       EQU BASE_TICK / 2
-LEN_S       EQU BASE_TICK / 4
-LEN_ET      EQU BASE_TICK / 3
-
 VOL_MAX     EQU 8
 VOL_MED     EQU 5
 VOL_LOW     EQU 13
 
 HGDHDR:
-    DEFW    #0C00
+    DEFW    #2400
     DEFW    HGDCHA
     DEFW    HGDCHB
     DEFW    HGDCHC

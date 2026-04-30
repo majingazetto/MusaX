@@ -6,7 +6,7 @@ INCLUDE "musax_const.Z8A"
 
 ; -- Song Header --
 STRESS_HDR:
-    DEFW    #0500           ; BPM_STEP (Moderate tempo)
+    DEFW    #0F00           ; BPM_STEP (Moderate tempo)
     DEFW    STRESS_CHA
     DEFW    STRESS_CHB
     DEFW    STRESS_CHC

@@ -1,87 +1,59 @@
 ; ************************************************************************
-; * pirate_jig.Z8A - Example Song for MusaX (Compatible with v0.6)
+; * pirate_jig.Z8A - Example Song for MusaX (Updated to v1.0 standard)
 ; ************************************************************************
 
-BASE_TICK   EQU 256
+INCLUDE "musax_const.Z8A"
 
-; -- Durations --
-LEN_Q       EQU BASE_TICK
-LEN_H       EQU BASE_TICK * 2
-LEN_E       EQU BASE_TICK / 2
-LEN_S       EQU BASE_TICK / 4
-LEN_ET      EQU BASE_TICK / 3
-LEN_ED      EQU LEN_E + LEN_S
-LEN_W       EQU BASE_TICK * 4
+; -- BPM_STEP: ~84 BPM (#12C0 for 768-tick base) --
 
-; -- Notes (Scientific Notation with 's' for sharps) --
-C4          EQU 48
-D4          EQU 50
-E4          EQU 52
-F4          EQU 53
-G4          EQU 55
-A4          EQU 57
-B4          EQU 59
-C5          EQU 60
-Fs4         EQU 54
-B3          EQU 47
-E2          EQU 28
-B1          EQU 23
-
-CMD_VOLUME  EQU #FC
-CMD_GOTO    EQU #F7
-CMD_INST    EQU #FA
+VOL_MAX     EQU 15
+VOL_MED     EQU 10
+VOL_LOW     EQU 5
 
 ; -- Song Header --
 JIG_HDR:
-    DEFW    #0640           ; BPM_STEP
-    DEFW    JIG_CHA
-    DEFW    JIG_CHB
-    DEFW    JIG_CHC
+    DEFW    #12C0           ; BPM_STEP
     DEFW    JIG_CHA
     DEFW    JIG_CHB
     DEFW    JIG_CHC
 
+; --- CHANNEL A: LEAD ---
 JIG_CHA:
-    DEFB    CMD_VOLUME, 15
+    DEFB    CMD_VOLUME, VOL_MAX
     DEFB    CMD_INST, 1
     DEFB    E4
     DEFW    LEN_Q
     DEFB    G4
     DEFW    LEN_Q
-    DEFB    B4
-    DEFW    LEN_Q
     DEFB    A4
     DEFW    LEN_Q
-    DEFB    G4
-    DEFW    LEN_ET
-    DEFB    Fs4
-    DEFW    LEN_ET
-    DEFB    E4
-    DEFW    LEN_ET
-    DEFB    D4
-    DEFW    LEN_H
+    DEFB    B4
+    DEFW    LEN_Q
     DEFB    CMD_GOTO
+    DEFW    JIG_CHA
 
+; --- CHANNEL B: HARMONY ---
 JIG_CHB:
-    DEFB    CMD_VOLUME, 8
+    DEFB    CMD_VOLUME, VOL_MED
     DEFB    CMD_INST, 0
     DEFB    B3
-    DEFW    LEN_H
-    DEFB    D4
-    DEFW    LEN_H
-    DEFB    REST
-    DEFW    LEN_W
+    DEFW    LEN_Q
+    DEFB    E4
+    DEFW    LEN_Q
+    DEFB    F#4
+    DEFW    LEN_Q
+    DEFB    G4
+    DEFW    LEN_Q
     DEFB    CMD_GOTO
+    DEFW    JIG_CHB
 
+; --- CHANNEL C: BASS ---
 JIG_CHC:
-    DEFB    CMD_VOLUME, 10
-    DEFB    CMD_INST, 0
+    DEFB    CMD_VOLUME, VOL_LOW
+    DEFB    CMD_INST, 1
     DEFB    E2
-    DEFW    LEN_Q
+    DEFW    LEN_H
     DEFB    B1
-    DEFW    LEN_Q
-    DEFB    E2
-    DEFW    LEN_Q
-    DEFB    B1
-    DEFW    LEN_Q
+    DEFW    LEN_H
     DEFB    CMD_GOTO
+    DEFW    JIG_CHC
