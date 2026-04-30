@@ -450,6 +450,14 @@ class MusaXSim:
             env = self.instruments.get(ch["inst"], [15])
             ch["cur_vol"] = (env[min(ch["inst_pc"], len(env) - 1)] * ch["vol"]) // 15; ch["inst_pc"] += 1
 
+    def _vis_len(self, s):
+        """Returns the visible length of a string, excluding ANSI escape codes."""
+        return len(re.sub(r'\033\[[0-9;]*m', '', s))
+
+    def _pad(self, s, width):
+        """Pads a string to a specific visible width."""
+        return s + " " * max(0, width - self._vis_len(s))
+
     def _current_label(self, ch):
         labels = self.channel_labels.get(ch.get("stream_name", ""), [])
         result = ""
@@ -488,8 +496,9 @@ class MusaXSim:
         )
         sys.stdout.write("\033[94m━\033[0m" * W + "\r\n")
 
-        # Table Header
-        sys.stdout.write("\033[1m  CH  STATE  NOTE  WAIT   VOLUME / ENVELOPE       BEAT  LABEL     LOOPS          PC   HEX SNIP\033[0m\r\n")
+        # Table Header - Precisely aligned
+        # Indices: CH:2, STATE:6, NOTE:14, WAIT:20, VOLUME:27, BEAT:51, LABEL:58, LOOPS:67, PC:81
+        sys.stdout.write("\033[1m  CH  STATE   NOTE  WAIT   VOLUME / ENVELOPE       BEAT  LABEL     LOOPS          PC   HEX SNIP\033[0m\r\n")
         sys.stdout.write("  " + "\033[90m─\033[0m" * (W-2) + "\r\n")
 
         for i in range(MAX_CHANNELS):
@@ -510,10 +519,9 @@ class MusaXSim:
                 
                 # Visual volume bar
                 if audible:
-                    # Multi-color bar
                     v = ch["cur_vol"]
                     bar = "\033[1;32m" + "█" * min(v, 8) + "\033[1;33m" + "█" * max(0, min(v-8, 4)) + "\033[1;31m" + "█" * max(0, v-12) + "\033[0m"
-                    bar = bar.ljust(15 + (len(bar) - v)) # adjust for ANSI codes
+                    bar = self._pad(bar, 15)
                 else:
                     bar = "\033[90m" + "▒" * ch["cur_vol"] + " " * (15 - ch["cur_vol"]) + "\033[0m"
                 
@@ -530,27 +538,46 @@ class MusaXSim:
                 else:
                     bar_n = "   "; label = " " * 8; linfo = " " * 12
 
-                sys.stdout.write(
-                    f"{audible_marker} {ch_name} [{status_color}{status_text}\033[0m] {note}  {wait_str}  {bar:25}  {bar_n}   {label}  {linfo}   {pc}  {hex_snip}\r\n"
-                )
+                # Row construction with precise visible padding
+                row = f"{audible_marker} {ch_name} [{status_color}{status_text}\033[0m]   "
+                row += f"{note}   "
+                row += f"{wait_str}   "
+                row += f"{self._pad(bar, 24)}"
+                row += f"{bar_n}    "
+                row += f"{self._pad(label, 9)}"
+                row += f"{self._pad(linfo, 14)}"
+                row += f"{pc}  "
+                row += f"{hex_snip}\r\n"
+                sys.stdout.write(row)
+
             if i < 2: sys.stdout.write("  " + "\033[2;90m┄\033[0m" * (W-4) + "\r\n")
 
         sys.stdout.write("\033[94m━\033[0m" * W + "\r\n")
         
         # Enhanced FX Library View
         sys.stdout.write(" \033[1;37;44m FX LIBRARY \033[0m\r\n")
-        fx_line = " "
-        for idx, fx in enumerate(self.fx_library):
-            active_fx = (self.current_fx_priority == fx['priority'] and any(self.channels[i+3]["active"] for i in range(3)))
-            color = "\033[1;33m" if active_fx else "\033[90m"
-            sel_mark = "\033[1;33m→\033[0m" if active_fx else " "
-            ch_info = "".join(f"\033[1;37m{chr(65+j)}\033[0m" if fx['ptrs'][j] > 0 else "\033[90m-\033[0m" for j in range(3))
+        
+        for i in range(0, len(self.fx_library), 3):
+            fx_line = " "
+            for j in range(3):
+                idx = i + j
+                if idx >= len(self.fx_library):
+                    break
+                
+                fx = self.fx_library[idx]
+                active_fx = (self.current_fx_priority == fx['priority'] and any(self.channels[k+3]["active"] for k in range(3)))
+                
+                color = "\033[1;33m" if active_fx else "\033[90m"
+                sel_mark = "\033[1;33m→\033[0m" if active_fx else " "
+                
+                # Channel info string [ABC]
+                ch_info = "".join(f"\033[1;37m{chr(65+k)}\033[0m" if fx['ptrs'][k] > 0 else "\033[90m-\033[0m" for k in range(3))
+                
+                # Construct entry
+                entry = f"{sel_mark}\033[1m[{idx+1:>2}]\033[0m {color}{fx['name'][:12]:12}\033[0m \033[2m(P:{fx['priority']:2})\033[0m [{ch_info}]"
+                fx_line += self._pad(entry, 34)
             
-            fx_line += f"{sel_mark}\033[1m[{idx+1}]\033[0m {color}{fx['name'][:12]:12}\033[0m \033[2m(P:{fx['priority']:2})\033[0m [{ch_info}]   "
-            if (idx + 1) % 3 == 0:
-                sys.stdout.write(fx_line + "\r\n ")
-                fx_line = " "
-        sys.stdout.write(fx_line + "\r\n")
+            sys.stdout.write(fx_line + "\r\n")
         
         sys.stdout.write("\033[94m━\033[0m" * W + "\r\n")
         sys.stdout.write(" \033[1m[1-9]\033[0m Trigger FX | \033[1m[SPACE]\033[0m Reset | \033[1m[q/Esc]\033[0m Quit\r\n")
