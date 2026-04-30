@@ -12,9 +12,9 @@ MUSHDR:
 
 ; FX Header
 FXHDR:
-    DEFW    FXCHA       ; Only FX on channel A
-    DEFW    0
-    DEFW    0
+    DEFW    #2400, FXCHA  ; BPM_A, PTR_A
+    DEFW    #2400, 0      ; BPM_B, PTR_B
+    DEFW    #2400, 0      ; BPM_C, PTR_C
 
 ; ===========================================================
 ; MUSIC CHANNELS
@@ -57,24 +57,24 @@ MUSCHC:
 
     ; FX Headers
     FXHDR_LO:
-        DEFW    FX_JUMP
-        DEFW    0
-        DEFW    0
+        DEFW    #2400, FX_JUMP
+        DEFW    #2400, 0
+        DEFW    #2400, 0
 
     FXHDR_HI:
-        DEFW    FX_SIREN
-        DEFW    0
-        DEFW    0
+        DEFW    #2400, FX_SIREN
+        DEFW    #2400, 0
+        DEFW    #2400, 0
 
     FXHDR_FAN:
-        DEFW    FX_FAN_A
-        DEFW    FX_FAN_B
-        DEFW    0
+        DEFW    #2400, FX_FAN_A
+        DEFW    #2400, FX_FAN_B
+        DEFW    #2400, 0
 
     FXHDR_TRI:
-        DEFW    FX_TRI_A
-        DEFW    FX_TRI_B
-        DEFW    FX_TRI_C
+        DEFW    #2400, FX_TRI_A
+        DEFW    #2400, FX_TRI_B
+        DEFW    #2400, FX_TRI_C
 
     ; ===========================================================
     ; FX STREAMS

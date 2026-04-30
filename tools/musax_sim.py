@@ -262,13 +262,20 @@ class MusaXSim:
                 hdr_name = next((name for name, addr in self.stream_bases.items() if addr == ptr), None)
                 if hdr_name and hdr_name in self.all_streams:
                     hdr_bytes = self.all_streams[hdr_name]
-                    fx_ptrs = []
+                    fx_data = []
                     for j in range(3):
-                        if j*2 + 1 < len(hdr_bytes):
-                            fx_ptrs.append(hdr_bytes[j*2] + (hdr_bytes[j*2+1] << 8))
+                        if j*4 + 3 < len(hdr_bytes):
+                            bpm = hdr_bytes[j*4] + (hdr_bytes[j*4+1] << 8)
+                            ptr_fx = hdr_bytes[j*4+2] + (hdr_bytes[j*4+3] << 8)
+                            fx_data.append({"bpm": bpm, "ptr": ptr_fx})
                         else:
-                            fx_ptrs.append(0)
-                    self.fx_library.append({"ptrs": fx_ptrs, "priority": priority, "name": hdr_name})
+                            # Fallback for old 6-byte headers if encountered (though we should update all)
+                            if j*2 + 1 < len(hdr_bytes):
+                                ptr_fx = hdr_bytes[j*2] + (hdr_bytes[j*2+1] << 8)
+                                fx_data.append({"bpm": 0x2400, "ptr": ptr_fx})
+                            else:
+                                fx_data.append({"bpm": 0x2400, "ptr": 0})
+                    self.fx_library.append({"data": fx_data, "priority": priority, "name": hdr_name})
 
     def read_with_includes(self, fname, base_path):
         candidates = [
@@ -308,8 +315,11 @@ class MusaXSim:
         if self.log_file: self.log_file.write(f"T:{self.total_ticks} | REQ_FX START: {req['name']} (P:{self.current_fx_priority})\n")
         
         for i in range(3):
-            ptr = req["ptrs"][i]
+            fx_item = req["data"][i]
+            ptr = fx_item["ptr"]
+            bpm = fx_item["bpm"]
             ch = self.channels[i+3]
+            
             if ptr == 0:
                 ch["active"] = False
             else:
@@ -332,7 +342,7 @@ class MusaXSim:
                     ch["wait"] = 0
                     ch["loop_ticks"] = 0
                     ch["loop_stack"] = []
-                    ch["bpm_step"] = 0x2400 # Reset to fast arcade default
+                    ch["bpm_step"] = bpm # Use BPM from header
                     ch["active"] = True
                 else:
                     ch["active"] = False
@@ -575,13 +585,12 @@ class MusaXSim:
                 
                 fx = self.fx_library[idx]
                 active_fx = (self.current_fx_priority == fx['priority'] and any(self.channels[k+3]["active"] for k in range(3)))
-                
+
                 color = "\033[1;33m" if active_fx else "\033[90m"
                 sel_mark = "\033[1;33m→\033[0m" if active_fx else " "
-                
+
                 # Channel info string [ABC]
-                ch_info = "".join(f"\033[1;37m{chr(65+k)}\033[0m" if fx['ptrs'][k] > 0 else "\033[90m-\033[0m" for k in range(3))
-                
+                ch_info = "".join(f"\033[1;37m{chr(65+k)}\033[0m" if fx['data'][k]['ptr'] > 0 else "\033[90m-\033[0m" for k in range(3))                
                 # Construct entry
                 entry = f"{sel_mark}\033[1m[{idx+1:>2}]\033[0m {color}{fx['name'][:12]:12}\033[0m \033[2m(P:{fx['priority']:2})\033[0m [{ch_info}]"
                 fx_line += self._pad(entry, 34)
