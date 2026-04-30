@@ -73,7 +73,8 @@ class MusaXSim:
         self.commands = {
             "CMD_TEMPO": 0xFD, "CMD_VOLUME": 0xFC, "CMD_GATE": 0xFB,
             "CMD_INST": 0xFA, "CMD_LOOP_S": 0xF9, "CMD_LOOP_E": 0xF8,
-            "CMD_GOTO": 0xF7, "CMD_RESTART": 0xFE
+            "CMD_GOTO": 0xF7, "CMD_RESTART": 0xFE, "CMD_PHASE": 0xF6,
+            "CMD_DETUNE": 0xF5, "CMD_CHORUS": 0xF4
         }
         self.init_notes()
         self.symbols.update(self.commands)
@@ -92,7 +93,7 @@ class MusaXSim:
                 "note_name": "---", "loop_count": 0, "loop_ticks": 0,
                 "loop_stack": [],
                 "bpm_step": 0x2400 if is_fx else 0x0600, # FX default to 168 BPM
-                "accumulator": 0
+                "accumulator": 0, "detune": 0
             })
 
         self.instruments = {
@@ -112,9 +113,10 @@ class MusaXSim:
                     if n: self.symbols[f"{n}{oct}"] = val
                 self.symbols[f"Rb{oct}"] = oct * 12 + 1
 
-    def note_to_freq(self, note_val):
+    def note_to_freq(self, note_val, detune=0):
         if note_val == 255: return 0.0
-        return 440.0 * (2.0 ** (((note_val + 12) - 69.0) / 12.0))
+        # detune is in cents (1/100th of a semitone)
+        return 440.0 * (2.0 ** (((note_val + 12 + detune/100.0) - 69.0) / 12.0))
 
     def eval_expr(self, expr):
         try:
@@ -395,7 +397,7 @@ class MusaXSim:
                         ch["wait"] = wait_val
                     if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{ch_idx} | PC:{old_pc:03X} | REST len:{ch['wait']}\n")
                 else: ch["active"] = False
-            elif cmd >= 0xF7:
+            elif cmd >= 0xF5:
                 if cmd == 0xFC: # VOLUME [Val]
                     ch["vol"] = ch["stream"][ch["pc"]]; ch["pc"] += 1
                 elif cmd == 0xFA: # INST [ID]
@@ -418,7 +420,23 @@ class MusaXSim:
                 elif cmd == 0xF7: # GOTO [Addr (DEFW)]
                     if ch["pc"] + 1 < len(ch["stream"]):
                         addr = ch["stream"][ch["pc"]] + (ch["stream"][ch["pc"]+1] << 8)
-                        ch["pc"] = addr - ch["stream_base"]
+                        # Find the global stream that contains this address
+                        best_match = None
+                        best_base = -1
+                        for name, base in self.stream_bases.items():
+                            if name in self.all_streams:
+                                stream_len = len(self.all_streams[name])
+                                if base <= addr < base + stream_len:
+                                    if base > best_base:
+                                        best_match = name
+                                        best_base = base
+                        if best_match:
+                            ch["stream"] = self.all_streams[best_match]
+                            ch["stream_base"] = best_base
+                            ch["stream_name"] = best_match
+                            ch["pc"] = addr - best_base
+                        else:
+                            ch["pc"] = 0
                     else:
                         ch["pc"] = 0
                 elif cmd == 0xFE: # RESTART [Addr (DEFW)]
@@ -427,7 +445,23 @@ class MusaXSim:
                         ch["loop_ticks"] = 0
                         if ch["pc"] + 1 < len(ch["stream"]):
                             addr = ch["stream"][ch["pc"]] + (ch["stream"][ch["pc"]+1] << 8)
-                            ch["pc"] = addr - ch["stream_base"]
+                            # Find the global stream that contains this address
+                            best_match = None
+                            best_base = -1
+                            for name, base in self.stream_bases.items():
+                                if name in self.all_streams:
+                                    stream_len = len(self.all_streams[name])
+                                    if base <= addr < base + stream_len:
+                                        if base > best_base:
+                                            best_match = name
+                                            best_base = base
+                            if best_match:
+                                ch["stream"] = self.all_streams[best_match]
+                                ch["stream_base"] = best_base
+                                ch["stream_name"] = best_match
+                                ch["pc"] = addr - best_base
+                            else:
+                                ch["pc"] = 0
                         else:
                             ch["pc"] = 0
                     else: # FX should NOT restart unless explicitly coded. RESTART in FX = STOP
@@ -436,8 +470,25 @@ class MusaXSim:
                     if ch_idx < 3 and (self.finished_mask & self.active_mask) == self.active_mask:
                         self.global_loops += 1
                         self.finished_mask = 0
+                elif cmd == 0xF6: # PHASE [Val]
+                    val = ch["stream"][ch["pc"]]; ch["pc"] += 1
+                    ch["accumulator"] = (ch["accumulator"] + val) & 0xFFFF
+                elif cmd == 0xF5: # DETUNE [Val]
+                    val = ch["stream"][ch["pc"]]; ch["pc"] += 1
+                    if val > 127: val -= 256
+                    ch["detune"] = val
+                    if ch["note_val"] != 255:
+                        ch["freq"] = self.note_to_freq(ch["note_val"], ch["detune"])
+                elif cmd == 0xF4: # CHORUS [Phase, Detune]
+                    phase = ch["stream"][ch["pc"]]; ch["pc"] += 1
+                    detune = ch["stream"][ch["pc"]]; ch["pc"] += 1
+                    if detune > 127: detune -= 256
+                    ch["accumulator"] = (ch["accumulator"] + phase) & 0xFFFF
+                    ch["detune"] = detune
+                    if ch["note_val"] != 255:
+                        ch["freq"] = self.note_to_freq(ch["note_val"], ch["detune"])
             else:
-                ch["note_val"] = cmd; ch["freq"] = self.note_to_freq(cmd); ch["inst_pc"] = 0; ch["sample_idx"] = 0
+                ch["note_val"] = cmd; ch["freq"] = self.note_to_freq(cmd, ch["detune"]); ch["inst_pc"] = 0; ch["sample_idx"] = 0
                 notes = ["C-", "C#", "D-", "D#", "E-", "F-", "F#", "G-", "G#", "A-", "A#", "B-"]
                 ch["note_name"] = f"{notes[cmd % 12]}{cmd // 12}"
                 if ch["pc"] + 1 < len(ch["stream"]):

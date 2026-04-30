@@ -1,0 +1,60 @@
+; ************************************************************************
+; * chorus_test.Z8A - Demonstration of PSG Chorus effect in MusaX
+; ************************************************************************
+; This example uses CMD_PHASE and CMD_DETUNE to create a rich chorus
+; effect using two identical square wave channels.
+;
+; CHA: Lead Melody (Dry)
+; CHB: Chorus Voice (Wet) - Delayed by half-tick and slightly detuned.
+; ************************************************************************
+
+INCLUDE "musax_const.Z8A"
+
+; -- Song Header --
+CHORUS_HDR:
+    DEFW    #1400, LEAD_MELODY  ; BPM_A (120), PTR_A
+    DEFW    #1400, CHORUS_VOICE ; BPM_B (120), PTR_B
+    DEFW    #1400, 0            ; BPM_C, PTR_C
+
+; --- SHARED MELODY ---
+MELODY:
+    DEFB    C4
+    DEFW    LEN_Q
+    DEFB    E4
+    DEFW    LEN_Q
+    DEFB    G4
+    DEFW    LEN_Q
+    DEFB    C5
+    DEFW    LEN_H
+    DEFB    G4
+    DEFW    LEN_Q
+    DEFB    F4
+    DEFW    LEN_Q
+    DEFB    E4
+    DEFW    LEN_Q
+    DEFB    D4
+    DEFW    LEN_Q
+    DEFB    C4
+    DEFW    LEN_W
+    DEFB    REST
+    DEFW    LEN_Q
+    DEFB    CMD_RESTART
+    DEFW    MELODY
+
+; --- CHANNEL A: DRY ---
+LEAD_MELODY:
+    DEFB    CMD_VOLUME, 12
+    DEFB    CMD_INST, 0
+    DEFB    CMD_GOTO
+    DEFW    MELODY
+
+; --- CHANNEL B: CHORUS (WET) ---
+CHORUS_VOICE:
+    DEFB    CMD_VOLUME, 10
+    DEFB    CMD_INST, 0
+    
+    ; Apply Chorus (Phase=128, Detune=4)
+    DEFB    CMD_CHORUS, 128, 4
+    
+    DEFB    CMD_GOTO
+    DEFW    MELODY
