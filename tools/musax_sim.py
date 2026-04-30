@@ -82,7 +82,8 @@ class MusaXSim:
 
         self.physical_channels = [{"sample_idx": 0} for _ in range(MAX_CHANNELS)]
         self.channels = []
-        for _ in range(MAX_STREAMS):
+        for i in range(MAX_STREAMS):
+            is_fx = i >= 3
             self.channels.append({
                 "active": False, "note_val": 255, "freq": 0.0,
                 "vol": 15, "cur_vol": 0, "inst": 0, "inst_pc": 0,
@@ -90,7 +91,8 @@ class MusaXSim:
                 "pc": 0, "wait": 0, "sample_idx": 0,
                 "note_name": "---", "loop_count": 0, "loop_ticks": 0,
                 "loop_stack": [],
-                "bpm_step": 0x0600, "accumulator": 0
+                "bpm_step": 0x2400 if is_fx else 0x0600, # FX default to 168 BPM
+                "accumulator": 0
             })
 
         self.instruments = {
@@ -330,6 +332,7 @@ class MusaXSim:
                     ch["wait"] = 0
                     ch["loop_ticks"] = 0
                     ch["loop_stack"] = []
+                    ch["bpm_step"] = 0x2400 # Reset to fast arcade default
                     ch["active"] = True
                 else:
                     ch["active"] = False
@@ -343,6 +346,7 @@ class MusaXSim:
         for i, ch in enumerate(self.channels):
             ch["pc"] = 0; ch["wait"] = 0; ch["loop_count"] = 0; ch["loop_stack"] = []; ch["loop_ticks"] = 0
             ch["accumulator"] = 0
+            if i >= 3: ch["bpm_step"] = 0x2400 # FX default
             if ch["stream"]:
                 ch["active"] = True
                 if i < 3: self.active_mask |= (1 << i)
