@@ -1,0 +1,62 @@
+; ************************************************************************
+; * polyrhythm.Z8A - Verification of 768-tick Resolution Precision
+; ************************************************************************
+; This example verifies that Triplets and Quarter notes align perfectly.
+; CHA: Plays 4 Quarter notes (768 * 4 = 3072 ticks)
+; CHB: Plays 4 groups of 3 Triplets ( (256 * 3) * 4 = 3072 ticks)
+; Both channels should loop simultaneously without any drift.
+; ************************************************************************
+
+INCLUDE "musax_const.Z8A"
+
+; --- BPM: 120 BPM (#1400 for 768-tick base) ---
+
+POLYHDR:
+    DEFW    #1400           
+    DEFW    POLYCHA
+    DEFW    POLYCHB
+    DEFW    POLYCHC
+
+; --- CHANNEL A: STEADY QUARTERS ---
+POLYCHA:
+    DEFB    CMD_VOLUME, 12
+    DEFB    CMD_INST, 1
+.LOOP:
+    DEFB    A4
+    DEFW    LEN_Q
+    DEFB    E4
+    DEFW    LEN_Q
+    DEFB    A4
+    DEFW    LEN_Q
+    DEFB    E4
+    DEFW    LEN_Q
+    DEFB    CMD_RESTART
+    DEFW    .LOOP
+
+; --- CHANNEL B: PERFECT TRIPLETS ---
+POLYCHB:
+    DEFB    CMD_VOLUME, 10
+    DEFB    CMD_INST, 0
+.LOOP:
+    ; Bar 1 (3 triplets = 1 quarter) x 4
+    DEFB    CMD_LOOP_S, 4
+        DEFB    C5
+        DEFW    LEN_ET
+        DEFB    D5
+        DEFW    LEN_ET
+        DEFB    E5
+        DEFW    LEN_ET
+    DEFB    CMD_LOOP_E
+    
+    DEFB    CMD_RESTART
+    DEFW    .LOOP
+
+; --- CHANNEL C: BASS (WHOLE NOTES) ---
+POLYCHC:
+    DEFB    CMD_VOLUME, 14
+    DEFB    CMD_INST, 1
+.LOOP:
+    DEFB    A2
+    DEFW    LEN_W
+    DEFB    CMD_RESTART
+    DEFW    .LOOP

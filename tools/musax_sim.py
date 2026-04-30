@@ -86,6 +86,12 @@ class MusaXSim:
 
     def eval_expr(self, expr):
         try:
+            # Handle Sjasmplus low/high byte operators
+            expr = re.sub(r"([^\w])<(\w+)", r"\1(\2 & 0xFF)", expr)
+            if expr.startswith("<"): expr = re.sub(r"^<(\w+)", r"(\1 & 0xFF)", expr)
+            expr = re.sub(r"([^\w])>(\w+)", r"\1((\2 >> 8) & 0xFF)", expr)
+            if expr.startswith(">"): expr = re.sub(r"^>(\w+)", r"((\1 >> 8) & 0xFF)", expr)
+
             # Only replace # if it's followed by hex and NOT preceded by a note letter (A-G)
             expr = re.sub(r"(?<![A-Ga-g])#([0-9A-Fa-f]+)", r"0x\1", expr)
             for _ in range(5):
@@ -98,9 +104,11 @@ class MusaXSim:
                             pattern = rf"(?<![\w.]){re.escape(sym)}\b"
                         expr = re.sub(pattern, str(self.symbols[sym]), expr)
             clean_expr = expr.replace(" ", "")
-            if not re.match(r"^[0-9a-fA-Fx+\-*/%() \t.]+$", clean_expr): return 0
+            if not re.match(r"^[0-9a-fA-Fx+\-*/%()&| \t.><]+$", clean_expr): 
+                return 0
             return int(eval(expr))
-        except Exception: return 0
+        except Exception:
+            return 0
 
     def load_z8a(self, filename):
         if not os.path.exists(filename): print(f"Error: {filename} not found"); sys.exit(1)
@@ -211,7 +219,14 @@ class MusaXSim:
         for i in range(MAX_CHANNELS):
             ch = self.channels[i]
             if not ch["active"]: continue
+            safety_counter = 0
             while ch["active"] and ch["wait"] <= 0:
+                safety_counter += 1
+                if safety_counter > 2000:
+                    print(f"Error: Infinite loop detected in CH:{i} (PC:{ch['pc']:03X}). Check wait times.")
+                    ch["active"] = False
+                    break
+                
                 if ch["pc"] >= len(ch["stream"]): 
                     ch["active"] = False
                     self.finished_mask |= (1 << i)
