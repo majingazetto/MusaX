@@ -12,12 +12,27 @@ import tempfile
 import termios
 import tty
 import select
+import contextlib
 
 try:
     import pyaudio
     HAS_PYAUDIO = True
 except ImportError:
     HAS_PYAUDIO = False
+
+@contextlib.contextmanager
+def suppress_stderr():
+    """Redirects stderr to devnull at the FD level to catch C library noise."""
+    stderr_fd = sys.stderr.fileno()
+    with os.fdopen(os.dup(stderr_fd), 'w') as old_stderr:
+        with open(os.devnull, 'w') as devnull:
+            sys.stderr.flush()
+            os.dup2(devnull.fileno(), stderr_fd)
+        try:
+            yield
+        finally:
+            sys.stderr.flush()
+            os.dup2(old_stderr.fileno(), stderr_fd)
 
 try:
     import sounddevice as sd
@@ -495,7 +510,8 @@ class MusaXSim:
         pa = None
         stream = None
         if HAS_PYAUDIO:
-            pa = pyaudio.PyAudio()
+            with suppress_stderr():
+                pa = pyaudio.PyAudio()
             stream = pa.open(format=pyaudio.paInt16, channels=1, rate=SAMPLE_RATE, output=True, frames_per_buffer=SAMPLES_PER_INT)
         elif HAS_SOUNDDEVICE:
             # sounddevice usage would go here if needed

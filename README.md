@@ -19,6 +19,16 @@ Born on the MSX but designed for any Z80-based (and beyond) machine, MusaX focus
 - **Bytecode Stream:** Delta-timed events with support for Loops, Absolute Jumps, and Call/Return subroutines.
 - **Advanced Modulation:** Support for per-frame Macros, LFOs (Vibrato/Tremolo), and software-emulated filters.
 
+## Requirements
+
+### Python Simulator (`tools/musax_sim.py`)
+To run the real-time simulator, you need Python 3 and the PyAudio library. On Ubuntu/Debian:
+
+```bash
+sudo apt update
+sudo apt install python3-pyaudio portaudio19-dev
+```
+
 ## Project Structure
 
 - `src/`: Core assembly source code (Universal Z80).
