@@ -1,0 +1,42 @@
+--- MusaX Trace Log: examples/fx_test.Z8A ---
+T:1 | CH:0 | PC:000 | VOLUME val:10
+T:1 | CH:0 | PC:002 | INST id:0
+T:1 | CH:0 | PC:004 | NOTE C-4 wait:768
+T:1 | CH:1 | PC:000 | VOLUME val:8
+T:1 | CH:1 | PC:002 | INST id:0
+T:1 | CH:1 | PC:004 | NOTE E-4 wait:768
+T:1 | CH:2 | PC:000 | VOLUME val:12
+T:1 | CH:2 | PC:002 | INST id:0
+T:1 | CH:2 | PC:004 | NOTE C-3 wait:1536
+T:1 | CH:3 | PC:000 | VOLUME val:15
+T:1 | CH:3 | PC:002 | INST id:1
+T:1 | CH:3 | PC:004 | REST len:3072
+T:769 | CH:0 | PC:007 | NOTE D-4 wait:768
+T:769 | CH:1 | PC:007 | NOTE G-4 wait:768
+T:1537 | CH:0 | PC:00A | NOTE E-4 wait:768
+T:1537 | CH:1 | PC:000 | VOLUME val:8
+T:1537 | CH:1 | PC:002 | INST id:0
+T:1537 | CH:1 | PC:004 | NOTE E-4 wait:768
+T:1537 | CH:2 | PC:007 | NOTE G-2 wait:1536
+T:2305 | CH:0 | PC:00D | NOTE F-4 wait:768
+T:2305 | CH:1 | PC:007 | NOTE G-4 wait:768
+T:3073 | CH:0 | PC:000 | VOLUME val:10
+T:3073 | CH:0 | PC:002 | INST id:0
+T:3073 | CH:0 | PC:004 | NOTE C-4 wait:768
+T:3073 | CH:1 | PC:000 | VOLUME val:8
+T:3073 | CH:1 | PC:002 | INST id:0
+T:3073 | CH:1 | PC:004 | NOTE E-4 wait:768
+T:3073 | CH:2 | PC:000 | VOLUME val:12
+T:3073 | CH:2 | PC:002 | INST id:0
+T:3073 | CH:2 | PC:004 | NOTE C-3 wait:1536
+T:3073 | CH:3 | PC:007 | NOTE C-6 wait:192
+T:3265 | CH:3 | PC:00A | NOTE G-6 wait:192
+T:3457 | CH:3 | PC:00D | NOTE C-7 wait:192
+T:3649 | CH:3 | PC:010 | REST len:3072
+T:3841 | CH:0 | PC:007 | NOTE D-4 wait:768
+T:3841 | CH:1 | PC:007 | NOTE G-4 wait:768
+T:4609 | CH:0 | PC:00A | NOTE E-4 wait:768
+T:4609 | CH:1 | PC:000 | VOLUME val:8
+T:4609 | CH:1 | PC:002 | INST id:0
+T:4609 | CH:1 | PC:004 | NOTE E-4 wait:768
+T:4609 | CH:2 | PC:007 | NOTE G-2 wait:1536

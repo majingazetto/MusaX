@@ -1,0 +1,96 @@
+; ************************************************************************
+; * fx_test.Z8A - Ghost Playback Test for MusaX v1.2
+; ************************************************************************
+
+INCLUDE "musax_const.Z8A"
+
+; Music Header
+MUSHDR:
+    DEFW    #0800       ; BPM_STEP (Slow for testing)
+    DEFW    MUSCHA
+    DEFW    MUSCHB
+    DEFW    MUSCHC
+
+; FX Header
+FXHDR:
+    DEFW    FXCHA       ; Only FX on channel A
+    DEFW    0
+    DEFW    0
+
+; ===========================================================
+; MUSIC CHANNELS
+; ===========================================================
+MUSCHA:
+    DEFB    CMD_VOLUME, 10
+    DEFB    CMD_INST, 0
+.LOOP:
+    DEFB    C4
+    DEFW    LEN_Q
+    DEFB    D4
+    DEFW    LEN_Q
+    DEFB    E4
+    DEFW    LEN_Q
+    DEFB    F4
+    DEFW    LEN_Q
+    DEFB    CMD_RESTART, .LOOP
+
+MUSCHB:
+    DEFB    CMD_VOLUME, 8
+    DEFB    CMD_INST, 0
+.LOOP:
+    DEFB    E4
+    DEFW    LEN_Q
+    DEFB    G4
+    DEFW    LEN_Q
+    DEFB    CMD_RESTART, .LOOP
+
+MUSCHC:
+    DEFB    CMD_VOLUME, 12
+    DEFB    CMD_INST, 0
+.LOOP:
+    ; FX Table for real-time triggering
+    FX_TABLE:
+        DEFW    FXHDR_LO, 10    ; Jump-like FX (Low priority)
+        DEFW    FXHDR_HI, 20    ; Siren-like FX (High priority)
+        DEFW    0
+
+    ; FX Headers
+    FXHDR_LO:
+        DEFW    FX_JUMP
+        DEFW    0
+        DEFW    0
+
+    FXHDR_HI:
+        DEFW    FX_SIREN
+        DEFW    0
+        DEFW    0
+
+    ; ===========================================================
+    ; FX STREAMS
+    ; ===========================================================
+    FX_JUMP:
+        DEFB    CMD_VOLUME, 15
+        DEFB    CMD_INST, 1
+        DEFB    C4
+        DEFW    LEN_S
+        DEFB    E4
+        DEFW    LEN_S
+        DEFB    G4
+        DEFW    LEN_S
+        DEFB    C5
+        DEFW    LEN_Q
+        DEFB    REST
+        DEFW    0 ; Stop stream
+
+    FX_SIREN:
+        DEFB    CMD_VOLUME, 15
+        DEFB    CMD_INST, 0
+        DEFB    CMD_LOOP_S, 4
+        DEFB    A6
+        DEFW    LEN_E
+        DEFB    E6
+        DEFW    LEN_E
+        DEFB    CMD_LOOP_E
+        DEFB    REST
+        DEFW    0 ; Stop stream
+

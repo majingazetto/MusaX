@@ -44,15 +44,19 @@ except ImportError:
 # --- MUSAX CONSTANTS ---
 BASE_TICK = 768
 MAX_CHANNELS = 3
+MAX_STREAMS = 6  # 3 Music + 3 FX
 SAMPLE_RATE = 44100
 INTERRUPT_FREQ = 60
 SAMPLES_PER_INT = SAMPLE_RATE // INTERRUPT_FREQ
 
 
 class MusaXSim:
-    def __init__(self, filename=None, silent=False, debug_log=None):
+    def __init__(self, silent=False, debug_log=None):
         self.bpm_step = 0x0600
         self.accumulator = 0
+        self.sfx_mask = 0  # Bitmask for active FX on channels A, B, C
+        self.current_fx_priority = 0
+        self.fx_library = [] # List of {"pointers": [A, B, C], "priority": P}
         self.silent = silent
         self.total_ticks = 0
         self.playing = False
@@ -62,7 +66,7 @@ class MusaXSim:
         self.log_file = None
         if debug_log:
             self.log_file = open(debug_log, "w")
-            self.log_file.write(f"--- MusaX Trace Log: {filename} ---\n")
+            self.log_file.write(f"--- MusaX Trace Log ---\n")
 
         self.symbols = {
             "REST": 255, "LEN_Q": 768, "LEN_H": 1536, "LEN_E": 384, "LEN_S": 192,
@@ -78,8 +82,9 @@ class MusaXSim:
 
         self.channel_labels = {}  # stream_name -> [(offset, label)]
 
+        self.physical_channels = [{"sample_idx": 0} for _ in range(MAX_CHANNELS)]
         self.channels = []
-        for _ in range(MAX_CHANNELS):
+        for _ in range(MAX_STREAMS):
             self.channels.append({
                 "active": False, "note_val": 255, "freq": 0.0,
                 "vol": 15, "cur_vol": 0, "inst": 0, "inst_pc": 0,
@@ -93,8 +98,6 @@ class MusaXSim:
             0: [15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0],
             1: [15, 15, 14, 14, 13, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0],
         }
-
-        if filename: self.load_z8a(filename)
 
     def init_notes(self):
         notes = ["C", "Cs", "D", "Ds", "E", "F", "Fs", "G", "Gs", "A", "As", "B"]
@@ -138,33 +141,11 @@ class MusaXSim:
         except Exception:
             return 0
 
-    def load_z8a(self, filename):
+    def load_z8a(self, filename, is_fx_only=False):
         if not os.path.exists(filename): print(f"Error: {filename} not found"); sys.exit(1)
         
-        def read_with_includes(fname, base_path):
-            candidates = [
-                os.path.join(base_path, fname),
-                fname,
-                os.path.join(base_path, "..", "src", fname),
-                os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src", fname),
-            ]
-            full_path = next((p for p in candidates if os.path.exists(p)), None)
-            if full_path is None: return []
-            with open(full_path, "r") as f:
-                lines = f.readlines()
-            processed = []
-            for line in lines:
-                line = line.split(";")[0].strip()
-                if not line: continue
-                inc_match = re.match(r"^INCLUDE\s+[\"\']?([\w\.\-]+)[\"\']?", line, re.I)
-                if inc_match:
-                    inc_file = inc_match.group(1)
-                    processed.extend(read_with_includes(inc_file, os.path.dirname(full_path)))
-                else:
-                    processed.append(line)
-            return processed
-
-        lines = read_with_includes(os.path.basename(filename), os.path.dirname(filename))
+        base_path = os.path.dirname(filename)
+        lines = self.read_with_includes(os.path.basename(filename), base_path)
         
         # Pass 1: Gather EQU symbols
         for _ in range(5):
@@ -172,11 +153,12 @@ class MusaXSim:
                 m = re.match(r"^(\w+)\s+EQU\s+(.+)$", line)
                 if m: self.symbols[m.group(1)] = self.eval_expr(m.group(2))
 
-        # Pass 2: Map global and local labels to unique addresses
-        global_labels = {} # name -> [(expr, is_word), ...]
-        stream_bases = {} # name -> base address
+        # Pass 2: Map global and local labels
+        global_labels = {} 
+        stream_bases = {} 
         curr_global = None
-        base_addr = 0x1000
+        # Start base_addr high for FX if merging
+        base_addr = 0x8000 if is_fx_only else 0x1000
         current_offset = 0
         
         for line in lines:
@@ -185,7 +167,8 @@ class MusaXSim:
                 label = m.group(1)
                 if label.startswith("."):
                     if curr_global:
-                        self.symbols[curr_global + label] = stream_bases[curr_global] + current_offset
+                        full_name = curr_global + label
+                        self.symbols[full_name] = stream_bases[curr_global] + current_offset
                         self.channel_labels.setdefault(curr_global, []).append((current_offset, label))
                 else:
                     curr_global = label
@@ -200,13 +183,14 @@ class MusaXSim:
                 is_word = line.startswith("DEFW")
                 parts = [p.strip() for p in re.split(r",", line[4:].strip())]
                 for p in parts:
-                    # Prefix local labels in data with current global scope
                     if p.startswith("."): p = curr_global + p
                     global_labels[curr_global].append((p, is_word))
                     current_offset += 2 if is_word else 1
 
-        # Pass 3: Resolve all streams into final byte lists
-        final_streams = {}
+        # Pass 3: Resolve streams
+        if not hasattr(self, "all_streams"): self.all_streams = {}
+        if not hasattr(self, "stream_bases"): self.stream_bases = {}
+        
         for s_name, byte_data in global_labels.items():
             bytes_out = []
             for expr, is_word in byte_data:
@@ -215,26 +199,123 @@ class MusaXSim:
                     bytes_out.extend([val & 0xFF, (val >> 8) & 0xFF])
                 else:
                     bytes_out.append(val & 0xFF)
-            final_streams[s_name] = bytes_out
+            self.all_streams[s_name] = bytes_out
+            self.stream_bases[s_name] = stream_bases[s_name]
 
-        # Pass 4: Assign streams to channels
-        for i, ch_id in enumerate(["CHA", "CHB", "CHC"]):
-            match = next((k for k in final_streams if k.endswith(ch_id) and not k.endswith("LP")), None)
-            if not match: match = next((k for k in final_streams if ch_id in k and not k.endswith("LP")), None)
-            if match:
-                self.channels[i]["stream"] = final_streams[match]
-                self.channels[i]["stream_base"] = stream_bases[match]
-                self.channels[i]["stream_name"] = match
-                self.channels[i]["active"] = True
+        if not is_fx_only:
+            # Pass 4: Assign Music Streams
+            music_hdr_name = next((k for k in self.all_streams if "HDR" in k and "FX" not in k), None)
+            if music_hdr_name and len(self.all_streams[music_hdr_name]) >= 8:
+                hdr_bytes = self.all_streams[music_hdr_name]
+                self.bpm_step = hdr_bytes[0] + (hdr_bytes[1] << 8)
+                for i in range(3):
+                    ptr = hdr_bytes[2 + i*2] + (hdr_bytes[3 + i*2] << 8)
+                    if ptr != 0:
+                        s_name = next((name for name, addr in self.stream_bases.items() if addr == ptr), None)
+                        if s_name:
+                            self.channels[i]["stream"] = self.all_streams[s_name]
+                            self.channels[i]["stream_base"] = self.stream_bases[s_name]
+                            self.channels[i]["stream_name"] = s_name
+                            self.channels[i]["active"] = True
+            
+        # Pass 5: FX Logic (either from main file or dedicated FX file)
+        # Structure: DEFW PTR_FXHDR, PRIORITY
+        fx_table_name = next((k for k in global_labels if "FX_TABLE" in k), None)
+        if fx_table_name:
+            table_bytes = self.all_streams[fx_table_name]
+            # Clear library if it's a dedicated FX file to avoid duplicates or keep both? 
+            # Let's keep both for now, but usually it's one or the other.
+            for i in range(0, len(table_bytes), 4):
+                if i + 3 >= len(table_bytes): break
+                ptr = table_bytes[i] + (table_bytes[i+1] << 8)
+                if ptr == 0: break
+                priority = table_bytes[i+2] + (table_bytes[i+3] << 8)
+                
+                hdr_name = next((name for name, addr in self.stream_bases.items() if addr == ptr), None)
+                if hdr_name and hdr_name in self.all_streams:
+                    hdr_bytes = self.all_streams[hdr_name]
+                    fx_ptrs = []
+                    for j in range(3):
+                        if j*2 + 1 < len(hdr_bytes):
+                            fx_ptrs.append(hdr_bytes[j*2] + (hdr_bytes[j*2+1] << 8))
+                        else:
+                            fx_ptrs.append(0)
+                    self.fx_library.append({"ptrs": fx_ptrs, "priority": priority, "name": hdr_name})
 
-        hdr = next((k for k in final_streams if "HDR" in k), None)
-        if hdr and len(final_streams[hdr]) >= 2: 
-            self.bpm_step = final_streams[hdr][0] + (final_streams[hdr][1] << 8)
+    def read_with_includes(self, fname, base_path):
+        candidates = [
+            os.path.join(base_path, fname),
+            fname,
+            os.path.join(base_path, "..", "src", fname),
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src", fname),
+        ]
+        full_path = next((p for p in candidates if os.path.exists(p)), None)
+        if full_path is None: return []
+        with open(full_path, "r") as f:
+            lines = f.readlines()
+        processed = []
+        for line in lines:
+            line = line.split(";")[0].strip()
+            if not line: continue
+            inc_match = re.match(r"^INCLUDE\s+[\"\']?([\w\.\-]+)[\"\']?", line, re.I)
+            if inc_match:
+                inc_file = inc_match.group(1)
+                processed.extend(self.read_with_includes(inc_file, os.path.dirname(full_path)))
+            else:
+                processed.append(line)
+        return processed
+
+    def musax_req_fx(self, fx_idx):
+        if fx_idx < 0 or fx_idx >= len(self.fx_library): return
+        req = self.fx_library[fx_idx]
+        
+        # Priority Logic: If an FX is already playing, check if new priority >= current
+        any_fx_active = any(self.channels[i+3]["active"] for i in range(3))
+        if any_fx_active and req["priority"] < self.current_fx_priority:
+            if self.log_file: self.log_file.write(f"T:{self.total_ticks} | REQ_FX IGNORED: {req['name']} (P:{req['priority']} < {self.current_fx_priority})\n")
+            return
+
+        # Load new FX
+        self.current_fx_priority = req["priority"]
+        if self.log_file: self.log_file.write(f"T:{self.total_ticks} | REQ_FX START: {req['name']} (P:{self.current_fx_priority})\n")
+        
+        # Final Streams to match by address
+        # We need the stream_bases and final_streams from load_z8a, 
+        # but here we can just find them again from the pointers
+        for i in range(3):
+            ptr = req["ptrs"][i]
+            ch = self.channels[i+3]
+            if ptr == 0:
+                ch["active"] = False
+            else:
+                # Find the stream name and base for this pointer
+                s_name = None
+                s_base = 0
+                for name, addr in self.symbols.items():
+                    if addr == ptr and name in self.channel_labels: # Heuristic for stream labels
+                         s_name = name
+                         s_base = addr
+                         break
+                
+                # If not found in symbols/labels, it's a bit harder, but load_z8a already mapped them
+                # Let's assume the pointers are correct and re-init the channel
+                ch["pc"] = 0
+                ch["wait"] = 0
+                ch["loop_ticks"] = 0
+                ch["loop_stack"] = []
+                # Find the actual stream content from final_streams (we need to make final_streams an attribute)
+                if hasattr(self, "all_streams") and s_name in self.all_streams:
+                    ch["stream"] = self.all_streams[s_name]
+                    ch["stream_base"] = s_base
+                    ch["stream_name"] = s_name
+                    ch["active"] = True
 
     def _reset_channels(self):
         self.active_mask = 0
         self.finished_mask = 0
         self.global_loops = 0
+        self.sfx_mask = 0
+        self.current_fx_priority = 0
         for i, ch in enumerate(self.channels):
             ch["pc"] = 0; ch["wait"] = 0; ch["loop_count"] = 0; ch["loop_stack"] = []; ch["loop_ticks"] = 0
             if ch["stream"]:
@@ -244,7 +325,7 @@ class MusaXSim:
                 ch["active"] = False
 
     def process_events(self):
-        for i in range(MAX_CHANNELS):
+        for i in range(MAX_STREAMS):
             ch = self.channels[i]
             if not ch["active"]: continue
             safety_counter = 0
@@ -371,14 +452,27 @@ class MusaXSim:
 
         sys.stdout.write("\033[H")
         sys.stdout.write(
-            f"\033[1;36m MusaX Sim v1.0 \033[0m"
-            f" 60Hz | T:{self.total_ticks:>7} | {int(m)}:{s:04.1f} | BPM:{bpm:>3} | Loops:{self.global_loops}\r\n"
+            f"\033[1;36m MusaX Sim v1.3 \033[0m"
+            f" 60Hz | T:{self.total_ticks:>7} | {int(m)}:{s:04.1f} | BPM:{bpm:>3} | SFXMSK:{self.sfx_mask:03b} (P:{self.current_fx_priority}) | Loops:{self.global_loops}\r\n"
         )
         sys.stdout.write("─" * W + "\r\n")
 
         for i, ch in enumerate(self.channels):
-            ch_name  = f"CH{chr(65 + i)}"
-            status   = "\033[32mON \033[0m" if ch["active"] else "\033[31mOFF\033[0m"
+            is_fx = i >= 3
+            p_idx = i % 3
+            ch_name = f"{'FX' if is_fx else 'MU'}{chr(65 + p_idx)}"
+            
+            # Audible logic for dashboard highlight
+            audible = False
+            if is_fx:
+                if ch["active"]: audible = True
+            else:
+                if ch["active"] and not self.channels[i+3]["active"]: audible = True
+            
+            status_color = "\033[32m" if ch["active"] else "\033[31m"
+            audible_marker = "\033[1;33m>\033[0m" if audible else " "
+            
+            status   = f"{status_color}ON \033[0m" if ch["active"] else f"{status_color}OFF\033[0m"
             note     = ch["note_name"] if ch["active"] else "---"
             wait_str = f"W:{ch['wait']:4}" if ch["active"] else "     "
             bar      = ("█" * ch["cur_vol"]).ljust(13)
@@ -389,7 +483,6 @@ class MusaXSim:
             )
 
             if ch["active"]:
-                # Bar is BASE_TICK * 4 (a whole note)
                 bar_n  = ch["loop_ticks"] // (BASE_TICK * 4) + 1
                 label  = self._current_label(ch)[:8].ljust(8)
                 linfo  = self._loop_info(ch)[:13].ljust(13)
@@ -398,10 +491,17 @@ class MusaXSim:
                 extra  = " " * 28
 
             sys.stdout.write(
-                f" {ch_name} [{status}] {note:3}  {wait_str}  {bar}  {extra}  PC:{pc:03X}  {hex_snip}\r\n"
+                f"{audible_marker}{ch_name} [{status}] {note:3}  {wait_str}  {bar}  {extra}  PC:{pc:03X}  {hex_snip}\r\n"
             )
 
-        sys.stdout.write("─" * W + "\r\n [q/Esc] Quit\r\n")
+        sys.stdout.write("─" * W + "\r\n")
+        # Show FX Library
+        fx_lib_str = " FX Lib: "
+        for idx, fx in enumerate(self.fx_library):
+            fx_lib_str += f"[{idx+1}]{fx['name'][:6]}(P:{fx['priority']}) "
+        sys.stdout.write(fx_lib_str[:W] + "\r\n")
+        
+        sys.stdout.write(" [1-9] Trigger FX | [SPACE] Reset | [q/Esc] Quit\r\n")
         sys.stdout.flush()
 
     def render_audio(self, loops=0, duration_limit=60):
@@ -425,12 +525,17 @@ class MusaXSim:
 
             for _ in range(SAMPLES_PER_INT):
                 mixed = 0
-                for ch in self.channels:
-                    if not ch["active"] or ch["note_val"] == 255 or ch["freq"] == 0: continue
-                    period = SAMPLE_RATE / ch["freq"]
-                    ch["sample_idx"] += 1
-                    amp = ch["cur_vol"] * 1000
-                    mixed += amp if (ch["sample_idx"] % period) < (period / 2) else -amp
+                for i in range(MAX_CHANNELS):
+                    fx_ch = self.channels[i + 3]
+                    music_ch = self.channels[i]
+                    src = fx_ch if fx_ch["active"] else music_ch
+                    
+                    if src["active"] and src["note_val"] != 255 and src["freq"] > 0:
+                        period = SAMPLE_RATE / src["freq"]
+                        p_ch = self.physical_channels[i]
+                        p_ch["sample_idx"] += 1
+                        amp = src["cur_vol"] * 1000
+                        mixed += amp if (p_ch["sample_idx"] % period) < (period / 2) else -amp
                 all_samples.append(max(-32768, min(32767, int(mixed))))
 
             if loops > 0 and self.global_loops >= loops:
@@ -472,12 +577,29 @@ class MusaXSim:
         samples = []
         for _ in range(SAMPLES_PER_INT):
             mixed = 0
-            for ch in self.channels:
-                if not ch["active"] or ch["note_val"] == 255 or ch["freq"] == 0: continue
-                period = SAMPLE_RATE / ch["freq"]
-                ch["sample_idx"] += 1
-                amp = ch["cur_vol"] * 1000
-                mixed += amp if (ch["sample_idx"] % period) < (period / 2) else -amp
+            for i in range(MAX_CHANNELS):
+                # Channel i (0=A, 1=B, 2=C)
+                # Check if FX is active (stream i + 3)
+                fx_ch = self.channels[i + 3]
+                music_ch = self.channels[i]
+                
+                # Priority: FX > Music (Winner takes all)
+                src = fx_ch if fx_ch["active"] else music_ch
+                
+                if src["active"] and src["note_val"] != 255 and src["freq"] > 0:
+                    period = SAMPLE_RATE / src["freq"]
+                    # Use physical channel sample_idx for phase continuity
+                    p_ch = self.physical_channels[i]
+                    p_ch["sample_idx"] += 1
+                    amp = src["cur_vol"] * 1000
+                    mixed += amp if (p_ch["sample_idx"] % period) < (period / 2) else -amp
+                
+                # Update SFXMSK bit for dashboard/logic
+                if fx_ch["active"]:
+                    self.sfx_mask |= (1 << i)
+                else:
+                    self.sfx_mask &= ~(1 << i)
+
             samples.append(max(-32768, min(32767, int(mixed))))
         return samples
 
@@ -538,6 +660,9 @@ class MusaXSim:
                             self.accumulator = 0
                             self.start_time = time.time()
                             frames = 0
+                        elif '1' <= key <= '9':
+                            # Trigger FX from library (1-indexed for user convenience)
+                            self.musax_req_fx(int(key) - 1)
 
                 if loops > 0 and self.global_loops >= loops:
                     break
@@ -565,7 +690,8 @@ class MusaXSim:
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description='MusaX Simulator/Exporter')
-    p.add_argument("file", help="Source .Z8A file")
+    p.add_argument("file", help="Source .Z8A file (Music)")
+    p.add_argument("fx_file", nargs='?', help="Optional secondary .Z8A file (FX)")
     p.add_argument("--export", "-e", metavar="OUTPUT", nargs='?', const='',
                    help="Export to .wav or .mp3; omit filename to use song name")
     p.add_argument("--time", "-t", type=float, default=30,
@@ -575,7 +701,11 @@ if __name__ == "__main__":
     p.add_argument("--debug-log", type=str, help="Output file for execution trace")
     args = p.parse_args()
 
-    sim = MusaXSim(args.file, debug_log=args.debug_log)
+    sim = MusaXSim(debug_log=args.debug_log)
+    sim.load_z8a(args.file)
+    if args.fx_file:
+        sim.load_z8a(args.fx_file, is_fx_only=True)
+    
     if args.export is not None:
         if args.export:
             output = args.export
