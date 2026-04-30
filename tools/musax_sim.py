@@ -13,6 +13,19 @@ import termios
 import tty
 import select
 
+try:
+    import pyaudio
+    HAS_PYAUDIO = True
+except ImportError:
+    HAS_PYAUDIO = False
+
+try:
+    import sounddevice as sd
+    import numpy as np
+    HAS_SOUNDDEVICE = True
+except ImportError:
+    HAS_SOUNDDEVICE = False
+
 # --- MUSAX CONSTANTS ---
 BASE_TICK = 768
 MAX_CHANNELS = 3
@@ -438,64 +451,100 @@ class MusaXSim:
 
         print(f"[*] Exported {duration:.1f}s -> {output_path}")
 
+    def generate_frame_samples(self):
+        """Generates samples for exactly one interrupt frame (1/60th sec)"""
+        self.update()
+        samples = []
+        for _ in range(SAMPLES_PER_INT):
+            mixed = 0
+            for ch in self.channels:
+                if not ch["active"] or ch["note_val"] == 255 or ch["freq"] == 0: continue
+                period = SAMPLE_RATE / ch["freq"]
+                ch["sample_idx"] += 1
+                amp = ch["cur_vol"] * 1000
+                mixed += amp if (ch["sample_idx"] % period) < (period / 2) else -amp
+            samples.append(max(-32768, min(32767, int(mixed))))
+        return samples
+
     def run(self, loops=0):
-        # We pre-render the entire requested duration to a temp WAV for perfect playback
-        samples = self.render_audio(loops=loops)
-
-        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
-            temp_name = tmp.name
-        try:
-            self._write_wav(temp_name, samples)
-            cmd = ['afplay', temp_name] if sys.platform == 'darwin' else ['aplay', '-q', '-c', '1', temp_name]
-            play_proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-            self.total_ticks = 0
-            self.accumulator = 0
-            self._reset_channels()
-
-            os.system('clear')
-            self.start_time = time.time()
-            start_time = self.start_time
-            frames = 0
-            
-            # Setup non-blocking keyboard input if in a TTY
-            fd = sys.stdin.fileno()
-            is_tty = os.isatty(fd)
-            if is_tty:
-                old_settings = termios.tcgetattr(fd)
-                tty.setcbreak(fd)
-            
+        if not HAS_PYAUDIO and not HAS_SOUNDDEVICE:
+            print("[!] Error: No real-time audio library found (pyaudio or sounddevice).")
+            print("[*] Falling back to pre-rendered mode via afplay/aplay...")
+            # Fallback to old behavior if no libs available
+            samples = self.render_audio(loops=loops)
+            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
+                temp_name = tmp.name
             try:
+                self._write_wav(temp_name, samples)
+                cmd = ['afplay', temp_name] if sys.platform == 'darwin' else ['aplay', '-q', '-c', '1', temp_name]
+                play_proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                self._reset_channels()
+                self.start_time = time.time()
                 while play_proc.poll() is None:
-                    # Check for exit keys (q, Q, or Esc)
-                    if is_tty:
-                        while select.select([fd], [], [], 0)[0]:
-                            key = os.read(fd, 1).decode(errors='ignore')
-                            if key in ['q', 'Q', '\x1b']:
-                                play_proc.terminate()
-                                # Drain buffer
-                                while select.select([fd], [], [], 0)[0]: os.read(fd, 1)
-                                return
-
-                    if loops > 0 and self.global_loops >= loops:
-                        play_proc.terminate()
-                        break
-                    
-                    self.update()
-                    if frames % 2 == 0: self.draw()
-                    frames += 1
-                    
-                    # Timing sync
-                    wait_t = start_time + (frames / INTERRUPT_FREQ) - time.time()
-                    if wait_t > 0: time.sleep(wait_t)
+                    time.sleep(0.1)
             finally:
+                if os.path.exists(temp_name): os.remove(temp_name)
+            return
+
+        self._reset_channels()
+        os.system('clear')
+        self.start_time = time.time()
+        frames = 0
+        
+        # Audio stream setup (PyAudio preferred)
+        pa = None
+        stream = None
+        if HAS_PYAUDIO:
+            pa = pyaudio.PyAudio()
+            stream = pa.open(format=pyaudio.paInt16, channels=1, rate=SAMPLE_RATE, output=True, frames_per_buffer=SAMPLES_PER_INT)
+        elif HAS_SOUNDDEVICE:
+            # sounddevice usage would go here if needed
+            pass
+
+        # Setup non-blocking keyboard input
+        fd = sys.stdin.fileno()
+        is_tty = os.isatty(fd)
+        if is_tty:
+            old_settings = termios.tcgetattr(fd)
+            tty.setcbreak(fd)
+        
+        try:
+            while True:
+                # Check for input
                 if is_tty:
-                    termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+                    while select.select([fd], [], [], 0)[0]:
+                        key = os.read(fd, 1).decode(errors='ignore')
+                        if key in ['q', 'Q', '\x1b']: # Quit
+                            return
+                        elif key == ' ': # SPACE: Retrigger
+                            self._reset_channels()
+                            self.total_ticks = 0
+                            self.accumulator = 0
+                            self.start_time = time.time()
+                            frames = 0
+
+                if loops > 0 and self.global_loops >= loops:
+                    break
                 
-        except KeyboardInterrupt:
-            if 'play_proc' in locals(): play_proc.terminate()
+                # Generate and play frame
+                samples = self.generate_frame_samples()
+                byte_data = struct.pack(f'<{len(samples)}h', *samples)
+                if HAS_PYAUDIO:
+                    stream.write(byte_data)
+                
+                if frames % 2 == 0: self.draw()
+                frames += 1
+                
+                # Sync timing (optional for streaming, but good for dashboard)
+                # Note: stream.write is usually blocking until buffer is ready
         finally:
-            if os.path.exists(temp_name): os.remove(temp_name)
+            if stream:
+                if HAS_PYAUDIO:
+                    stream.stop_stream()
+                    stream.close()
+                    pa.terminate()
+            if is_tty:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
 
 if __name__ == "__main__":
