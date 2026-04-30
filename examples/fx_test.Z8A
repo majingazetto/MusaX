@@ -52,6 +52,8 @@ MUSCHC:
     FX_TABLE:
         DEFW    FXHDR_LO, 10    ; Jump-like FX (Low priority)
         DEFW    FXHDR_HI, 20    ; Siren-like FX (High priority)
+        DEFW    FXHDR_FAN, 25   ; 2-Channel Fanfare (Start Game)
+        DEFW    FXHDR_TRI, 30   ; 3-Channel Power-up (Top priority)
         DEFW    0
 
     ; FX Headers
@@ -65,9 +67,93 @@ MUSCHC:
         DEFW    0
         DEFW    0
 
+    FXHDR_FAN:
+        DEFW    FX_FAN_A
+        DEFW    FX_FAN_B
+        DEFW    0
+
+    FXHDR_TRI:
+        DEFW    FX_TRI_A
+        DEFW    FX_TRI_B
+        DEFW    FX_TRI_C
+
     ; ===========================================================
     ; FX STREAMS
     ; ===========================================================
+    
+    ; --- 2-Channel Fanfare ---
+    FX_FAN_A:
+        DEFB    CMD_VOLUME, 15
+        DEFB    CMD_INST, 0
+        DEFB    G4
+        DEFW    LEN_S
+        DEFB    G4
+        DEFW    LEN_S
+        DEFB    G4
+        DEFW    LEN_S
+        DEFB    C5
+        DEFW    LEN_H
+        DEFB    REST
+        DEFW    0
+
+    FX_FAN_B:
+        DEFB    CMD_VOLUME, 12
+        DEFB    CMD_INST, 0
+        DEFB    E4
+        DEFW    LEN_S
+        DEFB    E4
+        DEFW    LEN_S
+        DEFB    E4
+        DEFW    LEN_S
+        DEFB    G4
+        DEFW    LEN_H
+        DEFB    REST
+        DEFW    0
+
+    ; --- 3-Channel "Power-Up" ---
+    FX_TRI_A:
+        DEFB    CMD_VOLUME, 15
+        DEFB    CMD_INST, 1
+        DEFB    C4
+        DEFW    LEN_S
+        DEFB    E4
+        DEFW    LEN_S
+        DEFB    G4
+        DEFW    LEN_S
+        DEFB    C5
+        DEFW    LEN_H
+        DEFB    REST
+        DEFW    0
+    
+    FX_TRI_B:
+        DEFB    CMD_VOLUME, 13
+        DEFB    CMD_INST, 1
+        DEFB    E4
+        DEFW    LEN_S
+        DEFB    G4
+        DEFW    LEN_S
+        DEFB    C5
+        DEFW    LEN_S
+        DEFB    E5
+        DEFW    LEN_H
+        DEFB    REST
+        DEFW    0
+
+    FX_TRI_C:
+        DEFB    CMD_VOLUME, 11
+        DEFB    CMD_INST, 1
+        DEFB    G4
+        DEFW    LEN_S
+        DEFB    C5
+        DEFW    LEN_S
+        DEFB    E5
+        DEFW    LEN_S
+        DEFB    G5
+        DEFW    LEN_H
+        DEFB    REST
+        DEFW    0
+
+    ; --- Single Channel FX ---
     FX_JUMP:
         DEFB    CMD_VOLUME, 15
         DEFB    CMD_INST, 1
@@ -93,4 +179,3 @@ MUSCHC:
         DEFB    CMD_LOOP_E
         DEFB    REST
         DEFW    0 ; Stop stream
-

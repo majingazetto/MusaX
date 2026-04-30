@@ -155,12 +155,30 @@ class MusaXSim:
 
         # Pass 2: Map global and local labels
         global_labels = {} 
-        stream_bases = {} 
         curr_global = None
         # Start base_addr high for FX if merging
         base_addr = 0x8000 if is_fx_only else 0x1000
         current_offset = 0
         
+        # Pre-scan for stream sizes to avoid overlaps
+        stream_sizes = {}
+        scan_global = None
+        scan_offset = 0
+        for line in lines:
+            m = re.match(r"^([\w.]+):$", line)
+            if m:
+                label = m.group(1)
+                if not label.startswith("."):
+                    if scan_global: stream_sizes[scan_global] = scan_offset
+                    scan_global = label
+                    scan_offset = 0
+                continue
+            if scan_global and (line.startswith("DEFB") or line.startswith("DEFW")):
+                parts = [p.strip() for p in re.split(r",", line[4:].strip())]
+                scan_offset += len(parts) * (2 if line.startswith("DEFW") else 1)
+        if scan_global: stream_sizes[scan_global] = scan_offset
+
+        local_stream_bases = {}
         for line in lines:
             m = re.match(r"^([\w.]+):$", line)
             if m:
@@ -168,15 +186,16 @@ class MusaXSim:
                 if label.startswith("."):
                     if curr_global:
                         full_name = curr_global + label
-                        self.symbols[full_name] = stream_bases[curr_global] + current_offset
+                        self.symbols[full_name] = local_stream_bases[curr_global] + current_offset
                         self.channel_labels.setdefault(curr_global, []).append((current_offset, label))
                 else:
+                    if curr_global:
+                        base_addr += stream_sizes[curr_global] + 16 # Add small padding
                     curr_global = label
-                    stream_bases[curr_global] = base_addr
+                    local_stream_bases[curr_global] = base_addr
                     self.symbols[curr_global] = base_addr
                     global_labels[curr_global] = []
                     current_offset = 0
-                    base_addr += 0x1000 
                 continue
             
             if curr_global and (line.startswith("DEFB") or line.startswith("DEFW")):
@@ -191,6 +210,10 @@ class MusaXSim:
         if not hasattr(self, "all_streams"): self.all_streams = {}
         if not hasattr(self, "stream_bases"): self.stream_bases = {}
         
+        # Merge local stream_bases into the global one
+        for name, addr in local_stream_bases.items():
+            self.stream_bases[name] = addr
+
         for s_name, byte_data in global_labels.items():
             bytes_out = []
             for expr, is_word in byte_data:
@@ -200,7 +223,7 @@ class MusaXSim:
                 else:
                     bytes_out.append(val & 0xFF)
             self.all_streams[s_name] = bytes_out
-            self.stream_bases[s_name] = stream_bases[s_name]
+            self.stream_bases[s_name] = local_stream_bases[s_name]
 
         if not is_fx_only:
             # Pass 4: Assign Music Streams
@@ -279,36 +302,34 @@ class MusaXSim:
         self.current_fx_priority = req["priority"]
         if self.log_file: self.log_file.write(f"T:{self.total_ticks} | REQ_FX START: {req['name']} (P:{self.current_fx_priority})\n")
         
-        # Final Streams to match by address
-        # We need the stream_bases and final_streams from load_z8a, 
-        # but here we can just find them again from the pointers
         for i in range(3):
             ptr = req["ptrs"][i]
             ch = self.channels[i+3]
             if ptr == 0:
                 ch["active"] = False
             else:
-                # Find the stream name and base for this pointer
-                s_name = None
-                s_base = 0
-                for name, addr in self.symbols.items():
-                    if addr == ptr and name in self.channel_labels: # Heuristic for stream labels
-                         s_name = name
-                         s_base = addr
-                         break
+                # Find the global stream that contains this pointer
+                best_match = None
+                best_base = -1
+                for name, base in self.stream_bases.items():
+                    if name in self.all_streams:
+                        stream_len = len(self.all_streams[name])
+                        if base <= ptr < base + stream_len:
+                            if base > best_base:
+                                best_match = name
+                                best_base = base
                 
-                # If not found in symbols/labels, it's a bit harder, but load_z8a already mapped them
-                # Let's assume the pointers are correct and re-init the channel
-                ch["pc"] = 0
-                ch["wait"] = 0
-                ch["loop_ticks"] = 0
-                ch["loop_stack"] = []
-                # Find the actual stream content from final_streams (we need to make final_streams an attribute)
-                if hasattr(self, "all_streams") and s_name in self.all_streams:
-                    ch["stream"] = self.all_streams[s_name]
-                    ch["stream_base"] = s_base
-                    ch["stream_name"] = s_name
+                if best_match:
+                    ch["stream"] = self.all_streams[best_match]
+                    ch["stream_base"] = best_base
+                    ch["stream_name"] = best_match
+                    ch["pc"] = ptr - best_base
+                    ch["wait"] = 0
+                    ch["loop_ticks"] = 0
+                    ch["loop_stack"] = []
                     ch["active"] = True
+                else:
+                    ch["active"] = False
 
     def _reset_channels(self):
         self.active_mask = 0
@@ -320,7 +341,7 @@ class MusaXSim:
             ch["pc"] = 0; ch["wait"] = 0; ch["loop_count"] = 0; ch["loop_stack"] = []; ch["loop_ticks"] = 0
             if ch["stream"]:
                 ch["active"] = True
-                self.active_mask |= (1 << i)
+                if i < 3: self.active_mask |= (1 << i)
             else:
                 ch["active"] = False
 
@@ -338,9 +359,9 @@ class MusaXSim:
                 
                 if ch["pc"] >= len(ch["stream"]): 
                     ch["active"] = False
-                    self.finished_mask |= (1 << i)
+                    if i < 3: self.finished_mask |= (1 << i)
                     if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{i} | PC:{ch['pc']:03X} | END OF STREAM\n")
-                    break
+                    continue
                 
                 old_pc = ch["pc"]
                 cmd = ch["stream"][ch["pc"]]; ch["pc"] += 1
@@ -348,64 +369,62 @@ class MusaXSim:
                 if cmd == 0xFF:  # REST [Len (DEFW)]
                     ch["note_val"] = 255; ch["freq"] = 0.0
                     if ch["pc"] + 1 < len(ch["stream"]):
-                        ch["wait"] = ch["stream"][ch["pc"]] + (ch["stream"][ch["pc"] + 1] << 8); ch["pc"] += 2
+                        wait_val = ch["stream"][ch["pc"]] + (ch["stream"][ch["pc"] + 1] << 8); ch["pc"] += 2
+                        if wait_val == 0: # Zero wait = STOP
+                            ch["active"] = False
+                            if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{i} | PC:{old_pc:03X} | STOP via REST 0\n")
+                            continue
+                        else:
+                            ch["wait"] = wait_val
                         if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{i} | PC:{old_pc:03X} | REST len:{ch['wait']}\n")
                     else: ch["active"] = False
                 elif cmd >= 0xF7:
                     if cmd == 0xFC: # VOLUME [Val]
                         ch["vol"] = ch["stream"][ch["pc"]]; ch["pc"] += 1
-                        if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{i} | PC:{old_pc:03X} | VOLUME val:{ch['vol']}\n")
                     elif cmd == 0xFA: # INST [ID]
                         ch["inst"] = ch["stream"][ch["pc"]]; ch["pc"] += 1
-                        if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{i} | PC:{old_pc:03X} | INST id:{ch['inst']}\n")
                     elif cmd == 0xFD: # TEMPO [Val]
                         if ch["pc"] + 1 < len(ch["stream"]):
                             self.bpm_step = ch["stream"][ch["pc"]] + (ch["stream"][ch["pc"]+1] << 8); ch["pc"] += 2
-                            if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{i} | PC:{old_pc:03X} | TEMPO step:{self.bpm_step}\n")
                     elif cmd == 0xF9: # LOOP_S [Count]
                         count = ch["stream"][ch["pc"]]; ch["pc"] += 1
                         ch["loop_stack"].append({"pc": ch["pc"], "count": count, "total": count})
-                        if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{i} | PC:{old_pc:03X} | LOOP_S count:{count}\n")
                     elif cmd == 0xF8: # LOOP_E
                         if ch["loop_stack"]:
                             ch["loop_stack"][-1]["count"] -= 1
                             if ch["loop_stack"][-1]["count"] > 0:
                                 ch["pc"] = ch["loop_stack"][-1]["pc"]
-                                if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{i} | PC:{old_pc:03X} | LOOP_E repeat -> PC:{ch['pc']:03X}\n")
                             else:
                                 ch["loop_stack"].pop()
-                                if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{i} | PC:{old_pc:03X} | LOOP_E finished\n")
                     elif cmd == 0xFB: # GATE [Val]
-                        ch["pc"] += 1  # consume parameter, gate not yet implemented
-                        if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{i} | PC:{old_pc:03X} | GATE (ignored)\n")
+                        ch["pc"] += 1 
                     elif cmd == 0xF7: # GOTO [Addr (DEFW)]
                         if ch["pc"] + 1 < len(ch["stream"]):
                             addr = ch["stream"][ch["pc"]] + (ch["stream"][ch["pc"]+1] << 8)
                             ch["pc"] = addr - ch["stream_base"]
-                            if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{i} | PC:{old_pc:03X} | GOTO -> PC:{ch['pc']:03X}\n")
                         else:
                             ch["pc"] = 0
                     elif cmd == 0xFE: # RESTART [Addr (DEFW)]
-                        self.finished_mask |= (1 << i)
-                        ch["loop_ticks"] = 0
-                        if ch["pc"] + 1 < len(ch["stream"]):
-                            addr = ch["stream"][ch["pc"]] + (ch["stream"][ch["pc"]+1] << 8)
-                            ch["pc"] = addr - ch["stream_base"]
-                            if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{i} | PC:{old_pc:03X} | RESTART -> PC:{ch['pc']:03X}\n")
-                        else:
-                            ch["pc"] = 0
+                        if i < 3: 
+                            self.finished_mask |= (1 << i)
+                            ch["loop_ticks"] = 0
+                            if ch["pc"] + 1 < len(ch["stream"]):
+                                addr = ch["stream"][ch["pc"]] + (ch["stream"][ch["pc"]+1] << 8)
+                                ch["pc"] = addr - ch["stream_base"]
+                            else:
+                                ch["pc"] = 0
+                        else: # FX should NOT restart unless explicitly coded. RESTART in FX = STOP
+                            ch["active"] = False
                         
-                        if (self.finished_mask & self.active_mask) == self.active_mask:
+                        if i < 3 and (self.finished_mask & self.active_mask) == self.active_mask:
                             self.global_loops += 1
                             self.finished_mask = 0
-                            if self.log_file: self.log_file.write(f"T:{self.total_ticks} | --- GLOBAL LOOP {self.global_loops} COMPLETED ---\n")
                 else:
                     ch["note_val"] = cmd; ch["freq"] = self.note_to_freq(cmd); ch["inst_pc"] = 0; ch["sample_idx"] = 0
-                    notes = ["C-", "Cs", "D-", "Ds", "E-", "F-", "Fs", "G-", "Gs", "A-", "As", "B-"]
+                    notes = ["C-", "C#", "D-", "D#", "E-", "F-", "F#", "G-", "G#", "A-", "A#", "B-"]
                     ch["note_name"] = f"{notes[cmd % 12]}{cmd // 12}"
                     if ch["pc"] + 1 < len(ch["stream"]):
                         ch["wait"] = ch["stream"][ch["pc"]] + (ch["stream"][ch["pc"] + 1] << 8); ch["pc"] += 2
-                        if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{i} | PC:{old_pc:03X} | NOTE {ch['note_name']} wait:{ch['wait']}\n")
                     else: ch["active"] = False
 
     def update(self):
@@ -417,6 +436,15 @@ class MusaXSim:
                     if ch["wait"] > 0: ch["wait"] -= 1
                     ch["loop_ticks"] += 1
             self.process_events()
+        
+        self.sfx_mask = 0
+        for i in range(MAX_CHANNELS):
+            if self.channels[i+3]["active"]:
+                self.sfx_mask |= (1 << i)
+        
+        if self.sfx_mask == 0:
+            self.current_fx_priority = 0
+
         for ch in self.channels:
             if not ch["active"] or ch["note_val"] == 255: ch["cur_vol"] = 0; continue
             env = self.instruments.get(ch["inst"], [15])
@@ -441,67 +469,91 @@ class MusaXSim:
         return " ".join(f"[{p}]" for p in parts)
 
     def _bpm(self):
-        # Formula: 3600 * bpm_step / (BASE_TICK * 256)
         return int(3600 * self.bpm_step / (BASE_TICK * 256))
 
     def draw(self):
-        W = 96
+        W = 105
         elapsed = time.time() - getattr(self, "start_time", time.time())
         m, s = divmod(elapsed, 60)
         bpm = self._bpm()
+        
+        # Beat blink logic (every 4 quarter notes)
+        beat_active = (self.total_ticks // BASE_TICK) % 2 == 0
+        bpm_style = "\033[1;32;5m" if beat_active else "\033[1;32m"
 
         sys.stdout.write("\033[H")
         sys.stdout.write(
-            f"\033[1;36m MusaX Sim v1.3 \033[0m"
-            f" 60Hz | T:{self.total_ticks:>7} | {int(m)}:{s:04.1f} | BPM:{bpm:>3} | SFXMSK:{self.sfx_mask:03b} (P:{self.current_fx_priority}) | Loops:{self.global_loops}\r\n"
+            f"\033[1;44;37m MusaX Simulator v1.5 \033[0m"
+            f" 60Hz | T:{self.total_ticks:>7} | {int(m)}:{s:04.1f} | {bpm_style}BPM:{bpm:>3}\033[0m | SFX:{self.sfx_mask:03b} | \033[1;33mP:{self.current_fx_priority:>2}\033[0m | Loops:{self.global_loops}\r\n"
         )
-        sys.stdout.write("─" * W + "\r\n")
+        sys.stdout.write("\033[94m━\033[0m" * W + "\r\n")
 
-        for i, ch in enumerate(self.channels):
-            is_fx = i >= 3
-            p_idx = i % 3
-            ch_name = f"{'FX' if is_fx else 'MU'}{chr(65 + p_idx)}"
-            
-            # Audible logic for dashboard highlight
-            audible = False
-            if is_fx:
-                if ch["active"]: audible = True
-            else:
-                if ch["active"] and not self.channels[i+3]["active"]: audible = True
-            
-            status_color = "\033[32m" if ch["active"] else "\033[31m"
-            audible_marker = "\033[1;33m>\033[0m" if audible else " "
-            
-            status   = f"{status_color}ON \033[0m" if ch["active"] else f"{status_color}OFF\033[0m"
-            note     = ch["note_name"] if ch["active"] else "---"
-            wait_str = f"W:{ch['wait']:4}" if ch["active"] else "     "
-            bar      = ("█" * ch["cur_vol"]).ljust(13)
-            pc       = ch["pc"]
-            hex_snip = " ".join(
-                f"{ch['stream'][pc+j]:02X}" if pc + j < len(ch["stream"]) else "--"
-                for j in range(4)
-            )
+        # Table Header
+        sys.stdout.write("\033[1m  CH  STATE  NOTE  WAIT   VOLUME / ENVELOPE       BEAT  LABEL     LOOPS          PC   HEX SNIP\033[0m\r\n")
+        sys.stdout.write("  " + "\033[90m─\033[0m" * (W-2) + "\r\n")
 
-            if ch["active"]:
-                bar_n  = ch["loop_ticks"] // (BASE_TICK * 4) + 1
-                label  = self._current_label(ch)[:8].ljust(8)
-                linfo  = self._loop_info(ch)[:13].ljust(13)
-                extra  = f"B:{bar_n:<3}  {label}  {linfo}"
-            else:
-                extra  = " " * 28
+        for i in range(MAX_CHANNELS):
+            for ch_idx in [i, i+3]:
+                ch = self.channels[ch_idx]
+                is_fx = ch_idx >= 3
+                audible = is_fx if ch["active"] else (ch["active"] and not self.channels[i+3]["active"])
+                
+                audible_marker = "\033[1;33m▶\033[0m" if audible else " "
+                ch_name = f"\033[1m{'FX' if is_fx else 'MU'}{chr(65 + i)}\033[0m"
+                
+                status_color = "\033[1;32m" if ch["active"] else "\033[2;90m"
+                status_text = "ON " if ch["active"] else "OFF"
+                
+                note_color = "\033[1;37m" if audible else "\033[90m"
+                note     = f"{note_color}{ch['note_name']:3}\033[0m" if ch["active"] else "\033[90m---\033[0m"
+                wait_str = f"{ch['wait']:4}" if ch["active"] else "    "
+                
+                # Visual volume bar
+                if audible:
+                    # Multi-color bar
+                    v = ch["cur_vol"]
+                    bar = "\033[1;32m" + "█" * min(v, 8) + "\033[1;33m" + "█" * max(0, min(v-8, 4)) + "\033[1;31m" + "█" * max(0, v-12) + "\033[0m"
+                    bar = bar.ljust(15 + (len(bar) - v)) # adjust for ANSI codes
+                else:
+                    bar = "\033[90m" + "▒" * ch["cur_vol"] + " " * (15 - ch["cur_vol"]) + "\033[0m"
+                
+                pc       = f"{ch['pc']:03X}"
+                hex_snip = "\033[90m" + " ".join(
+                    f"{ch['stream'][ch['pc']+j]:02X}" if ch['pc'] + j < len(ch['stream']) else "--"
+                    for j in range(4)
+                ) + "\033[0m"
 
-            sys.stdout.write(
-                f"{audible_marker}{ch_name} [{status}] {note:3}  {wait_str}  {bar}  {extra}  PC:{pc:03X}  {hex_snip}\r\n"
-            )
+                if ch["active"]:
+                    bar_n  = f"{ch['loop_ticks'] // (BASE_TICK * 4) + 1:<3}"
+                    label  = f"\033[36m{self._current_label(ch)[:8]:8}\033[0m"
+                    linfo  = f"\033[35m{self._loop_info(ch)[:12]:12}\033[0m"
+                else:
+                    bar_n = "   "; label = " " * 8; linfo = " " * 12
 
-        sys.stdout.write("─" * W + "\r\n")
-        # Show FX Library
-        fx_lib_str = " FX Lib: "
-        for idx, fx in enumerate(self.fx_library):
-            fx_lib_str += f"[{idx+1}]{fx['name'][:6]}(P:{fx['priority']}) "
-        sys.stdout.write(fx_lib_str[:W] + "\r\n")
+                sys.stdout.write(
+                    f"{audible_marker} {ch_name} [{status_color}{status_text}\033[0m] {note}  {wait_str}  {bar:25}  {bar_n}   {label}  {linfo}   {pc}  {hex_snip}\r\n"
+                )
+            if i < 2: sys.stdout.write("  " + "\033[2;90m┄\033[0m" * (W-4) + "\r\n")
+
+        sys.stdout.write("\033[94m━\033[0m" * W + "\r\n")
         
-        sys.stdout.write(" [1-9] Trigger FX | [SPACE] Reset | [q/Esc] Quit\r\n")
+        # Enhanced FX Library View
+        sys.stdout.write(" \033[1;37;44m FX LIBRARY \033[0m\r\n")
+        fx_line = " "
+        for idx, fx in enumerate(self.fx_library):
+            active_fx = (self.current_fx_priority == fx['priority'] and any(self.channels[i+3]["active"] for i in range(3)))
+            color = "\033[1;33m" if active_fx else "\033[90m"
+            sel_mark = "\033[1;33m→\033[0m" if active_fx else " "
+            ch_info = "".join(f"\033[1;37m{chr(65+j)}\033[0m" if fx['ptrs'][j] > 0 else "\033[90m-\033[0m" for j in range(3))
+            
+            fx_line += f"{sel_mark}\033[1m[{idx+1}]\033[0m {color}{fx['name'][:12]:12}\033[0m \033[2m(P:{fx['priority']:2})\033[0m [{ch_info}]   "
+            if (idx + 1) % 3 == 0:
+                sys.stdout.write(fx_line + "\r\n ")
+                fx_line = " "
+        sys.stdout.write(fx_line + "\r\n")
+        
+        sys.stdout.write("\033[94m━\033[0m" * W + "\r\n")
+        sys.stdout.write(" \033[1m[1-9]\033[0m Trigger FX | \033[1m[SPACE]\033[0m Reset | \033[1m[q/Esc]\033[0m Quit\r\n")
         sys.stdout.flush()
 
     def render_audio(self, loops=0, duration_limit=60):
