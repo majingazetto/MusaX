@@ -54,4 +54,10 @@ FX are triggered by requesting a stream address. FX default to `#2400` (~168 BPM
 The Python simulator (`musax_sim.py`) implements a **sample-accurate** rendering engine. 
 - **Transport:** Advanced per-audio-sample to eliminate 60Hz quantization.
 - **Phase Rendering:** `CMD_PHASE` delays are rendered by shifting event execution by precise sample counts.
-- **Trace Logs:** Detailed execution trace available via `--debug-log`.
+## 6. Documentation Maintenance
+This specification and the accompanying `commands.md` and `simulator.md` MUST be updated whenever:
+- A new bytecode command is added or an existing one is modified.
+- The internal timing or transport logic changes.
+- The simulator adds new features, interactive controls, or log formats.
+- Architectural decisions (like priority systems) are refactored.
+
