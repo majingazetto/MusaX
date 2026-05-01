@@ -61,6 +61,11 @@ class MusaXSim:
         self.global_loops = 0
         self.active_mask = 0
         self.finished_mask = 0
+        self.paused = False
+        self.debug_step = False
+        self.last_event_ch = -1
+        self.history = []  # List of state snapshots
+        self.max_history = 100
         self.log_file = None
         if debug_log:
             self.log_file = open(debug_log, "w")
@@ -370,6 +375,8 @@ class MusaXSim:
         if not ch["active"]: return
         safety_counter = 0
         while ch["active"] and ch["wait"] <= 0:
+            self.last_event_ch = ch_idx
+            self.debug_step = False
             safety_counter += 1
             if safety_counter > 2000:
                 print(f"Error: Infinite loop detected in CH:{ch_idx} (PC:{ch['pc']:03X}). Check wait times.")
@@ -564,13 +571,13 @@ class MusaXSim:
         sys.stdout.write("\033[H")
         sys.stdout.write(
             f"\033[1;44;37m MusaX Simulator v1.7 \033[0m"
-            f" 60Hz | T:{self.total_ticks:>7} | {int(m)}:{s:04.1f} | SFX:{self.sfx_mask:03b} | \033[1;33mP:{self.current_fx_priority:>2}\033[0m | Loops:{self.global_loops}\r\n"
+            f" 60Hz | T:{self.total_ticks:>7} | {int(m)}:{s:04.1f} | SFX:{self.sfx_mask:03b} | \033[1;33mP:{self.current_fx_priority:>2}\033[0m | Loops:{self.global_loops} {'\033[1;31m[PAUSED]\033[0m' if self.paused else ''}\r\n"
         )
         sys.stdout.write("\033[94m━\033[0m" * W + "\r\n")
 
         # Table Header - Precisely aligned
         # Indices: CH:2, STATE:6, NOTE:14, WAIT:20, VOLUME:27, BEAT:51, LABEL:58, LOOPS:67, PC:81
-        sys.stdout.write("\033[1m  CH  STATE   NOTE  WAIT   VOLUME / ENVELOPE       BPM   LABEL     LOOPS          PC   HEX SNIP\033[0m\r\n")
+        sys.stdout.write("\033[1m  CH  STATE   NOTE  WAIT   VOLUME / ENVELOPE       BPM   LABEL     LOOPS          PC   FRAC HEX SNIP\033[0m\r\n")
         sys.stdout.write("  " + "\033[90m─\033[0m" * (W-2) + "\r\n")
 
         for i in range(MAX_CHANNELS):
@@ -579,8 +586,13 @@ class MusaXSim:
                 is_fx = ch_idx >= 3
                 audible = is_fx if ch["active"] else (ch["active"] and not self.channels[i+3]["active"])
                 
-                audible_marker = "\033[1;33m▶\033[0m" if audible else " "
-                ch_name = f"\033[1m{'FX' if is_fx else 'MU'}{chr(65 + i)}\033[0m"
+                # Highlight if this channel was the last one to process an event
+                if self.paused and ch_idx == self.last_event_ch:
+                    audible_marker = "\033[1;33m▶\033[0m"
+                    ch_name = f"\033[1;33m{'FX' if is_fx else 'MU'}{chr(65 + i)}\033[0m"
+                else:
+                    audible_marker = "\033[1;33m▶\033[0m" if audible else " "
+                    ch_name = f"\033[1m{'FX' if is_fx else 'MU'}{chr(65 + i)}\033[0m"
                 
                 status_color = "\033[1;32m" if ch["active"] else "\033[2;90m"
                 status_text = "ON " if ch["active"] else "OFF"
@@ -598,6 +610,7 @@ class MusaXSim:
                     bar = "\033[90m" + "▒" * ch["cur_vol"] + " " * (15 - ch["cur_vol"]) + "\033[0m"
                 
                 pc       = f"{ch['pc']:03X}"
+                frac     = f"\033[90m.{int(ch['accumulator']):03}\033[0m"
                 hex_snip = "\033[90m" + " ".join(
                     f"{ch['stream'][ch['pc']+j]:02X}" if ch['pc'] + j < len(ch['stream']) else "--"
                     for j in range(4)
@@ -618,7 +631,7 @@ class MusaXSim:
                 row += f"{bpm_n}    "
                 row += f"{self._pad(label, 9)}"
                 row += f"{self._pad(linfo, 14)}"
-                row += f"{pc}  "
+                row += f"{pc} {frac} "
                 row += f"{hex_snip}\r\n"
                 sys.stdout.write(row)
 
@@ -651,7 +664,7 @@ class MusaXSim:
             sys.stdout.write(fx_line + "\r\n")
         
         sys.stdout.write("\033[94m━\033[0m" * W + "\r\n")
-        sys.stdout.write(" \033[1m[1-9]\033[0m Trigger FX | \033[1m[SPACE]\033[0m Reset | \033[1m[q/Esc]\033[0m Quit\r\n")
+        sys.stdout.write(" \033[1m[1-9]\033[0m Trigger FX | \033[1m[SPACE]\033[0m Reset | \033[1m[p]\033[0m Pause | \033[1m[n]\033[0m Next | \033[1m[b]\033[0m Back | \033[1m[q/Esc]\033[0m Quit\r\n")
         sys.stdout.flush()
 
     def render_audio(self, loops=0, duration_limit=60):
@@ -722,11 +735,13 @@ class MusaXSim:
 
     def generate_frame_samples(self):
         """Generates samples for exactly one interrupt frame with sub-frame precision"""
+        was_debug = self.debug_step
         self.update() # Update envelopes/status once per frame
         frame_samples = []
         
         # Distribute bpm_step across samples for high-precision timing
         for s in range(SAMPLES_PER_INT):
+            event_this_sample = False
             for i in range(MAX_STREAMS):
                 ch = self.channels[i]
                 # Increment proportionally (bpm_step is per 1/60th sec)
@@ -736,7 +751,13 @@ class MusaXSim:
                     if ch["active"]:
                         if ch["wait"] > 0: ch["wait"] -= 1
                         ch["loop_ticks"] += 1
-                    self.process_events(i)
+                    
+                    # Before processing an event, save a snapshot if we haven't this sample
+                    if ch["active"] and ch["wait"] <= 0:
+                        if not event_this_sample:
+                            self.push_history()
+                            event_this_sample = True
+                        self.process_events(i)
             
             # Mix current sample
             mixed = 0
@@ -758,7 +779,66 @@ class MusaXSim:
 
             frame_samples.append(max(-32768, min(32767, int(mixed))))
             
+            # If we were in debug_step mode and an event just cleared it, stop here
+            if was_debug and self.debug_step == False:
+                break
+            
         return frame_samples
+
+    def render_static_samples(self, num_samples):
+        """Generates audio samples based on CURRENT state without advancing time/logic"""
+        samples = []
+        for _ in range(num_samples):
+            mixed = 0
+            for i in range(MAX_CHANNELS):
+                fx_ch = self.channels[i + 3]
+                music_ch = self.channels[i]
+                src = fx_ch if fx_ch["active"] else music_ch
+                
+                if src["active"] and src["note_val"] != 255 and src["freq"] > 0:
+                    period = SAMPLE_RATE / src["freq"]
+                    p_ch = self.physical_channels[i]
+                    p_ch["sample_idx"] += 1
+                    amp = src["cur_vol"] * 1000
+                    mixed += amp if (p_ch["sample_idx"] % period) < (period / 2) else -amp
+            samples.append(max(-32768, min(32767, int(mixed))))
+        return samples
+
+    def save_state(self):
+        """Returns a deep copy of the engine state"""
+        import copy
+        state = {
+            "total_ticks": self.total_ticks,
+            "sfx_mask": self.sfx_mask,
+            "current_fx_priority": self.current_fx_priority,
+            "global_loops": self.global_loops,
+            "active_mask": self.active_mask,
+            "finished_mask": self.finished_mask,
+            "last_event_ch": self.last_event_ch,
+            "channels": copy.deepcopy(self.channels),
+            "physical_channels": copy.deepcopy(self.physical_channels),
+            "start_time_offset": time.time() - self.start_time
+        }
+        return state
+
+    def load_state(self, state):
+        """Restores the engine state from a snapshot"""
+        self.total_ticks = state["total_ticks"]
+        self.sfx_mask = state["sfx_mask"]
+        self.current_fx_priority = state["current_fx_priority"]
+        self.global_loops = state["global_loops"]
+        self.active_mask = state["active_mask"]
+        self.finished_mask = state["finished_mask"]
+        self.last_event_ch = state["last_event_ch"]
+        self.channels = state["channels"]
+        self.physical_channels = state["physical_channels"]
+        self.start_time = time.time() - state["start_time_offset"]
+
+    def push_history(self):
+        """Saves current state to history buffer"""
+        self.history.append(self.save_state())
+        if len(self.history) > self.max_history:
+            self.history.pop(0)
 
     def run(self, loops=0):
         if not HAS_PYAUDIO and not HAS_SOUNDDEVICE:
@@ -815,7 +895,22 @@ class MusaXSim:
                             self._reset_channels()
                             self.total_ticks = 0
                             self.start_time = time.time()
+                            self.history = []
                             frames = 0
+                        elif key in ['p', 'P']: # Pause
+                            self.paused = not self.paused
+                            if self.paused: self.draw()
+                        elif key in ['n', 'N'] and self.paused: # Next event
+                            self.debug_step = True
+                        elif key in ['b', 'B'] and self.paused: # Back event
+                            if self.history:
+                                self.load_state(self.history.pop())
+                                # Render static samples to make it audible WITHOUT advancing logic
+                                samples = self.render_static_samples(SAMPLES_PER_INT)
+                                byte_data = struct.pack(f'<{len(samples)}h', *samples)
+                                if HAS_PYAUDIO:
+                                    stream.write(byte_data)
+                                self.draw()
                         elif '1' <= key <= '9':
                             # Trigger FX from library (1-indexed for user convenience)
                             self.musax_req_fx(int(key) - 1)
@@ -823,14 +918,17 @@ class MusaXSim:
                 if loops > 0 and self.global_loops >= loops:
                     break
                 
-                # Generate and play frame
-                samples = self.generate_frame_samples()
-                byte_data = struct.pack(f'<{len(samples)}h', *samples)
-                if HAS_PYAUDIO:
-                    stream.write(byte_data)
-                
-                if frames % 2 == 0: self.draw()
-                frames += 1
+                if not self.paused or self.debug_step:
+                    # Generate and play frame (or just samples until next event if debug_step)
+                    samples = self.generate_frame_samples()
+                    byte_data = struct.pack(f'<{len(samples)}h', *samples)
+                    if HAS_PYAUDIO:
+                        stream.write(byte_data)
+                    
+                    if frames % 2 == 0: self.draw()
+                    frames += 1
+                else:
+                    time.sleep(0.01) # Low CPU while paused
                 
                 # Sync timing (optional for streaming, but good for dashboard)
                 # Note: stream.write is usually blocking until buffer is ready
