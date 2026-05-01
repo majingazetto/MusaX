@@ -1,11 +1,11 @@
 ; ************************************************************************
-; * chorus_test.Z8A - Demonstration of PSG Chorus effect in MusaX
+; * chorus_test.Z8A - Demonstration of PSG Chorus effect in MusaX v1.7
 ; ************************************************************************
 ; This example uses CMD_PHASE and CMD_DETUNE to create a rich chorus
 ; effect using two identical square wave channels.
 ;
 ; CHA: Lead Melody (Dry)
-; CHB: Chorus Voice (Wet) - Delayed by half-tick and slightly detuned.
+; CHB: Chorus Voice (Wet) - Aggressive Phase delay and Detune
 ; ************************************************************************
 
 INCLUDE "musax_const.Z8A"
@@ -18,6 +18,7 @@ CHORUS_HDR:
 
 ; --- SHARED MELODY ---
 MELODY:
+    ; --- Theme A ---
     DEFB    C4
     DEFW    LEN_Q
     DEFB    E4
@@ -26,18 +27,56 @@ MELODY:
     DEFW    LEN_Q
     DEFB    C5
     DEFW    LEN_H
+    
+    ; --- Triplets ---
+    DEFB    B4
+    DEFW    LEN_ET
+    DEFB    A4
+    DEFW    LEN_ET
     DEFB    G4
-    DEFW    LEN_Q
+    DEFW    LEN_ET
+    
     DEFB    F4
     DEFW    LEN_Q
     DEFB    E4
     DEFW    LEN_Q
     DEFB    D4
     DEFW    LEN_Q
+    
+    ; --- Arpeggio ---
+    DEFB    C4
+    DEFW    LEN_E
+    DEFB    G3
+    DEFW    LEN_E
+    DEFB    C4
+    DEFW    LEN_E
+    DEFB    E4
+    DEFW    LEN_E
+    DEFB    G4
+    DEFW    LEN_E
+    DEFB    E4
+    DEFW    LEN_E
+    DEFB    G4
+    DEFW    LEN_E
+    DEFB    C5
+    DEFW    LEN_E
+    
+    ; --- Resolution ---
+    DEFB    D5
+    DEFW    LEN_Q
+    DEFB    B4
+    DEFW    LEN_Q
+    DEFB    G4
+    DEFW    LEN_Q
+    DEFB    D4
+    DEFW    LEN_Q
+    
     DEFB    C4
     DEFW    LEN_W
+    
     DEFB    REST
     DEFW    LEN_Q
+    
     DEFB    CMD_RESTART
     DEFW    MELODY
 
@@ -53,8 +92,9 @@ CHORUS_VOICE:
     DEFB    CMD_VOLUME, 10
     DEFB    CMD_INST, 0
     
-    ; Apply Chorus (Phase=128, Detune=4)
-    DEFB    CMD_CHORUS, 128, 4
+    ; Apply Aggressive Chorus (Phase=160 (~62% delay), Detune=10 cents)
+    ; This creates a very wide and slightly "unstable" (shimmering) sound
+    DEFB    CMD_CHORUS, 160, 10
     
     DEFB    CMD_GOTO
     DEFW    MELODY

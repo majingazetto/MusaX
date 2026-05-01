@@ -397,7 +397,7 @@ class MusaXSim:
                         ch["wait"] = wait_val
                     if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{ch_idx} | PC:{old_pc:03X} | REST len:{ch['wait']}\n")
                 else: ch["active"] = False
-            elif cmd >= 0xF5:
+            elif cmd >= 0xF4:
                 if cmd == 0xFC: # VOLUME [Val]
                     ch["vol"] = ch["stream"][ch["pc"]]; ch["pc"] += 1
                 elif cmd == 0xFA: # INST [ID]
@@ -472,7 +472,11 @@ class MusaXSim:
                         self.finished_mask = 0
                 elif cmd == 0xF6: # PHASE [Val]
                     val = ch["stream"][ch["pc"]]; ch["pc"] += 1
-                    ch["accumulator"] = (ch["accumulator"] + val) & 0xFFFF
+                    # Phase Shift is a fractional timing delay (sub-tick)
+                    ch["accumulator"] -= val
+                    while ch["accumulator"] < 0:
+                        ch["accumulator"] += 256
+                        ch["wait"] += 1
                 elif cmd == 0xF5: # DETUNE [Val]
                     val = ch["stream"][ch["pc"]]; ch["pc"] += 1
                     if val > 127: val -= 256
@@ -483,7 +487,11 @@ class MusaXSim:
                     phase = ch["stream"][ch["pc"]]; ch["pc"] += 1
                     detune = ch["stream"][ch["pc"]]; ch["pc"] += 1
                     if detune > 127: detune -= 256
-                    ch["accumulator"] = (ch["accumulator"] + phase) & 0xFFFF
+                    # Apply Phase Delay
+                    ch["accumulator"] -= phase
+                    while ch["accumulator"] < 0:
+                        ch["accumulator"] += 256
+                        ch["wait"] += 1
                     ch["detune"] = detune
                     if ch["note_val"] != 255:
                         ch["freq"] = self.note_to_freq(ch["note_val"], ch["detune"])
@@ -493,21 +501,12 @@ class MusaXSim:
                 ch["note_name"] = f"{notes[cmd % 12]}{cmd // 12}"
                 if ch["pc"] + 1 < len(ch["stream"]):
                     ch["wait"] = ch["stream"][ch["pc"]] + (ch["stream"][ch["pc"] + 1] << 8); ch["pc"] += 2
+                    if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{ch_idx} | PC:{old_pc:03X} | NOTE: {ch['note_name']}, wait:{ch['wait']}\n")
                 else: ch["active"] = False
 
     def update(self):
-        # Global frame counter
-        self.total_ticks += 1 
-        
-        for i, ch in enumerate(self.channels):
-            ch["accumulator"] += ch["bpm_step"]
-            while ch["accumulator"] >= 256:
-                ch["accumulator"] -= 256
-                if ch["active"]:
-                    if ch["wait"] > 0: ch["wait"] -= 1
-                    ch["loop_ticks"] += 1
-                self.process_events(i)
-        
+        """Update per-frame state (envelopes, priority, status)"""
+        self.total_ticks += 1
         self.sfx_mask = 0
         for i in range(MAX_CHANNELS):
             if self.channels[i+3]["active"]:
@@ -517,9 +516,12 @@ class MusaXSim:
             self.current_fx_priority = 0
 
         for ch in self.channels:
-            if not ch["active"] or ch["note_val"] == 255: ch["cur_vol"] = 0; continue
+            if not ch["active"] or ch["note_val"] == 255: 
+                ch["cur_vol"] = 0
+                continue
             env = self.instruments.get(ch["inst"], [15])
-            ch["cur_vol"] = (env[min(ch["inst_pc"], len(env) - 1)] * ch["vol"]) // 15; ch["inst_pc"] += 1
+            ch["cur_vol"] = (env[min(ch["inst_pc"], len(env) - 1)] * ch["vol"]) // 15
+            ch["inst_pc"] += 1
 
     def _vis_len(self, s):
         """Returns the visible length of a string, excluding ANSI escape codes."""
@@ -561,7 +563,7 @@ class MusaXSim:
 
         sys.stdout.write("\033[H")
         sys.stdout.write(
-            f"\033[1;44;37m MusaX Simulator v1.5 \033[0m"
+            f"\033[1;44;37m MusaX Simulator v1.7 \033[0m"
             f" 60Hz | T:{self.total_ticks:>7} | {int(m)}:{s:04.1f} | SFX:{self.sfx_mask:03b} | \033[1;33mP:{self.current_fx_priority:>2}\033[0m | Loops:{self.global_loops}\r\n"
         )
         sys.stdout.write("\033[94m━\033[0m" * W + "\r\n")
@@ -659,7 +661,6 @@ class MusaXSim:
             print(f"[*] Rendering ({duration_limit}s limit)...")
 
         self.total_ticks = 0
-        self.accumulator = 0
         self._reset_channels()
 
         all_samples = []
@@ -720,36 +721,44 @@ class MusaXSim:
         print(f"[*] Exported {duration:.1f}s -> {output_path}")
 
     def generate_frame_samples(self):
-        """Generates samples for exactly one interrupt frame (1/60th sec)"""
-        self.update()
-        samples = []
-        for _ in range(SAMPLES_PER_INT):
+        """Generates samples for exactly one interrupt frame with sub-frame precision"""
+        self.update() # Update envelopes/status once per frame
+        frame_samples = []
+        
+        # Distribute bpm_step across samples for high-precision timing
+        for s in range(SAMPLES_PER_INT):
+            for i in range(MAX_STREAMS):
+                ch = self.channels[i]
+                # Increment proportionally (bpm_step is per 1/60th sec)
+                ch["accumulator"] += ch["bpm_step"] / SAMPLES_PER_INT
+                while ch["accumulator"] >= 256:
+                    ch["accumulator"] -= 256
+                    if ch["active"]:
+                        if ch["wait"] > 0: ch["wait"] -= 1
+                        ch["loop_ticks"] += 1
+                    self.process_events(i)
+            
+            # Mix current sample
             mixed = 0
             for i in range(MAX_CHANNELS):
-                # Channel i (0=A, 1=B, 2=C)
-                # Check if FX is active (stream i + 3)
                 fx_ch = self.channels[i + 3]
                 music_ch = self.channels[i]
-                
-                # Priority: FX > Music (Winner takes all)
                 src = fx_ch if fx_ch["active"] else music_ch
                 
                 if src["active"] and src["note_val"] != 255 and src["freq"] > 0:
                     period = SAMPLE_RATE / src["freq"]
-                    # Use physical channel sample_idx for phase continuity
                     p_ch = self.physical_channels[i]
                     p_ch["sample_idx"] += 1
                     amp = src["cur_vol"] * 1000
                     mixed += amp if (p_ch["sample_idx"] % period) < (period / 2) else -amp
                 
-                # Update SFXMSK bit for dashboard/logic
-                if fx_ch["active"]:
-                    self.sfx_mask |= (1 << i)
-                else:
-                    self.sfx_mask &= ~(1 << i)
+                # Dynamic mask update for dashboard
+                if fx_ch["active"]: self.sfx_mask |= (1 << i)
+                else: self.sfx_mask &= ~(1 << i)
 
-            samples.append(max(-32768, min(32767, int(mixed))))
-        return samples
+            frame_samples.append(max(-32768, min(32767, int(mixed))))
+            
+        return frame_samples
 
     def run(self, loops=0):
         if not HAS_PYAUDIO and not HAS_SOUNDDEVICE:
@@ -805,7 +814,6 @@ class MusaXSim:
                         elif key == ' ': # SPACE: Retrigger
                             self._reset_channels()
                             self.total_ticks = 0
-                            self.accumulator = 0
                             self.start_time = time.time()
                             frames = 0
                         elif '1' <= key <= '9':
