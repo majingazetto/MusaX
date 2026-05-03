@@ -26,6 +26,12 @@ This document provides detailed information on all bytecode commands available i
 - **Parameters:** `Volume (0-15)`
 - **Description:** Sets the base volume for the channel. This value is multiplied by the instrument envelope.
 
+### CMD_GATE (0xFB)
+- **Parameters:** `Gate (0-255)`
+- **Description:** Sets the articulation/gate time for subsequent notes. 
+- **Math:** 0-254 represents a fraction of the note's duration. 255 represents 100% (legato).
+- **Usage:** Lower values (e.g., 32-64) create a staccato effect.
+
 ### CMD_INST (0xFA)
 - **Parameters:** `InstrumentID (1 byte)`
 - **Description:** Selects the ADSR/Volume envelope for the channel.
@@ -49,6 +55,12 @@ This document provides detailed information on all bytecode commands available i
 - **Parameters:** `Phase, Detune`
 - **Description:** A macro command that applies both `CMD_PHASE` and `CMD_DETUNE` simultaneously.
 - **Usage:** Standard way to set up a "wet" chorus channel relative to a "dry" lead channel.
+
+### CMD_FADE (0xF3)
+- **Parameters:** `Target (0-255), Step (0-255)`
+- **Description:** Gradually adjusts the channel's master volume toward `Target`.
+- **Logic:** Every 60Hz frame, the engine adds or subtracts `Step` from the current fade volume until `Target` is reached.
+- **Usage:** Use `Step=255` for immediate volume changes, or small values (1-5) for smooth musical fades.
 
 ## Transport
 

@@ -79,7 +79,7 @@ class MusaXSim:
             "CMD_TEMPO": 0xFD, "CMD_VOLUME": 0xFC, "CMD_GATE": 0xFB,
             "CMD_INST": 0xFA, "CMD_LOOP_S": 0xF9, "CMD_LOOP_E": 0xF8,
             "CMD_GOTO": 0xF7, "CMD_RESTART": 0xFE, "CMD_PHASE": 0xF6,
-            "CMD_DETUNE": 0xF5, "CMD_CHORUS": 0xF4
+            "CMD_DETUNE": 0xF5, "CMD_CHORUS": 0xF4, "CMD_FADE": 0xF3
         }
         self.init_notes()
         self.symbols.update(self.commands)
@@ -98,7 +98,9 @@ class MusaXSim:
                 "note_name": "---", "loop_count": 0, "loop_ticks": 0,
                 "loop_stack": [],
                 "bpm_step": 0x2400 if is_fx else 0x0600, # FX default to 168 BPM
-                "accumulator": 0, "detune": 0
+                "accumulator": 0, "detune": 0, "gate": 255, "total_wait": 0,
+                "fade_vol": 255.0, "fade_target": 255.0, "fade_step": 0.0,
+                "muted": False
             })
 
         self.instruments = {
@@ -235,7 +237,7 @@ class MusaXSim:
 
         if not is_fx_only:
             # Pass 4: Assign Music Streams
-            music_hdr_name = next((k for k in self.all_streams if "HDR" in k and "FX" not in k), None)
+            music_hdr_name = next((k for k in self.all_streams if "HDR" in k.upper() and "FX" not in k.upper()), None)
             if music_hdr_name and len(self.all_streams[music_hdr_name]) >= 12:
                 hdr_bytes = self.all_streams[music_hdr_name]
                 for i in range(3):
@@ -393,18 +395,22 @@ class MusaXSim:
             cmd = ch["stream"][ch["pc"]]; ch["pc"] += 1
             
             if cmd == 0xFF:  # REST [Len (DEFW)]
-                ch["note_val"] = 255; ch["freq"] = 0.0
+                ch["note_val"] = 255; ch["freq"] = 0.0; ch["total_wait"] = 0; ch["gated_logged"] = False
                 if ch["pc"] + 1 < len(ch["stream"]):
                     wait_val = ch["stream"][ch["pc"]] + (ch["stream"][ch["pc"] + 1] << 8); ch["pc"] += 2
                     if wait_val == 0: # Zero wait = STOP
                         ch["active"] = False
-                        if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{ch_idx} | PC:{old_pc:03X} | STOP via REST 0\n")
+                        if self.log_file: 
+                            self.log_file.write(f"T:{self.total_ticks} | CH:{ch_idx} | PC:{old_pc:03X} | STOP via REST 0\n")
+                            self.log_file.flush()
                         continue
                     else:
                         ch["wait"] = wait_val
-                    if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{ch_idx} | PC:{old_pc:03X} | REST len:{ch['wait']}\n")
+                    if self.log_file: 
+                        self.log_file.write(f"T:{self.total_ticks} | CH:{ch_idx} | PC:{old_pc:03X} | REST len:{ch['wait']}\n")
+                        self.log_file.flush()
                 else: ch["active"] = False
-            elif cmd >= 0xF4:
+            elif cmd >= 0xF3 and cmd != 0xFF:
                 if cmd == 0xFC: # VOLUME [Val]
                     ch["vol"] = ch["stream"][ch["pc"]]; ch["pc"] += 1
                 elif cmd == 0xFA: # INST [ID]
@@ -423,7 +429,7 @@ class MusaXSim:
                         else:
                             ch["loop_stack"].pop()
                 elif cmd == 0xFB: # GATE [Val]
-                    ch["pc"] += 1 
+                    ch["gate"] = ch["stream"][ch["pc"]]; ch["pc"] += 1
                 elif cmd == 0xF7: # GOTO [Addr (DEFW)]
                     if ch["pc"] + 1 < len(ch["stream"]):
                         addr = ch["stream"][ch["pc"]] + (ch["stream"][ch["pc"]+1] << 8)
@@ -502,13 +508,26 @@ class MusaXSim:
                     ch["detune"] = detune
                     if ch["note_val"] != 255:
                         ch["freq"] = self.note_to_freq(ch["note_val"], ch["detune"])
+                elif cmd == 0xF3: # FADE [Target, Step]
+                    target = ch["stream"][ch["pc"]]; ch["pc"] += 1
+                    step = ch["stream"][ch["pc"]]; ch["pc"] += 1
+                    if step == 255:
+                        ch["fade_vol"] = float(target)
+                        ch["fade_target"] = float(target)
+                    else:
+                        ch["fade_target"] = float(target)
+                        ch["fade_step"] = float(step)
             else:
                 ch["note_val"] = cmd; ch["freq"] = self.note_to_freq(cmd, ch["detune"]); ch["inst_pc"] = 0; ch["sample_idx"] = 0
+                ch["gated_logged"] = False
                 notes = ["C-", "C#", "D-", "D#", "E-", "F-", "F#", "G-", "G#", "A-", "A#", "B-"]
                 ch["note_name"] = f"{notes[cmd % 12]}{cmd // 12}"
                 if ch["pc"] + 1 < len(ch["stream"]):
                     ch["wait"] = ch["stream"][ch["pc"]] + (ch["stream"][ch["pc"] + 1] << 8); ch["pc"] += 2
-                    if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{ch_idx} | PC:{old_pc:03X} | NOTE: {ch['note_name']}, wait:{ch['wait']}\n")
+                    ch["total_wait"] = ch["wait"]
+                    if self.log_file: 
+                        self.log_file.write(f"T:{self.total_ticks} | CH:{ch_idx} | PC:{old_pc:03X} | NOTE: {ch['note_name']}, wait:{ch['wait']}\n")
+                        self.log_file.flush()
                 else: ch["active"] = False
 
     def update(self):
@@ -523,11 +542,20 @@ class MusaXSim:
             self.current_fx_priority = 0
 
         for ch in self.channels:
+            # Handle FADE logic (60Hz update)
+            if ch["fade_vol"] < ch["fade_target"]:
+                ch["fade_vol"] = min(ch["fade_target"], ch["fade_vol"] + ch["fade_step"])
+            elif ch["fade_vol"] > ch["fade_target"]:
+                ch["fade_vol"] = max(ch["fade_target"], ch["fade_vol"] - ch["fade_step"])
+
             if not ch["active"] or ch["note_val"] == 255: 
                 ch["cur_vol"] = 0
                 continue
             env = self.instruments.get(ch["inst"], [15])
-            ch["cur_vol"] = (env[min(ch["inst_pc"], len(env) - 1)] * ch["vol"]) // 15
+            env_vol = env[min(ch["inst_pc"], len(env) - 1)]
+            # Scale volume by stream volume (0-15) AND fade volume (0-255)
+            ch["cur_vol"] = (env_vol * ch["vol"] * int(ch["fade_vol"])) // (15 * 255)
+            if ch["muted"]: ch["cur_vol"] = 0
             ch["inst_pc"] += 1
 
     def _vis_len(self, s):
@@ -560,7 +588,7 @@ class MusaXSim:
         return int(3600 * ch["bpm_step"] / (BASE_TICK * 256))
 
     def draw(self):
-        W = 105
+        W = 115
         elapsed = time.time() - getattr(self, "start_time", time.time())
         m, s = divmod(elapsed, 60)
         
@@ -576,8 +604,8 @@ class MusaXSim:
         sys.stdout.write("\033[94m━\033[0m" * W + "\r\n")
 
         # Table Header - Precisely aligned
-        # Indices: CH:2, STATE:6, NOTE:14, WAIT:20, VOLUME:27, BEAT:51, LABEL:58, LOOPS:67, PC:81
-        sys.stdout.write("\033[1m  CH  STATE   NOTE  WAIT   VOLUME / ENVELOPE       BPM   LABEL     LOOPS          PC   FRAC HEX SNIP\033[0m\r\n")
+        # Indices: CH:2, STATE:6, NOTE:14, WAIT:20, VOLUME:27, FADE:51, BPM:57, LABEL:64, LOOPS:73, PC:87
+        sys.stdout.write("\033[1m  CH  STATE   NOTE  WAIT   VOLUME / ENVELOPE       FADE  BPM   LABEL     LOOPS          PC   FRAC HEX SNIP\033[0m\r\n")
         sys.stdout.write("  " + "\033[90m─\033[0m" * (W-2) + "\r\n")
 
         for i in range(MAX_CHANNELS):
@@ -594,8 +622,12 @@ class MusaXSim:
                     audible_marker = "\033[1;33m▶\033[0m" if audible else " "
                     ch_name = f"\033[1m{'FX' if is_fx else 'MU'}{chr(65 + i)}\033[0m"
                 
-                status_color = "\033[1;32m" if ch["active"] else "\033[2;90m"
-                status_text = "ON " if ch["active"] else "OFF"
+                if ch["muted"]:
+                    status_color = "\033[1;31m"
+                    status_text = "MUT"
+                else:
+                    status_color = "\033[1;32m" if ch["active"] else "\033[2;90m"
+                    status_text = "ON " if ch["active"] else "OFF"
                 
                 note_color = "\033[1;37m" if audible else "\033[90m"
                 note     = f"{note_color}{ch['note_name']:3}\033[0m" if ch["active"] else "\033[90m---\033[0m"
@@ -618,19 +650,22 @@ class MusaXSim:
 
                 if ch["active"]:
                     bpm_n  = f"{self._bpm(ch):>3}"
+                    fade_n = int(ch["fade_vol"] * 100 / 255)
+                    fade_str = f"{fade_n:>3}%"
                     label  = f"\033[36m{self._current_label(ch)[:8]:8}\033[0m"
                     linfo  = f"\033[35m{self._loop_info(ch)[:12]:12}\033[0m"
                 else:
-                    bpm_n = "   "; label = " " * 8; linfo = " " * 12
+                    bpm_n = "   "; fade_str = "    "; label = " " * 8; linfo = " " * 12
 
                 # Row construction with precise visible padding
                 row = f"{audible_marker} {ch_name} [{status_color}{status_text}\033[0m]   "
                 row += f"{note}   "
                 row += f"{wait_str}   "
                 row += f"{self._pad(bar, 24)}"
-                row += f"{bpm_n}    "
-                row += f"{self._pad(label, 9)}"
-                row += f"{self._pad(linfo, 14)}"
+                row += f"{fade_str}  "
+                row += f"{bpm_n}   "
+                row += f"{self._pad(label, 10)}"
+                row += f"{self._pad(linfo, 15)}"
                 row += f"{pc} {frac} "
                 row += f"{hex_snip}\r\n"
                 sys.stdout.write(row)
@@ -665,6 +700,7 @@ class MusaXSim:
         
         sys.stdout.write("\033[94m━\033[0m" * W + "\r\n")
         sys.stdout.write(" \033[1m[1-9]\033[0m Trigger FX | \033[1m[SPACE]\033[0m Reset | \033[1m[p]\033[0m Pause | \033[1m[n]\033[0m Next | \033[1m[b]\033[0m Back | \033[1m[q/Esc]\033[0m Quit\r\n")
+        sys.stdout.write(" \033[1m[a/s/d]\033[0m Mute MU A/B/C | \033[1m[f/g/h]\033[0m Mute FX A/B/C\r\n")
         sys.stdout.flush()
 
     def render_audio(self, loops=0, duration_limit=60):
@@ -675,35 +711,29 @@ class MusaXSim:
 
         self.total_ticks = 0
         self._reset_channels()
+        self.silent = True # Don't draw while rendering
+        self.start_time = time.time()
 
         all_samples = []
         max_samples = int(SAMPLE_RATE * duration_limit)
 
         while True:
-            if not any(ch["active"] for ch in self.channels) and loops == 0:
+            # Check for completion
+            if not any(ch["active"] for ch in self.channels):
                 break
-
-            self.update()
-
-            for _ in range(SAMPLES_PER_INT):
-                mixed = 0
-                for i in range(MAX_CHANNELS):
-                    fx_ch = self.channels[i + 3]
-                    music_ch = self.channels[i]
-                    src = fx_ch if fx_ch["active"] else music_ch
-                    
-                    if src["active"] and src["note_val"] != 255 and src["freq"] > 0:
-                        period = SAMPLE_RATE / src["freq"]
-                        p_ch = self.physical_channels[i]
-                        p_ch["sample_idx"] += 1
-                        amp = src["cur_vol"] * 1000
-                        mixed += amp if (p_ch["sample_idx"] % period) < (period / 2) else -amp
-                all_samples.append(max(-32768, min(32767, int(mixed))))
-
+            
             if loops > 0 and self.global_loops >= loops:
                 break
-            if loops == 0 and len(all_samples) >= max_samples:
+            
+            if len(all_samples) >= max_samples:
                 break
+
+            # Generate one frame (1/60th sec) of samples
+            frame_samples = self.generate_frame_samples()
+            if not frame_samples: # Should not happen unless error
+                break
+                
+            all_samples.extend(frame_samples)
 
         return all_samples
 
@@ -767,10 +797,22 @@ class MusaXSim:
                 src = fx_ch if fx_ch["active"] else music_ch
                 
                 if src["active"] and src["note_val"] != 255 and src["freq"] > 0:
+                    amp = src["cur_vol"] * 1000
+                    
+                    # Apply GATE silencing
+                    if src["gate"] < 255 and src["total_wait"] > 0:
+                        played_ticks = src["total_wait"] - src["wait"]
+                        if played_ticks * 256 >= src["total_wait"] * src["gate"]:
+                            if not src.get("gated_logged", False):
+                                if self.log_file: 
+                                    self.log_file.write(f"T:{self.total_ticks} | CH:{i} | GATED (gate:{src['gate']})\n")
+                                    self.log_file.flush()
+                                src["gated_logged"] = True
+                            amp = 0
+
                     period = SAMPLE_RATE / src["freq"]
                     p_ch = self.physical_channels[i]
                     p_ch["sample_idx"] += 1
-                    amp = src["cur_vol"] * 1000
                     mixed += amp if (p_ch["sample_idx"] % period) < (period / 2) else -amp
                 
                 # Dynamic mask update for dashboard
@@ -796,10 +838,22 @@ class MusaXSim:
                 src = fx_ch if fx_ch["active"] else music_ch
                 
                 if src["active"] and src["note_val"] != 255 and src["freq"] > 0:
+                    amp = src["cur_vol"] * 1000
+                    
+                    # Apply GATE silencing
+                    if src["gate"] < 255 and src["total_wait"] > 0:
+                        played_ticks = src["total_wait"] - src["wait"]
+                        if played_ticks * 256 >= src["total_wait"] * src["gate"]:
+                            if not src.get("gated_logged", False):
+                                if self.log_file: 
+                                    self.log_file.write(f"T:{self.total_ticks} | CH:{i} | GATED (gate:{src['gate']})\n")
+                                    self.log_file.flush()
+                                src["gated_logged"] = True
+                            amp = 0
+
                     period = SAMPLE_RATE / src["freq"]
                     p_ch = self.physical_channels[i]
                     p_ch["sample_idx"] += 1
-                    amp = src["cur_vol"] * 1000
                     mixed += amp if (p_ch["sample_idx"] % period) < (period / 2) else -amp
             samples.append(max(-32768, min(32767, int(mixed))))
         return samples
@@ -817,7 +871,7 @@ class MusaXSim:
             "last_event_ch": self.last_event_ch,
             "channels": copy.deepcopy(self.channels),
             "physical_channels": copy.deepcopy(self.physical_channels),
-            "start_time_offset": time.time() - self.start_time
+            "start_time_offset": time.time() - getattr(self, "start_time", time.time())
         }
         return state
 
@@ -914,6 +968,11 @@ class MusaXSim:
                         elif '1' <= key <= '9':
                             # Trigger FX from library (1-indexed for user convenience)
                             self.musax_req_fx(int(key) - 1)
+                        elif key in ['a', 's', 'd', 'f', 'g', 'h']:
+                            mapping = {'a': 0, 's': 1, 'd': 2, 'f': 3, 'g': 4, 'h': 5}
+                            idx = mapping[key]
+                            self.channels[idx]["muted"] = not self.channels[idx]["muted"]
+                            self.draw()
 
                 if loops > 0 and self.global_loops >= loops:
                     break

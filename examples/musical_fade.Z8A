@@ -1,0 +1,109 @@
+; ************************************************************************
+; * musical_fade.Z8A - Multi-channel Musical Fade Demonstration
+; ************************************************************************
+; CHA: Lead Melody - Fades in slowly at start.
+; CHB: Pulse Harmony - Starts full, fades out after 2 loops.
+; CHC: Bass - Steady, then quick fade out at the end.
+; ************************************************************************
+
+INCLUDE "musax_const.Z8A"
+
+MUSICAL_HDR:
+    DEFW    #1400, LEAD        ; 120 BPM
+    DEFW    #1400, HARMONY
+    DEFW    #1400, BASS
+
+; --- CHANNEL A: LEAD MELODY ---
+LEAD:
+    DEFB    CMD_VOLUME, 12
+    DEFB    CMD_INST, 1
+    
+    ; Start silent and fade in over ~4 seconds (Target 255, Step 1)
+    DEFB    CMD_FADE, 0, 255
+    DEFB    CMD_FADE, 255, 1
+    
+.loop:
+    DEFB    C4
+    DEFW    LEN_Q
+    DEFB    E4
+    DEFW    LEN_Q
+    DEFB    G4
+    DEFW    LEN_Q
+    DEFB    C5
+    DEFW    LEN_Q
+    
+    DEFB    B4
+    DEFW    LEN_Q
+    DEFB    G4
+    DEFW    LEN_Q
+    DEFB    E4
+    DEFW    LEN_Q
+    DEFB    C4
+    DEFW    LEN_Q
+    
+    DEFB    CMD_RESTART
+    DEFW    .loop
+
+; --- CHANNEL B: PULSE HARMONY ---
+HARMONY:
+    DEFB    CMD_VOLUME, 8
+    DEFB    CMD_INST, 0
+    
+    DEFB    CMD_LOOP_S, 2      ; Play twice at full volume
+.loop:
+    DEFB    G3
+    DEFW    LEN_E
+    DEFB    G3
+    DEFW    LEN_E
+    DEFB    G3
+    DEFW    LEN_E
+    DEFB    G3
+    DEFW    LEN_E
+    
+    DEFB    G3
+    DEFW    LEN_E
+    DEFB    G3
+    DEFW    LEN_E
+    DEFB    G3
+    DEFW    LEN_E
+    DEFB    G3
+    DEFW    LEN_E
+    DEFB    CMD_LOOP_E
+    
+    ; Now fade out slowly (Target 0, Step 1)
+    DEFB    CMD_FADE, 0, 1
+    
+.silent_loop:
+    DEFB    G3
+    DEFW    LEN_E
+    DEFB    G3
+    DEFW    LEN_E
+    DEFB    G3
+    DEFW    LEN_E
+    DEFB    G3
+    DEFW    LEN_E
+    
+    DEFB    CMD_GOTO
+    DEFW    .silent_loop
+
+; --- CHANNEL C: STEADY BASS ---
+BASS:
+    DEFB    CMD_VOLUME, 10
+    DEFB    CMD_INST, 0
+    
+    DEFB    CMD_LOOP_S, 4
+.loop:
+    DEFB    C3
+    DEFW    LEN_W
+    DEFB    CMD_LOOP_E
+    
+    ; Quick fade out at the very end
+    DEFB    CMD_FADE, 0, 10
+    DEFB    C3
+    DEFW    LEN_W
+    
+    DEFB    REST
+    DEFW    LEN_W
+    
+    DEFB    CMD_RESTART
+    DEFW    BASS

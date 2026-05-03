@@ -25,6 +25,11 @@ python3 musax_sim.py <music_file.Z8A> [fx_file.Z8A] [options]
 ## Interactive Controls (Real-time mode)
 - `[1-9]`: Trigger FX from the library (if `fx_file` is provided).
 - `[SPACE]`: Reset/Restart playback from the beginning.
+- `[p]`: Pause/Resume playback.
+- `[n]`: Advance to next event (while paused).
+- `[b]`: Step backward to previous event (while paused).
+- `[a/s/d]`: Mute/Unmute Music channels A, B, and C.
+- `[f/g/h]`: Mute/Unmute FX channels A, B, and C.
 - `[q] or [ESC]`: Quit the simulator.
 
 ## Dashboard Overview
@@ -34,8 +39,10 @@ The dashboard provides a live view of the engine state:
 - **P**: Current FX priority.
 - **Loops**: Total song loops completed.
 - **CH**: Channel name (MUA/FXA, MUB/FXB, MUC/FXC).
+- **STATE**: Channel status (`ON`, `OFF`, or `MUT` for muted).
 - **WAIT**: Remaining ticks until the next event.
-- **VOLUME**: Visual envelope monitor.
+- **VOLUME**: Visual envelope monitor and scale.
+- **FADE**: Current per-channel volume multiplier (0-100%).
 - **BPM**: Calculated real-time tempo per channel.
 - **PC**: Program counter (hex offset).
 - **HEX SNIP**: Live bytecode preview.

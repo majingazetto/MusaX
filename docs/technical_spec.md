@@ -33,7 +33,7 @@ MusaX uses a stream-based bytecode format. Every event is either a **Note** or a
 | `CMD_RESTART` | `0xFE` | `Addr (DEFW)` | Loop back to address and reset loop counter. |
 | `CMD_TEMPO` | `0xFD` | `BPM_STEP (DEFW)` | Set channel-specific transport speed. |
 | `CMD_VOLUME` | `0xFC` | `Vol (0-15)` | Set channel volume. |
-| `CMD_GATE` | `0xFB` | `Val` | Set gate time (not yet fully implemented in sim). |
+| `CMD_GATE` | `0xFB` | `Val` | Set gate time (0-255). |
 | `CMD_INST` | `0xFA` | `ID` | Select instrument envelope. |
 | `CMD_LOOP_S` | `0xF9` | `Count` | Start a loop block. |
 | `CMD_LOOP_E` | `0xF8` | | End a loop block (repeat if count > 0). |
@@ -41,6 +41,7 @@ MusaX uses a stream-based bytecode format. Every event is either a **Note** or a
 | `CMD_PHASE` | `0xF6` | `Val` | Sub-tick delay (0-255). Shifts event timing. |
 | `CMD_DETUNE` | `0xF5` | `Val (signed)` | Fine pitch offset in cents. |
 | `CMD_CHORUS` | `0xF4` | `Phase, Detune` | Combined command for PSG Chorus effect. |
+| `CMD_FADE` | `0xF3` | `Target, Step` | Per-channel volume fade (0-255). |
 
 ## 4. Header Formats
 

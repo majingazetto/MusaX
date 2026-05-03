@@ -1,0 +1,59 @@
+; ************************************************************************
+; * fade_test.Z8A - Demonstration of Per-Channel Fade in MusaX
+; ************************************************************************
+; CHA: Melody fading in and out.
+; CHB: Constant drone fading out very slowly.
+; ************************************************************************
+
+INCLUDE "musax_const.Z8A"
+
+FADE_HDR:
+    DEFW    #0600, SONG_A      ; 120 BPM
+    DEFW    #0600, SONG_B
+    DEFW    0, 0
+
+SONG_A:
+    DEFB    CMD_VOLUME, 15
+    DEFB    CMD_INST, 1
+    
+    ; Start silent and fade in (Target 255, Step 5)
+    DEFB    CMD_FADE, 0, 255    ; Immediate silencer
+    DEFB    CMD_FADE, 255, 5    ; Fade in
+    
+    DEFB    C4
+    DEFW    LEN_W
+    DEFB    E4
+    DEFW    LEN_W
+    
+    ; Fade out (Target 0, Step 2)
+    DEFB    CMD_FADE, 0, 2
+    DEFB    G4
+    DEFW    LEN_W
+    DEFB    C5
+    DEFW    LEN_W
+    
+    DEFB    CMD_RESTART
+    DEFW    SONG_A
+
+SONG_B:
+    DEFB    CMD_VOLUME, 10
+    DEFB    CMD_INST, 0
+    
+    ; Very slow fade out from start
+    DEFB    CMD_FADE, 0, 1
+    
+    DEFB    C3
+    DEFW    LEN_W
+    DEFB    G3
+    DEFW    LEN_W
+    DEFB    C3
+    DEFW    LEN_W
+    DEFB    G3
+    DEFW    LEN_W
+    DEFB    C3
+    DEFW    LEN_W
+    DEFB    G3
+    DEFW    LEN_W
+    
+    DEFB    CMD_RESTART
+    DEFW    SONG_B

@@ -1,0 +1,54 @@
+; ************************************************************************
+; * gate_test.Z8A - Demonstration of CMD_GATE (Articulation) in MusaX
+; ************************************************************************
+; This example demonstrates how CMD_GATE affects note duration, 
+; allowing for staccato, normal, and legato playing styles.
+; ************************************************************************
+
+INCLUDE "musax_const.Z8A"
+
+; -- Song Header --
+GATE_HDR:
+    DEFW    #0600, SONG_A      ; BPM_A (60), PTR_A
+    DEFW    0, 0
+    DEFW    0, 0
+
+SONG_A:
+    DEFB    CMD_VOLUME, 15
+    DEFB    CMD_INST, 1
+    
+    ; --- Block 1: Staccato (50% gate) ---
+    DEFB    CMD_GATE, 128
+    DEFB    C4
+    DEFW    LEN_Q
+    DEFB    E4
+    DEFW    LEN_Q
+    DEFB    G4
+    DEFW    LEN_Q
+    DEFB    C5
+    DEFW    LEN_Q
+    
+    ; --- Block 2: Normal/Legato (100% gate) ---
+    DEFB    CMD_GATE, 255
+    DEFB    C4
+    DEFW    LEN_Q
+    DEFB    E4
+    DEFW    LEN_Q
+    DEFB    G4
+    DEFW    LEN_Q
+    DEFB    C5
+    DEFW    LEN_Q
+    
+    ; --- Block 3: Sharp Staccato (12.5% gate) ---
+    DEFB    CMD_GATE, 32
+    DEFB    C4
+    DEFW    LEN_Q
+    DEFB    E4
+    DEFW    LEN_Q
+    DEFB    G4
+    DEFW    LEN_Q
+    DEFB    C5
+    DEFW    LEN_Q
+    
+    DEFB    CMD_RESTART
+    DEFW    SONG_A
