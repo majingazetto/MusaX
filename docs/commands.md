@@ -62,6 +62,15 @@ This document provides detailed information on all bytecode commands available i
 - **Logic:** Every 60Hz frame, the engine adds or subtracts `Step` from the current fade volume until `Target` is reached.
 - **Usage:** Use `Step=255` for immediate volume changes, or small values (1-5) for smooth musical fades.
 
+### CMD_PORTA (0xF2)
+- **Parameters:** `Speed (0-255)`
+- **Description:** Enables discrete chromatic pitch sliding (staircase) between notes.
+- **Logic:** 
+    - `0`: Portamento OFF (Notes snap immediately).
+    - `>0`: Portamento ON. `Speed` defines the number of 60Hz frames to wait before stepping to the next semitone.
+- **Articulation:** Slides are played **Legato** (the instrument envelope is NOT re-triggered during the steps).
+- **Usage:** Used for harp-like or trombone-style chromatic runs.
+
 ## Transport
 
 ### CMD_TEMPO (0xFD)

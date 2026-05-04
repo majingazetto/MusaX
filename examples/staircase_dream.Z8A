@@ -1,0 +1,91 @@
+; ************************************************************************
+; * staircase_dream.Z8A - 3-Channel Showcase for MusaX v1.8
+; * Demonstrates Chromatic Portamento in a musical context.
+; ************************************************************************
+
+INCLUDE "musax_const.Z8A"
+
+; --- Header ---
+
+HDR:
+    DEFW #0580, CH_BASS    ; 130 BPM approx
+    DEFW #0580, CH_PAD
+    DEFW #0580, CH_LEAD
+
+; --- Streams ---
+
+; --- CANAL A: BASS (Slow Sliding Bass) ---
+CH_BASS:
+    DEFB CMD_VOLUME, 12
+    DEFB CMD_INST, 1        ; Plucky square
+    DEFB CMD_PORTA, 8       ; Slow slide (8 frames/semitone)
+    
+    DEFB A1
+    DEFW LEN_W
+    DEFB E1
+    DEFW LEN_W
+    DEFB F1
+    DEFW LEN_W
+    DEFB G1
+    DEFW LEN_W
+    
+    DEFB CMD_RESTART
+    DEFW CH_BASS
+
+; --- CANAL B: PAD (Steady Harmony) ---
+CH_PAD:
+    DEFB CMD_VOLUME, 8
+    DEFB CMD_INST, 2        ; Pure sustain
+    DEFB CMD_PORTA, 0       ; No portamento here
+    
+    ; - Chord: Am
+    DEFB C3
+    DEFW LEN_W
+    ; - Chord: Em
+    DEFB B2
+    DEFW LEN_W
+    ; - Chord: F
+    DEFB A2
+    DEFW LEN_W
+    ; - Chord: G
+    DEFB B2
+    DEFW LEN_W
+    
+    DEFB CMD_RESTART
+    DEFW CH_PAD
+
+; --- CANAL C: LEAD (Expressive Melody) ---
+CH_LEAD:
+    DEFB CMD_VOLUME, 14
+    DEFB CMD_INST, 2        ; Pure sustain
+    
+    ; - Phrase 1
+    DEFB CMD_PORTA, 0
+    DEFB E4
+    DEFW LEN_Q
+    DEFB CMD_PORTA, 2       ; Fast chromatic flick
+    DEFB A4
+    DEFW LEN_Q
+    DEFB CMD_PORTA, 0
+    DEFB G4
+    DEFW LEN_H
+    
+    ; - Phrase 2
+    DEFB E4
+    DEFW LEN_Q
+    DEFB CMD_PORTA, 3
+    DEFB G4
+    DEFW LEN_Q
+    DEFB CMD_PORTA, 0
+    DEFB F4
+    DEFW LEN_H
+    
+    ; - Phrase 3: Long chromatic climb
+    DEFB CMD_PORTA, 4
+    DEFB C4
+    DEFW LEN_W
+    DEFB E4
+    DEFW LEN_W
+    
+    DEFB CMD_RESTART
+    DEFW CH_LEAD

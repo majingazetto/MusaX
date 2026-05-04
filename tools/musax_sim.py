@@ -79,7 +79,8 @@ class MusaXSim:
             "CMD_TEMPO": 0xFD, "CMD_VOLUME": 0xFC, "CMD_GATE": 0xFB,
             "CMD_INST": 0xFA, "CMD_LOOP_S": 0xF9, "CMD_LOOP_E": 0xF8,
             "CMD_GOTO": 0xF7, "CMD_RESTART": 0xFE, "CMD_PHASE": 0xF6,
-            "CMD_DETUNE": 0xF5, "CMD_CHORUS": 0xF4, "CMD_FADE": 0xF3
+            "CMD_DETUNE": 0xF5, "CMD_CHORUS": 0xF4, "CMD_FADE": 0xF3,
+            "CMD_PORTA": 0xF2
         }
         self.init_notes()
         self.symbols.update(self.commands)
@@ -100,12 +101,13 @@ class MusaXSim:
                 "bpm_step": 0x2400 if is_fx else 0x0600, # FX default to 168 BPM
                 "accumulator": 0, "detune": 0, "gate": 255, "total_wait": 0,
                 "fade_vol": 255.0, "fade_target": 255.0, "fade_step": 0.0,
-                "muted": False
+                "muted": False, "porta_speed": 0, "target_freq": 0.0
             })
 
         self.instruments = {
             0: [15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0],
             1: [15, 15, 14, 14, 13, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0],
+            2: [15], # Full sustain
         }
 
     def init_notes(self):
@@ -410,7 +412,7 @@ class MusaXSim:
                         self.log_file.write(f"T:{self.total_ticks} | CH:{ch_idx} | PC:{old_pc:03X} | REST len:{ch['wait']}\n")
                         self.log_file.flush()
                 else: ch["active"] = False
-            elif cmd >= 0xF3 and cmd != 0xFF:
+            elif cmd >= 0xF2 and cmd != 0xFF:
                 if cmd == 0xFC: # VOLUME [Val]
                     ch["vol"] = ch["stream"][ch["pc"]]; ch["pc"] += 1
                 elif cmd == 0xFA: # INST [ID]
@@ -517,8 +519,20 @@ class MusaXSim:
                     else:
                         ch["fade_target"] = float(target)
                         ch["fade_step"] = float(step)
+                elif cmd == 0xF2: # PORTA [Speed]
+                    ch["porta_speed"] = ch["stream"][ch["pc"]]; ch["pc"] += 1
             else:
-                ch["note_val"] = cmd; ch["freq"] = self.note_to_freq(cmd, ch["detune"]); ch["inst_pc"] = 0; ch["sample_idx"] = 0
+                ch["target_note"] = cmd
+                # Chromatic Portamento: If speed is 0 or first note, snap immediately
+                if ch["porta_speed"] == 0 or ch["note_val"] == 255:
+                    ch["note_val"] = cmd
+                    ch["freq"] = self.note_to_freq(cmd, ch["detune"])
+                    ch["inst_pc"] = 0 # Trigger Attack
+                
+                # Reset timer for the new slide
+                ch["porta_timer"] = 0
+                
+                ch["sample_idx"] = 0
                 ch["gated_logged"] = False
                 notes = ["C-", "C#", "D-", "D#", "E-", "F-", "F#", "G-", "G#", "A-", "A#", "B-"]
                 ch["note_name"] = f"{notes[cmd % 12]}{cmd // 12}"
@@ -542,6 +556,22 @@ class MusaXSim:
             self.current_fx_priority = 0
 
         for ch in self.channels:
+            # Handle Chromatic PORTA logic (60Hz update)
+            if ch["active"] and ch["porta_speed"] > 0 and ch["note_val"] != 255 and ch["target_note"] != 255:
+                if ch["note_val"] != ch["target_note"]:
+                    ch["porta_timer"] += 1
+                    if ch["porta_timer"] >= ch["porta_speed"]:
+                        ch["porta_timer"] = 0
+                        if ch["note_val"] < ch["target_note"]:
+                            ch["note_val"] += 1
+                        else:
+                            ch["note_val"] -= 1
+                        ch["freq"] = self.note_to_freq(ch["note_val"], ch["detune"])
+                        # Update note_name for visual feedback
+                        notes_list = ["C-", "C#", "D-", "D#", "E-", "F-", "F#", "G-", "G#", "A-", "A#", "B-"]
+                        ch["note_name"] = f"{notes_list[ch['note_val'] % 12]}{ch['note_val'] // 12}"
+                        # NOTE: We do NOT reset inst_pc here (Legato behavior)
+
             # Handle FADE logic (60Hz update)
             if ch["fade_vol"] < ch["fade_target"]:
                 ch["fade_vol"] = min(ch["fade_target"], ch["fade_vol"] + ch["fade_step"])
@@ -598,14 +628,14 @@ class MusaXSim:
 
         sys.stdout.write("\033[H")
         sys.stdout.write(
-            f"\033[1;44;37m MusaX Simulator v1.7 \033[0m"
+            f"\033[1;44;37m MusaX Simulator v1.8 \033[0m"
             f" 60Hz | T:{self.total_ticks:>7} | {int(m)}:{s:04.1f} | SFX:{self.sfx_mask:03b} | \033[1;33mP:{self.current_fx_priority:>2}\033[0m | Loops:{self.global_loops} {'\033[1;31m[PAUSED]\033[0m' if self.paused else ''}\r\n"
         )
         sys.stdout.write("\033[94m━\033[0m" * W + "\r\n")
 
         # Table Header - Precisely aligned
-        # Indices: CH:2, STATE:6, NOTE:14, WAIT:20, VOLUME:27, FADE:51, BPM:57, LABEL:64, LOOPS:73, PC:87
-        sys.stdout.write("\033[1m  CH  STATE   NOTE  WAIT   VOLUME / ENVELOPE       FADE  BPM   LABEL     LOOPS          PC   FRAC HEX SNIP\033[0m\r\n")
+        # Indices: CH:2, STATE:6, NOTE:14, WAIT:20, VOLUME:27, FADE:51, BPM:57, SLIDE:63, LABEL:69, LOOPS:79, PC:93
+        sys.stdout.write("\033[1m  CH  STATE   NOTE  WAIT   VOLUME / ENVELOPE       FADE  BPM   SLIDE LABEL     LOOPS          PC   FRAC HEX SNIP\033[0m\r\n")
         sys.stdout.write("  " + "\033[90m─\033[0m" * (W-2) + "\r\n")
 
         for i in range(MAX_CHANNELS):
@@ -652,10 +682,11 @@ class MusaXSim:
                     bpm_n  = f"{self._bpm(ch):>3}"
                     fade_n = int(ch["fade_vol"] * 100 / 255)
                     fade_str = f"{fade_n:>3}%"
+                    porta_str = f"{ch['porta_speed']:>3}" if ch['porta_speed'] > 0 else "   "
                     label  = f"\033[36m{self._current_label(ch)[:8]:8}\033[0m"
                     linfo  = f"\033[35m{self._loop_info(ch)[:12]:12}\033[0m"
                 else:
-                    bpm_n = "   "; fade_str = "    "; label = " " * 8; linfo = " " * 12
+                    bpm_n = "   "; fade_str = "    "; porta_str = "   "; label = " " * 8; linfo = " " * 12
 
                 # Row construction with precise visible padding
                 row = f"{audible_marker} {ch_name} [{status_color}{status_text}\033[0m]   "
@@ -664,6 +695,7 @@ class MusaXSim:
                 row += f"{self._pad(bar, 24)}"
                 row += f"{fade_str}  "
                 row += f"{bpm_n}   "
+                row += f"{porta_str}   "
                 row += f"{self._pad(label, 10)}"
                 row += f"{self._pad(linfo, 15)}"
                 row += f"{pc} {frac} "
@@ -720,9 +752,11 @@ class MusaXSim:
         while True:
             # Check for completion
             if not any(ch["active"] for ch in self.channels):
+                print(f"[DEBUG] No active channels. Active mask: {self.active_mask}")
                 break
             
             if loops > 0 and self.global_loops >= loops:
+                print(f"[DEBUG] Global loops reached: {self.global_loops}")
                 break
             
             if len(all_samples) >= max_samples:

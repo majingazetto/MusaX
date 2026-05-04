@@ -1,0 +1,49 @@
+; ************************************************************************
+; * porta_test.Z8A - Demonstration of Chromatic Portamento (Staircase)
+; ************************************************************************
+
+INCLUDE "musax_const.Z8A"
+
+; --- Header ---
+
+HDR:
+    DEFW #0600, CH_A
+    DEFW #0600, 0
+    DEFW #0600, 0
+
+; --- Streams ---
+
+CH_A:
+    DEFB CMD_VOLUME, 15
+    DEFB CMD_INST, 2        ; Use Sustain Instrument
+    
+    ; - Test 1: Octave up (Fast: 2 frames per semitone)
+    DEFB CMD_PORTA, 2
+    DEFB C3
+    DEFW LEN_Q
+    DEFB C4
+    DEFW LEN_H
+    
+    ; - Test 2: Octave down (Slow: 10 frames per semitone)
+    DEFB CMD_PORTA, 10
+    DEFB C4
+    DEFW LEN_Q
+    DEFB C3
+    DEFW LEN_W
+    
+    ; - Test 3: Large Jump (2 octaves, 4 frames per semitone)
+    DEFB CMD_PORTA, 4
+    DEFB C2
+    DEFW LEN_Q
+    DEFB C4
+    DEFW LEN_W
+    
+    ; - Test 4: Disable Portamento (Snap)
+    DEFB CMD_PORTA, 0
+    DEFB C3
+    DEFW LEN_Q
+    DEFB C4
+    DEFW LEN_Q
+    
+    DEFB CMD_RESTART
+    DEFW CH_A
