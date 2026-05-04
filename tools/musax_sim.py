@@ -48,6 +48,9 @@ MAX_STREAMS = 6  # 3 Music + 3 FX
 SAMPLE_RATE = 44100
 INTERRUPT_FREQ = 60
 SAMPLES_PER_INT = SAMPLE_RATE // INTERRUPT_FREQ
+# Max int16 headroom split evenly across all channels at vol=15.
+# 32767 // (3 * 15) = 728. No clipping possible regardless of ADSR state.
+CH_AMP = 32767 // (MAX_CHANNELS * 15)
 
 
 class MusaXSim:
@@ -93,7 +96,8 @@ class MusaXSim:
             is_fx = i >= 3
             self.channels.append({
                 "active": False, "note_val": 255, "freq": 0.0,
-                "vol": 15, "cur_vol": 0, "inst": 0, "inst_pc": 0,
+                "vol": 15, "cur_vol": 0, "inst": 0,
+                "inst_data": [255, 16, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], # default #0: Linear Decay
                 "stream": [], "stream_base": 0, "stream_name": "",
                 "pc": 0, "wait": 0, "sample_idx": 0,
                 "note_name": "---", "loop_count": 0, "loop_ticks": 0,
@@ -101,14 +105,31 @@ class MusaXSim:
                 "bpm_step": 0x2400 if is_fx else 0x0600, # FX default to 168 BPM
                 "accumulator": 0, "detune": 0, "gate": 255, "total_wait": 0,
                 "fade_vol": 255.0, "fade_target": 255.0, "fade_step": 0.0,
-                "muted": False, "porta_speed": 0, "target_freq": 0.0
+                "muted": False, "porta_speed": 0, "target_freq": 0.0,
+                "target_note": 255, "porta_timer": 0,
+                "adsr_state": 0, "adsr_acc": 0.0, "lfo_phase": 0.0, "lfo_delay_ctr": 0
             })
 
-        self.instruments = {
-            0: [15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0],
-            1: [15, 15, 14, 14, 13, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0],
-            2: [15], # Full sustain
-        }
+        # Default instrument table — used when source's PTR_INST == 0.
+        # 16-byte record:
+        #   [0:Att 1:Dec 2:Sus 3:Rel] ADSR
+        #   [4:LFODest 5:LFOWave 6:LFOPars 7:LFODelay] LFO
+        #   [8:Flags 9..15:Reserved]
+        # LFOPars: high nibble = speed, low nibble = amplitude.
+        # LFODest: 0=off, 1=pitch (vibrato), 2=volume (tremolo).
+        # LFOWave: 0=triangle, 1=saw, 2=square.
+        self.default_instruments = [
+            [255,  16,   0,   1, 0, 0, 0x00,  0, 0, 0,0,0,0,0,0,0], # 0: Linear Decay (classic — 16 frames to silence)
+            [255,  10, 200,  20, 0, 0, 0x00,  0, 0, 0,0,0,0,0,0,0], # 1: Plucky
+            [ 10,   5, 255,  10, 1, 0, 0x84, 20, 0, 0,0,0,0,0,0,0], # 2: Smooth Lead w/ Vibrato
+            [255,   0, 255,   0, 0, 0, 0x00,  0, 0, 0,0,0,0,0,0,0], # 3: Full Sustain (Organ)
+            [  5,  10, 150,   5, 2, 0, 0x68,  0, 0, 0,0,0,0,0,0,0], # 4: Ambient Pad w/ Tremolo
+        ]
+        # Per-source instrument table pointers (0 = use defaults)
+        self.music_inst_ptr = 0
+        self.fx_inst_ptr = 0
+        # Flat byte-addressed memory built after Pass 3 (for instrument deref)
+        self.flat_memory = {}
 
     def init_notes(self):
         notes = ["C", "Cs", "D", "Ds", "E", "F", "Fs", "G", "Gs", "A", "As", "B"]
@@ -126,6 +147,26 @@ class MusaXSim:
         if note_val == 255: return 0.0
         # detune is in cents (1/100th of a semitone)
         return 440.0 * (2.0 ** (((note_val + 12 + detune/100.0) - 69.0) / 12.0))
+
+    def _read_word(self, addr):
+        if addr == 0: return 0
+        return self.flat_memory.get(addr, 0) | (self.flat_memory.get(addr + 1, 0) << 8)
+
+    def _read_byte(self, addr):
+        return self.flat_memory.get(addr, 0)
+
+    def resolve_instrument(self, table_ptr, inst_id):
+        """Resolve CMD_INST id through a pointer-table at table_ptr.
+        Returns a 16-byte list. Falls back to defaults when table_ptr==0
+        or the dereferenced address is invalid."""
+        if table_ptr == 0:
+            if 0 <= inst_id < len(self.default_instruments):
+                return list(self.default_instruments[inst_id])
+            return list(self.default_instruments[0])
+        rec_addr = self._read_word(table_ptr + inst_id * 2)
+        if rec_addr == 0 or rec_addr not in self.flat_memory:
+            return list(self.default_instruments[0])
+        return [self._read_byte(rec_addr + i) for i in range(16)]
 
     def eval_expr(self, expr):
         try:
@@ -237,6 +278,12 @@ class MusaXSim:
             self.all_streams[s_name] = bytes_out
             self.stream_bases[s_name] = local_stream_bases[s_name]
 
+        # Pass 3b: Build flat byte-addressed memory for instrument-pointer dereference.
+        for name, bytes_list in self.all_streams.items():
+            base = self.stream_bases.get(name, 0)
+            for i, b in enumerate(bytes_list):
+                self.flat_memory[base + i] = b
+
         if not is_fx_only:
             # Pass 4: Assign Music Streams
             music_hdr_name = next((k for k in self.all_streams if "HDR" in k.upper() and "FX" not in k.upper()), None)
@@ -246,7 +293,7 @@ class MusaXSim:
                     # Each channel has [BPM (2b), PTR (2b)]
                     bpm = hdr_bytes[i*4] + (hdr_bytes[i*4 + 1] << 8)
                     ptr = hdr_bytes[i*4 + 2] + (hdr_bytes[i*4 + 3] << 8)
-                    
+
                     ch = self.channels[i]
                     ch["bpm_step"] = bpm
                     if ptr != 0:
@@ -256,6 +303,12 @@ class MusaXSim:
                             ch["stream_base"] = self.stream_bases[s_name]
                             ch["stream_name"] = s_name
                             ch["active"] = True
+                # v1.9: Optional PTR_INST at offset 12 (header grew 12b -> 14b).
+                # Older 12-byte headers fall back to PTR_INST=0 (defaults).
+                if len(hdr_bytes) >= 14:
+                    self.music_inst_ptr = hdr_bytes[12] + (hdr_bytes[13] << 8)
+                else:
+                    self.music_inst_ptr = 0
             
         # Pass 5: FX Logic (either from main file or dedicated FX file)
         # Structure: DEFW PTR_FXHDR, PRIORITY
@@ -286,7 +339,12 @@ class MusaXSim:
                                 fx_data.append({"bpm": 0x2400, "ptr": ptr_fx})
                             else:
                                 fx_data.append({"bpm": 0x2400, "ptr": 0})
-                    self.fx_library.append({"data": fx_data, "priority": priority, "name": hdr_name})
+                    # v1.9: Optional PTR_INST at offset 12 of FX header (12b -> 14b).
+                    if len(hdr_bytes) >= 14:
+                        inst_ptr = hdr_bytes[12] + (hdr_bytes[13] << 8)
+                    else:
+                        inst_ptr = 0
+                    self.fx_library.append({"data": fx_data, "priority": priority, "name": hdr_name, "inst_ptr": inst_ptr})
 
     def read_with_includes(self, fname, base_path):
         candidates = [
@@ -323,6 +381,7 @@ class MusaXSim:
 
         # Load new FX
         self.current_fx_priority = req["priority"]
+        self.fx_inst_ptr = req.get("inst_ptr", 0)
         if self.log_file: self.log_file.write(f"T:{self.total_ticks} | REQ_FX START: {req['name']} (P:{self.current_fx_priority})\n")
         
         for i in range(3):
@@ -355,6 +414,10 @@ class MusaXSim:
                     ch["loop_stack"] = []
                     ch["bpm_step"] = bpm # Use BPM from header
                     ch["active"] = True
+                    ch["adsr_state"] = 0
+                    ch["adsr_acc"] = 0.0
+                    ch["inst"] = 0
+                    ch["inst_data"] = self.resolve_instrument(self.fx_inst_ptr, 0)
                 else:
                     ch["active"] = False
 
@@ -400,9 +463,13 @@ class MusaXSim:
                 ch["note_val"] = 255; ch["freq"] = 0.0; ch["total_wait"] = 0; ch["gated_logged"] = False
                 if ch["pc"] + 1 < len(ch["stream"]):
                     wait_val = ch["stream"][ch["pc"]] + (ch["stream"][ch["pc"] + 1] << 8); ch["pc"] += 2
-                    if wait_val == 0: # Zero wait = STOP
+                    if wait_val == 0: # REST 0 = immediate STOP (deactivate channel).
+                        # Use CMD_GATE before the final note if you want a release tail.
                         ch["active"] = False
-                        if self.log_file: 
+                        ch["adsr_state"] = 0
+                        ch["adsr_acc"] = 0.0
+                        if ch_idx < 3: self.finished_mask |= (1 << ch_idx)
+                        if self.log_file:
                             self.log_file.write(f"T:{self.total_ticks} | CH:{ch_idx} | PC:{old_pc:03X} | STOP via REST 0\n")
                             self.log_file.flush()
                         continue
@@ -416,7 +483,10 @@ class MusaXSim:
                 if cmd == 0xFC: # VOLUME [Val]
                     ch["vol"] = ch["stream"][ch["pc"]]; ch["pc"] += 1
                 elif cmd == 0xFA: # INST [ID]
-                    ch["inst"] = ch["stream"][ch["pc"]]; ch["pc"] += 1
+                    inst_id = ch["stream"][ch["pc"]]; ch["pc"] += 1
+                    ch["inst"] = inst_id
+                    table_ptr = self.fx_inst_ptr if ch_idx >= 3 else self.music_inst_ptr
+                    ch["inst_data"] = self.resolve_instrument(table_ptr, inst_id)
                 elif cmd == 0xFD: # TEMPO [Val]
                     if ch["pc"] + 1 < len(ch["stream"]):
                         ch["bpm_step"] = ch["stream"][ch["pc"]] + (ch["stream"][ch["pc"]+1] << 8); ch["pc"] += 2
@@ -527,7 +597,13 @@ class MusaXSim:
                 if ch["porta_speed"] == 0 or ch["note_val"] == 255:
                     ch["note_val"] = cmd
                     ch["freq"] = self.note_to_freq(cmd, ch["detune"])
-                    ch["inst_pc"] = 0 # Trigger Attack
+                    # Trigger ADSR Attack
+                    ch["adsr_state"] = 1 # ATTACK
+                    ch["adsr_acc"] = 0.0
+                    
+                    # Initialize LFO from cached instrument
+                    ch["lfo_delay_ctr"] = ch["inst_data"][7]
+                    ch["lfo_phase"] = 0.0
                 
                 # Reset timer for the new slide
                 ch["porta_timer"] = 0
@@ -554,8 +630,66 @@ class MusaXSim:
         
         if self.sfx_mask == 0:
             self.current_fx_priority = 0
+            self.fx_inst_ptr = 0
 
         for ch in self.channels:
+            ch["cur_freq_mod"] = ch["freq"]
+            inst = ch["inst_data"]
+
+            # --- 1. ADSR STATE MACHINE ---
+            if ch["adsr_state"] == 1: # ATTACK
+                ch["adsr_acc"] += inst[0]
+                if ch["adsr_acc"] >= 255.0:
+                    ch["adsr_acc"] = 255.0
+                    ch["adsr_state"] = 2 # Pass to DECAY
+            elif ch["adsr_state"] == 2: # DECAY
+                ch["adsr_acc"] -= inst[1]
+                if ch["adsr_acc"] <= inst[2]: # Sustain Level
+                    ch["adsr_acc"] = float(inst[2])
+                    ch["adsr_state"] = 3 # Pass to SUSTAIN
+            elif ch["adsr_state"] == 4: # RELEASE
+                ch["adsr_acc"] -= inst[3]
+                if ch["adsr_acc"] <= 0.0:
+                    ch["adsr_acc"] = 0.0
+                    ch["adsr_state"] = 0 # IDLE
+
+            # --- 2. LFO ENGINE ---
+            # Phase is a 0..255 unsigned counter, advanced by `speed` units/frame.
+            # Wave outputs a signed value in [-127, +127], scaled by amp (0..15).
+            lfo_val = 0.0
+            if ch["adsr_state"] != 0:
+                if ch["lfo_delay_ctr"] > 0:
+                    ch["lfo_delay_ctr"] -= 1
+                else:
+                    lfo_pars = inst[6]
+                    lfo_speed = (lfo_pars >> 4) & 0x0F
+                    lfo_amp = lfo_pars & 0x0F
+
+                    ch["lfo_phase"] = (ch["lfo_phase"] + lfo_speed) % 256.0
+                    p = ch["lfo_phase"]
+                    wave_type = inst[5]
+                    if wave_type == 0:   # Triangle: 0..127..0..-127..0
+                        if p < 64:        wave = p * 2                  # 0   -> 127
+                        elif p < 192:     wave = 254 - (p * 2)          # 127 -> -127
+                        else:             wave = (p - 256) * 2          # -127 -> 0
+                    elif wave_type == 1: # Saw: ramps -127 -> +127
+                        wave = p - 128
+                    else:                # Square: -127 / +127
+                        wave = -127 if p < 128 else 127
+                    lfo_val = (wave * lfo_amp) / 15.0
+
+            # --- 3. APPLY MODULATIONS ---
+            final_vol_scale = ch["adsr_acc"]
+            final_freq = ch["freq"]
+
+            lfo_dest = inst[4]
+            if lfo_dest == 1: # PITCH (Vibrato) — lfo_val in cents
+                final_freq = self.note_to_freq(ch["note_val"], ch["detune"] + lfo_val)
+            elif lfo_dest == 2: # VOLUME (Tremolo)
+                final_vol_scale = max(0.0, min(255.0, final_vol_scale + lfo_val))
+
+            ch["cur_freq_mod"] = final_freq # Used for mixing
+
             # Handle Chromatic PORTA logic (60Hz update)
             if ch["active"] and ch["porta_speed"] > 0 and ch["note_val"] != 255 and ch["target_note"] != 255:
                 if ch["note_val"] != ch["target_note"]:
@@ -570,7 +704,6 @@ class MusaXSim:
                         # Update note_name for visual feedback
                         notes_list = ["C-", "C#", "D-", "D#", "E-", "F-", "F#", "G-", "G#", "A-", "A#", "B-"]
                         ch["note_name"] = f"{notes_list[ch['note_val'] % 12]}{ch['note_val'] // 12}"
-                        # NOTE: We do NOT reset inst_pc here (Legato behavior)
 
             # Handle FADE logic (60Hz update)
             if ch["fade_vol"] < ch["fade_target"]:
@@ -581,12 +714,10 @@ class MusaXSim:
             if not ch["active"] or ch["note_val"] == 255: 
                 ch["cur_vol"] = 0
                 continue
-            env = self.instruments.get(ch["inst"], [15])
-            env_vol = env[min(ch["inst_pc"], len(env) - 1)]
-            # Scale volume by stream volume (0-15) AND fade volume (0-255)
-            ch["cur_vol"] = (env_vol * ch["vol"] * int(ch["fade_vol"])) // (15 * 255)
+            
+            # SCALE VOLUME: (Channel Vol * Fade Vol * ADSR Acc)
+            ch["cur_vol"] = int((ch["vol"] * (ch["fade_vol"] / 255.0) * (final_vol_scale / 255.0)))
             if ch["muted"]: ch["cur_vol"] = 0
-            ch["inst_pc"] += 1
 
     def _vis_len(self, s):
         """Returns the visible length of a string, excluding ANSI escape codes."""
@@ -628,14 +759,14 @@ class MusaXSim:
 
         sys.stdout.write("\033[H")
         sys.stdout.write(
-            f"\033[1;44;37m MusaX Simulator v1.8 \033[0m"
+            f"\033[1;44;37m MusaX Simulator v1.9 \033[0m"
             f" 60Hz | T:{self.total_ticks:>7} | {int(m)}:{s:04.1f} | SFX:{self.sfx_mask:03b} | \033[1;33mP:{self.current_fx_priority:>2}\033[0m | Loops:{self.global_loops} {'\033[1;31m[PAUSED]\033[0m' if self.paused else ''}\r\n"
         )
         sys.stdout.write("\033[94m━\033[0m" * W + "\r\n")
 
-        # Table Header - Precisely aligned
-        # Indices: CH:2, STATE:6, NOTE:14, WAIT:20, VOLUME:27, FADE:51, BPM:57, SLIDE:63, LABEL:69, LOOPS:79, PC:93
-        sys.stdout.write("\033[1m  CH  STATE   NOTE  WAIT   VOLUME / ENVELOPE       FADE  BPM   SLIDE LABEL     LOOPS          PC   FRAC HEX SNIP\033[0m\r\n")
+        # Column layout (visible chars, SEP=2):
+        # [11] CH+STATE  [4] I:N  [5] NOTE  [6] WAIT  [17] VU  [6] FADE  [5] BPM  [5] SLD  [9] ADSR  [10] LABEL  [12] LOOPS  [11] PC+FRAC  [11] HEX
+        sys.stdout.write("\033[1m  CH  STATE  I   NOTE WAIT  VOL/ENV          FADE  BPM  SLD  ADSR     LABEL     LOOPS       PC  FRAC  HEX\033[0m\r\n")
         sys.stdout.write("  " + "\033[90m─\033[0m" * (W-2) + "\r\n")
 
         for i in range(MAX_CHANNELS):
@@ -679,27 +810,34 @@ class MusaXSim:
                 ) + "\033[0m"
 
                 if ch["active"]:
-                    bpm_n  = f"{self._bpm(ch):>3}"
-                    fade_n = int(ch["fade_vol"] * 100 / 255)
-                    fade_str = f"{fade_n:>3}%"
+                    bpm_n     = f"{self._bpm(ch):>3}"
+                    fade_n    = int(ch["fade_vol"] * 100 / 255)
+                    fade_str  = f"{fade_n:>3}%"
                     porta_str = f"{ch['porta_speed']:>3}" if ch['porta_speed'] > 0 else "   "
-                    label  = f"\033[36m{self._current_label(ch)[:8]:8}\033[0m"
-                    linfo  = f"\033[35m{self._loop_info(ch)[:12]:12}\033[0m"
+                    label     = f"\033[36m{self._current_label(ch)[:8]:8}\033[0m"
+                    linfo     = f"\033[35m{self._loop_info(ch)[:10]:10}\033[0m"
+                    inst_str  = f"\033[33m{ch['inst']:>2}\033[0m"
                 else:
-                    bpm_n = "   "; fade_str = "    "; porta_str = "   "; label = " " * 8; linfo = " " * 12
+                    bpm_n = "   "; fade_str = "    "; porta_str = "   "
+                    label = " " * 8; linfo = " " * 10; inst_str = "  "
 
-                # Row construction with precise visible padding
-                row = f"{audible_marker} {ch_name} [{status_color}{status_text}\033[0m]   "
-                row += f"{note}   "
-                row += f"{wait_str}   "
-                row += f"{self._pad(bar, 24)}"
-                row += f"{fade_str}  "
-                row += f"{bpm_n}   "
-                row += f"{porta_str}   "
-                row += f"{self._pad(label, 10)}"
-                row += f"{self._pad(linfo, 15)}"
-                row += f"{pc} {frac} "
-                row += f"{hex_snip}\r\n"
+                adsr_info = f"{['---', 'ATT', 'DEC', 'SUS', 'REL'][ch['adsr_state']]} {int(ch['adsr_acc']):>3}"
+
+                # Uniform 2-space separator between every column.
+                # Visible widths: [11] state [4] inst [5] note [6] wait [17] vu [6] fade [5] bpm [5] sld [9] adsr [10] label [12] loops [11] pc+frac [11] hex
+                row  = f"{audible_marker} {ch_name} [{status_color}{status_text}\033[0m]"  # 11
+                row += f"  {inst_str}"                        # 2+2  = 4
+                row += f"  {note}"                            # 2+3  = 5
+                row += f"  {wait_str}"                        # 2+4  = 6
+                row += f"  {self._pad(bar, 15)}"              # 2+15 = 17
+                row += f"  {fade_str}"                        # 2+4  = 6
+                row += f"  {bpm_n}"                           # 2+3  = 5
+                row += f"  {porta_str}"                       # 2+3  = 5
+                row += f"  {adsr_info}"                       # 2+7  = 9
+                row += f"  {self._pad(label, 8)}"             # 2+8  = 10
+                row += f"  {self._pad(linfo, 10)}"            # 2+10 = 12
+                row += f"  {pc} {frac}"                       # 2+3+1+4 = 10
+                row += f"  {hex_snip}\r\n"                    # 2+11 = 13
                 sys.stdout.write(row)
 
             if i < 2: sys.stdout.write("  " + "\033[2;90m┄\033[0m" * (W-4) + "\r\n")
@@ -831,20 +969,24 @@ class MusaXSim:
                 src = fx_ch if fx_ch["active"] else music_ch
                 
                 if src["active"] and src["note_val"] != 255 and src["freq"] > 0:
-                    amp = src["cur_vol"] * 1000
+                    amp = src["cur_vol"] * CH_AMP
                     
-                    # Apply GATE silencing
+                    # Apply GATE silencing (Trigger Release)
                     if src["gate"] < 255 and src["total_wait"] > 0:
                         played_ticks = src["total_wait"] - src["wait"]
                         if played_ticks * 256 >= src["total_wait"] * src["gate"]:
                             if not src.get("gated_logged", False):
                                 if self.log_file: 
-                                    self.log_file.write(f"T:{self.total_ticks} | CH:{i} | GATED (gate:{src['gate']})\n")
+                                    self.log_file.write(f"T:{self.total_ticks} | CH:{i} | GATED (gate:{src['gate']}) -> RELEASE\n")
                                     self.log_file.flush()
                                 src["gated_logged"] = True
-                            amp = 0
+                            # Trigger Release phase
+                            if src["adsr_state"] != 4 and src["adsr_state"] != 0:
+                                src["adsr_state"] = 4
 
-                    period = SAMPLE_RATE / src["freq"]
+                    freq = src.get("cur_freq_mod", src["freq"])
+                    if freq <= 0: continue
+                    period = SAMPLE_RATE / freq
                     p_ch = self.physical_channels[i]
                     p_ch["sample_idx"] += 1
                     mixed += amp if (p_ch["sample_idx"] % period) < (period / 2) else -amp
@@ -872,20 +1014,24 @@ class MusaXSim:
                 src = fx_ch if fx_ch["active"] else music_ch
                 
                 if src["active"] and src["note_val"] != 255 and src["freq"] > 0:
-                    amp = src["cur_vol"] * 1000
+                    amp = src["cur_vol"] * CH_AMP
                     
-                    # Apply GATE silencing
+                    # Apply GATE silencing (Trigger Release)
                     if src["gate"] < 255 and src["total_wait"] > 0:
                         played_ticks = src["total_wait"] - src["wait"]
                         if played_ticks * 256 >= src["total_wait"] * src["gate"]:
                             if not src.get("gated_logged", False):
                                 if self.log_file: 
-                                    self.log_file.write(f"T:{self.total_ticks} | CH:{i} | GATED (gate:{src['gate']})\n")
+                                    self.log_file.write(f"T:{self.total_ticks} | CH:{i} | GATED (gate:{src['gate']}) -> RELEASE\n")
                                     self.log_file.flush()
                                 src["gated_logged"] = True
-                            amp = 0
+                            # Trigger Release phase
+                            if src["adsr_state"] != 4 and src["adsr_state"] != 0:
+                                src["adsr_state"] = 4
 
-                    period = SAMPLE_RATE / src["freq"]
+                    freq = src.get("cur_freq_mod", src["freq"])
+                    if freq <= 0: continue
+                    period = SAMPLE_RATE / freq
                     p_ch = self.physical_channels[i]
                     p_ch["sample_idx"] += 1
                     mixed += amp if (p_ch["sample_idx"] % period) < (period / 2) else -amp

@@ -12,6 +12,7 @@ MUSICAL_HDR:
     DEFW    #1400, LEAD        ; 120 BPM
     DEFW    #1400, HARMONY
     DEFW    #1400, BASS
+    DEFW    0                  ; PTR_INST (0 = defaults)
 
 ; --- CHANNEL A: LEAD MELODY ---
 LEAD:

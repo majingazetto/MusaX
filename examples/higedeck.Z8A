@@ -18,6 +18,7 @@ HGDHDR:
     DEFW    #2400, HGDCHA  ; BPM_A, PTR_A
     DEFW    #2400, HGDCHB  ; BPM_B, PTR_B
     DEFW    #2400, HGDCHC  ; BPM_C, PTR_C
+    DEFW    0              ; PTR_INST (0 = defaults)
 
 ; ===========================================================
 ; CHANNEL A: LEAD MELODY

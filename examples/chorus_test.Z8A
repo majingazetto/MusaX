@@ -15,6 +15,7 @@ CHORUS_HDR:
     DEFW    #1400, LEAD_MELODY  ; BPM_A (120), PTR_A
     DEFW    #1400, CHORUS_VOICE ; BPM_B (120), PTR_B
     DEFW    #1400, 0            ; BPM_C, PTR_C
+    DEFW    0                   ; PTR_INST (0 = defaults)
 
 ; --- SHARED MELODY ---
 MELODY:

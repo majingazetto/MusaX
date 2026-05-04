@@ -9,6 +9,7 @@ STRESS_HDR:
     DEFW    #0F00, STRESS_CHA  ; BPM_A, PTR_A
     DEFW    #0F00, STRESS_CHB  ; BPM_B, PTR_B
     DEFW    #0F00, STRESS_CHC  ; BPM_C, PTR_C
+    DEFW    0                  ; PTR_INST (0 = defaults)
 
 ; --- CHANNEL A: MELODY & STRUCTURE ---
 STRESS_CHA:

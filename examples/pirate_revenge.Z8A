@@ -34,6 +34,7 @@ PIREHDR:
     DEFW    TMP_FAST, PIRCHA  ; BPM_A, PTR_A
     DEFW    TMP_FAST, PIRCHB  ; BPM_B, PTR_B
     DEFW    TMP_FAST, PIRCHC  ; BPM_C, PTR_C
+    DEFW    0                 ; PTR_INST (0 = defaults)
 
 ; ===========================================================
 ; CHANNEL A: LEAD MELODY  (long loop — anchor for global sync)

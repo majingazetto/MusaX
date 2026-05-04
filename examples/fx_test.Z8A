@@ -9,12 +9,14 @@ MUSHDR:
     DEFW    #0800, MUSCHA  ; BPM_A, PTR_A
     DEFW    #0800, MUSCHB  ; BPM_B, PTR_B
     DEFW    #0800, MUSCHC  ; BPM_C, PTR_C
+    DEFW    0              ; PTR_INST (0 = defaults)
 
 ; FX Header
 FXHDR:
     DEFW    #2400, FXCHA  ; BPM_A, PTR_A
     DEFW    #2400, 0      ; BPM_B, PTR_B
     DEFW    #2400, 0      ; BPM_C, PTR_C
+    DEFW    0             ; PTR_INST (0 = defaults)
 
 ; ===========================================================
 ; MUSIC CHANNELS
@@ -60,21 +62,25 @@ MUSCHC:
         DEFW    #2400, FX_JUMP
         DEFW    #2400, 0
         DEFW    #2400, 0
+        DEFW    0
 
     FXHDR_HI:
         DEFW    #2400, FX_SIREN
         DEFW    #2400, 0
         DEFW    #2400, 0
+        DEFW    0
 
     FXHDR_FAN:
         DEFW    #2400, FX_FAN_A
         DEFW    #2400, FX_FAN_B
         DEFW    #2400, 0
+        DEFW    0
 
     FXHDR_TRI:
         DEFW    #2400, FX_TRI_A
         DEFW    #2400, FX_TRI_B
         DEFW    #2400, FX_TRI_C
+        DEFW    0
 
     ; ===========================================================
     ; FX STREAMS

@@ -11,6 +11,7 @@ HDR:
     DEFW #0580, CH_BASS    ; 130 BPM approx
     DEFW #0580, CH_PAD
     DEFW #0580, CH_LEAD
+    DEFW 0                 ; PTR_INST (0 = defaults)
 
 ; --- Streams ---
 

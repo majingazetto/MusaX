@@ -44,7 +44,10 @@ The dashboard provides a live view of the engine state:
 - **VOLUME**: Visual envelope monitor and scale.
 - **FADE**: Current per-channel volume multiplier (0-100%).
 - **BPM**: Calculated real-time tempo per channel.
+- **SLIDE**: Current `CMD_PORTA` speed (frames/semitone).
+- **ADSR**: ADSR phase and envelope accumulator (`---/ATT/DEC/SUS/REL` + 0-255).
 - **PC**: Program counter (hex offset).
+- **FRAC**: 8-bit accumulator fraction (`.XXX`).
 - **HEX SNIP**: Live bytecode preview.
 
 ## Debugging with Trace Logs

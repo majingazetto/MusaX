@@ -15,6 +15,7 @@ POLYHDR:
     DEFW    #1400, POLYCHA  ; BPM_A, PTR_A
     DEFW    #1400, POLYCHB  ; BPM_B, PTR_B
     DEFW    #1400, POLYCHC  ; BPM_C, PTR_C
+    DEFW    0              ; PTR_INST (0 = defaults)
 
 ; --- CHANNEL A: STEADY QUARTERS ---
 POLYCHA:

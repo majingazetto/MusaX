@@ -1,6 +1,6 @@
 # MusaX Command Reference
 
-This document provides detailed information on all bytecode commands available in the MusaX sound engine (v1.7).
+This document provides detailed information on all bytecode commands available in the MusaX sound engine (v1.9).
 
 ## Flow Control
 
@@ -28,16 +28,16 @@ This document provides detailed information on all bytecode commands available i
 
 ### CMD_GATE (0xFB)
 - **Parameters:** `Gate (0-255)`
-- **Description:** Sets the articulation/gate time for subsequent notes. 
+- **Description:** Sets the articulation/gate time for subsequent notes.
 - **Math:** 0-254 represents a fraction of the note's duration. 255 represents 100% (legato).
-- **Usage:** Lower values (e.g., 32-64) create a staccato effect.
+- **Behavior (v1.9):** When the gated portion of the note has elapsed, the channel transitions to ADSR `RELEASE`. The instrument's `REL` rate then fades the envelope to silence.
+- **Usage:** Lower values (e.g., 32-64) create a staccato effect with a natural release tail.
 
 ### CMD_INST (0xFA)
 - **Parameters:** `InstrumentID (1 byte)`
-- **Description:** Selects the ADSR/Volume envelope for the channel.
-- **Default Envelopes:**
-  - `0`: Simple decay.
-  - `1`: Sustained square.
+- **Description:** Selects the instrument for the channel.
+- **Resolution (v1.9):** The active source's `PTR_INST` (from its 14-byte header) points to a table of `DEFW` pointers. The engine reads the pointer at `[PTR_INST + ID*2]` and copies the 16-byte instrument record into channel state for ADSR/LFO use.
+- **Defaults:** When `PTR_INST == 0`, the engine uses a built-in 4-instrument table (`Plucky`, `Vibrato Lead`, `Organ`, `Tremolo Pad`). See `technical_spec.md §5` for the full record layout.
 
 ### CMD_DETUNE (0xF5)
 - **Parameters:** `Cents (1 byte, signed)`

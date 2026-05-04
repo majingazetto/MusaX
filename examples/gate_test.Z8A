@@ -12,6 +12,7 @@ GATE_HDR:
     DEFW    #0600, SONG_A      ; BPM_A (60), PTR_A
     DEFW    0, 0
     DEFW    0, 0
+    DEFW    0                  ; PTR_INST (0 = defaults)
 
 SONG_A:
     DEFB    CMD_VOLUME, 15

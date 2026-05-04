@@ -15,6 +15,7 @@ JIG_HDR:
     DEFW    #12C0, JIG_CHA  ; BPM_A, PTR_A
     DEFW    #12C0, JIG_CHB  ; BPM_B, PTR_B
     DEFW    #12C0, JIG_CHC  ; BPM_C, PTR_C
+    DEFW    0              ; PTR_INST (0 = defaults)
 
 ; --- CHANNEL A: LEAD ---
 JIG_CHA:

@@ -10,6 +10,7 @@ HDR:
     DEFW #0600, CH_A
     DEFW #0600, 0
     DEFW #0600, 0
+    DEFW 0                  ; PTR_INST (0 = defaults)
 
 ; --- Streams ---
 
