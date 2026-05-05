@@ -1,22 +1,23 @@
 ; ************************************************************************
 ; * song_demo.Z8A - Generated from song_demo.msl
-; * MusaX-ML Compiler v1.0
+; * Title: song_demo
+; * MusaX-ML Compiler v1.1
 ; ************************************************************************
 
 INCLUDE "musax_const.Z8A"
 
-; --- Header ---
-HDR_START:
+; --- Song Header ---
+HDR_SONG_DEMO:
     DEFB TYPE_SONG
     DEFW #0600, CH_A
     DEFW #0600, CH_B
     DEFW #0600, CH_C
-    DEFW INST_TABLE
+    DEFW INST_TABLE_SONG_DEMO
 
 ; --- Instrument Table ---
-INST_TABLE:
-    DEFW INST_0
-    DEFW INST_1
+INST_TABLE_SONG_DEMO:
+    DEFW INST_SONG_DEMO_0
+    DEFW INST_SONG_DEMO_1
     DEFW 0
     DEFW 0
     DEFW 0
@@ -32,25 +33,72 @@ INST_TABLE:
     DEFW 0
     DEFW 0
 
-INST_0:
+INST_SONG_DEMO_0:
     DEFB #FF, #0A, #C8, #14, #00, #00, #00, #00, #00, #00, #00, #00, #00, #00, #00, #00
-INST_1:
+INST_SONG_DEMO_1:
     DEFB #0A, #05, #FF, #0A, #01, #00, #2C, #14, #00, #00, #00, #00, #00, #00, #00, #00
 
 ; --- Bytecode Streams ---
-    DEFB #FD, #00, #06
+    DEFB CMD_TEMPO
+    DEFW #0600
 CH_A:
-    DEFB #FA, #00, #FC, #0C, #F9, #04, #24, #80
-    DEFB #01, #28, #80, #01, #2B, #80, #01, #18
-    DEFB #80, #01, #F8, #FE, #03, #00
+    DEFB CMD_INST, #00
+    DEFB CMD_VOLUME, #0C
+    DEFB CMD_LOOP_S, #04
+    DEFB C3
+    DEFW #0180
+    DEFB E3
+    DEFW #0180
+    DEFB G3
+    DEFW #0180
+    DEFB C2
+    DEFW #0180
+    DEFB CMD_LOOP_E
+    DEFB CMD_RESTART
+    DEFW CH_A
 CH_B:
-    DEFB #FA, #01, #FC, #0F, #3C, #00, #03, #40
-    DEFB #00, #03, #43, #00, #06, #41, #00, #03
-    DEFB #40, #00, #03, #3E, #00, #06, #3C, #00
-    DEFB #03, #40, #00, #03, #43, #00, #03, #30
-    DEFB #00, #03, #47, #00, #03, #45, #00, #03
-    DEFB #43, #00, #06, #FE, #19, #00
+    DEFB CMD_INST, #01
+    DEFB CMD_VOLUME, #0F
+    DEFB C5
+    DEFW #0300
+    DEFB E5
+    DEFW #0300
+    DEFB G5
+    DEFW #0600
+    DEFB F5
+    DEFW #0300
+    DEFB E5
+    DEFW #0300
+    DEFB D5
+    DEFW #0600
+    DEFB C5
+    DEFW #0300
+    DEFB E5
+    DEFW #0300
+    DEFB G5
+    DEFW #0300
+    DEFB C4
+    DEFW #0300
+    DEFB B5
+    DEFW #0300
+    DEFB A5
+    DEFW #0300
+    DEFB G5
+    DEFW #0600
+    DEFB CMD_RESTART
+    DEFW CH_B
 CH_C:
-    DEFB #FA, #00, #FC, #0A, #FF, #00, #0C, #F9
-    DEFB #02, #37, #00, #03, #3B, #00, #03, #26
-    DEFB #00, #06, #F8, #FE, #47, #00
+    DEFB CMD_INST, #00
+    DEFB CMD_VOLUME, #0A
+    DEFB REST
+    DEFW #0C00
+    DEFB CMD_LOOP_S, #02
+    DEFB G4
+    DEFW #0300
+    DEFB B4
+    DEFW #0300
+    DEFB D3
+    DEFW #0600
+    DEFB CMD_LOOP_E
+    DEFB CMD_RESTART
+    DEFW CH_C
