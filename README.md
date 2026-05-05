@@ -40,12 +40,18 @@ sudo apt install python3-pyaudio portaudio19-dev
 
 Check out the documentation in the `docs/` directory:
 - [Technical Specification](docs/technical_spec.md): Architecture, timing, and core concepts.
+- [CLI Hub Guide](docs/cli_hub.md): Using the unified `musax.py` developer tool.
 - [Command Reference](docs/commands.md): Comprehensive guide to MusaX bytecode.
 - [Simulator User Guide](docs/simulator.md): How to use `musax_sim.py` for real-time debugging.
 
-To try the engine immediately, run the chorus demonstration:
+To try the engine immediately, use the **CLI Hub** to play an example:
 ```bash
-python3 tools/musax_sim.py examples/chorus_test.Z8A
+python3 tools/musax.py play examples/msl/song_demo.msl
+```
+
+Or run the chorus demonstration directly from Z8A:
+```bash
+python3 tools/musax.py play examples/z8a/chorus_test.Z8A
 ```
 
 ---
