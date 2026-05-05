@@ -95,6 +95,12 @@ class Instrument:
     lfo: List[int]
     flags: int
 
+@dataclass
+class MSLError:
+    line: int
+    column: int
+    message: str
+
 MMLEvent = Union[
     SetOctave, OctaveUp, OctaveDown, SetLength, Note, Rest,
     Label, LoopStart, LoopEnd,
@@ -132,6 +138,18 @@ class MSLParser:
     def __init__(self):
         self.state = ParserState()
         self.events: List[MMLEvent] = []
+        self.errors: List[MSLError] = []
+        self.source = ""
+
+    def _get_line_col(self, offset: int):
+        line = self.source.count('\n', 0, offset) + 1
+        last_newline = self.source.rfind('\n', 0, offset)
+        col = offset - last_newline if last_newline != -1 else offset + 1
+        return line, col
+
+    def _add_error(self, offset: int, message: str):
+        line, col = self._get_line_col(offset)
+        self.errors.append(MSLError(line, col, message))
 
     def _calculate_ticks(self, length_str: str, is_dotted: bool) -> int:
         if not length_str:
@@ -145,7 +163,7 @@ class MSLParser:
             ticks *= 1.5
         return int(ticks)
 
-    def _parse_at_command(self, command_str: str):
+    def _parse_at_command(self, command_str: str, offset: int):
         command_str = command_str[1:].strip() # Remove @ and extra spaces
         
         # Simple commands like @V15, @I3, @G200, @P10, @D-5
@@ -196,10 +214,14 @@ class MSLParser:
             elif cmd == 'RESTART': self.events.append(Restart(label))
             return
 
-    def _parse_inst_block(self, inst_block: str):
+        self._add_error(offset, f"Unknown or malformed command: @{command_str}")
+
+    def _parse_inst_block(self, inst_block: str, offset: int):
         # Parse id and name
         header_match = re.search(r'@INST\s*\((\d+)\s*,\s*"([^"]+)"\)', inst_block, re.IGNORECASE)
-        if not header_match: return
+        if not header_match:
+            self._add_error(offset, "Malformed @INST header. Expected @INST(id, \"name\")")
+            return
         inst_id, inst_name = header_match.groups()
         inst_id = int(inst_id)
 
@@ -211,10 +233,14 @@ class MSLParser:
         adsr_match = re.search(r'ADSR:\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)', inst_block, re.IGNORECASE)
         if adsr_match:
             adsr = [int(v) for v in adsr_match.groups()]
+        else:
+            self._add_error(offset, "Missing or malformed ADSR definition in instrument block")
 
         lfo_match = re.search(r'LFO:\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)', inst_block, re.IGNORECASE)
         if lfo_match:
             lfo = [int(v) for v in lfo_match.groups()]
+        else:
+            self._add_error(offset, "Missing or malformed LFO definition in instrument block")
             
         flags_match = re.search(r'FLAGS:\s*(\d+)', inst_block, re.IGNORECASE)
         if flags_match:
@@ -225,15 +251,17 @@ class MSLParser:
     def _parse_token(self, match):
         (comment, inst_block, at_command, label, loop_start, loop_end, loop_count, 
          octave_shift, note, alteration, length_str, dot, command, cmd_val) = match.groups()
+        
+        offset = match.start()
 
         if comment:
             return
 
         if inst_block:
-            self._parse_inst_block(inst_block)
+            self._parse_inst_block(inst_block, offset)
         
         elif at_command:
-            self._parse_at_command(at_command)
+            self._parse_at_command(at_command, offset)
 
         elif label:
             self.events.append(Label(label))
@@ -282,16 +310,43 @@ class MSLParser:
                 self.events.append(SetLength(val))
         
     def parse(self, mml_string: str) -> List[MMLEvent]:
-        print(f"--- Starting MML Parse ---")
-        print(f"Input: \"{mml_string}\"")
-        self.source = mml_string.strip()
+        self.source = mml_string
         self.state = ParserState()
         self.events = []
+        self.errors = []
 
+        last_pos = 0
         for match in TOKEN_REGEX.finditer(self.source):
-            self._parse_token(match)
+            # Check for skipped "dead zones" (unrecognized text)
+            skipped = self.source[last_pos:match.start()].strip()
+            if skipped:
+                # Basic check: ignore whitespace, but report other characters
+                self._add_error(last_pos, f"Unrecognized token: '{skipped}'")
             
-        print("--- Parse Complete ---")
+            self._parse_token(match)
+            last_pos = match.end()
+        
+        # Final dead zone check
+        remaining = self.source[last_pos:].strip()
+        if remaining:
+            self._add_error(last_pos, f"Unrecognized token: '{remaining}'")
+
+        # Post-parse validation: check for unbalanced loops
+        loop_stack = []
+        for event in self.events:
+            if isinstance(event, LoopStart):
+                loop_stack.append(event)
+            elif isinstance(event, LoopEnd):
+                if not loop_stack:
+                    # For LoopEnd, we don't have an easy offset here, 
+                    # but we can improve this later.
+                    self.errors.append(MSLError(0, 0, "Unbalanced loop: found '}' without '{'"))
+                else:
+                    loop_stack.pop()
+        
+        for _ in loop_stack:
+            self.errors.append(MSLError(0, 0, "Unbalanced loop: missing '}'"))
+
         return self.events
 
 def main():
