@@ -1,91 +1,92 @@
 ; ************************************************************************
-; * synthesis_test.Z8A - Showcase for MusaX v1.9 (ADSR + LFO + Inst Table)
+; * synthesis_test.Z8A - Showcase for MusaX v1.9 LFO Vibrato
 ; *
 ; * Demonstrates:
-; *   - 14-byte music header with PTR_INST_TBL
-; *   - Pointer-table indirection: header -> table of DEFW -> 16-byte records
-; *   - Plucky envelope (CH A), Vibrato lead (CH B), Tremolo pad (CH C)
+; *   - The three LFO waveforms for pitch modulation (vibrato).
+; *   - Channel A cycles through Triangle, Sawtooth, and Square wave vibrato
+; *     on a sustained note.
+; *   - LFO is set to be slow and wide to make waveforms distinct.
 ; ************************************************************************
 
 INCLUDE "musax_const.Z8A"
 
-; --- Header (14 bytes: 12 channel header + 2 PTR_INST) ---
+; --- LFO Constants ---
+LFODEST_PITCH EQU 1
+LFOWAVE_TRI   EQU 0
+LFOWAVE_SAW   EQU 1
+LFOWAVE_SQR   EQU 2
 
+; --- Instrument IDs ---
+INST_ID_VIB_TRI EQU 0
+INST_ID_VIB_SAW EQU 1
+INST_ID_VIB_SQR EQU 2
+
+; --- Header (14 bytes: 12 channel header + 2 PTR_INST) ---
 HDR:
-    DEFW    #0600, CH_PLUCK
-    DEFW    #0600, CH_LEAD
-    DEFW    #0600, CH_PAD
+    DEFW    #0600, CH_A
+    DEFW    #0600, CH_B
+    DEFW    #0600, CH_C
     DEFW    INST_TBL
 
 ; --- Instrument pointer table ---
 ; CMD_INST N -> *(INST_TBL + N*2) -> 16-byte record.
-
 INST_TBL:
-    DEFW    INS_PLUCK       ; ID 0
-    DEFW    INS_LEAD        ; ID 1
-    DEFW    INS_PAD         ; ID 2
+    DEFW    INS_VIB_TRI     ; ID 0
+    DEFW    INS_VIB_SAW     ; ID 1
+    DEFW    INS_VIB_SQR     ; ID 2
 
 ; --- Instrument records (16 bytes each) ---
 ; Layout: Att, Dec, Sus, Rel | LFODest, LFOWave, LFOPars, LFODelay | Flags, Reserved x7
-;   LFODest: 0=off, 1=pitch (vibrato), 2=volume (tremolo)
-;   LFOWave: 0=triangle, 1=saw, 2=square
-;   LFOPars: hi-nibble=speed, lo-nibble=amplitude
+; LFOPars: Speed is hi-nibble, Amp is lo-nibble.
 
-INS_PLUCK:                  ; Sharp attack, fast decay to mid sustain
-    DEFB    #FF, #0A, #C8, #14
-    DEFB    #00, #00, #00, #00
-    DEFB    #00, #00, #00, #00, #00, #00, #00, #00
-
-INS_LEAD:                   ; Soft attack, full sustain, vibrato after delay
+INS_VIB_TRI:                ; Soft attack, full sustain, TRIANGLE vibrato after delay
     DEFB    #0A, #05, #FF, #0A
-    DEFB    #01, #00, #84, #14
+    DEFB    LFODEST_PITCH, LFOWAVE_TRI, #2C, #14  ; LFO: Dest=Pitch, Wave=TRI, Speed=2, Amp=12, Delay=20
     DEFB    #00, #00, #00, #00, #00, #00, #00, #00
 
-INS_PAD:                    ; Slow attack, mid sustain, gentle tremolo
-    DEFB    #05, #0A, #96, #05
-    DEFB    #02, #00, #68, #00
+INS_VIB_SAW:                ; Soft attack, full sustain, SAWTOOTH vibrato after delay
+    DEFB    #0A, #05, #FF, #0A
+    DEFB    LFODEST_PITCH, LFOWAVE_SAW, #2C, #14  ; LFO: Dest=Pitch, Wave=SAW, Speed=2, Amp=12, Delay=20
+    DEFB    #00, #00, #00, #00, #00, #00, #00, #00
+
+INS_VIB_SQR:                ; Soft attack, full sustain, SQUARE vibrato after delay
+    DEFB    #0A, #05, #FF, #0A
+    DEFB    LFODEST_PITCH, LFOWAVE_SQR, #2C, #14  ; LFO: Dest=Pitch, Wave=SQR, Speed=2, Amp=12, Delay=20
     DEFB    #00, #00, #00, #00, #00, #00, #00, #00
 
 ; --- Streams ---
 
-CH_PLUCK:
+CH_A:
     DEFB    CMD_VOLUME, 15
-    DEFB    CMD_INST, 0             ; Plucky
-    DEFB    CMD_GATE, 128           ; 50% Gate -> triggers RELEASE
-    DEFB    C3
-    DEFW    LEN_Q
-    DEFB    E3
-    DEFW    LEN_Q
-    DEFB    G3
-    DEFW    LEN_Q
-    DEFB    C4
-    DEFW    LEN_Q
-    DEFB    CMD_RESTART
-    DEFW    CH_PLUCK
-
-CH_LEAD:
-    DEFB    CMD_VOLUME, 12
-    DEFB    CMD_INST, 1             ; Vibrato Lead (LFO Delay 20)
-    DEFB    CMD_PORTA, 2            ; Chromatic portamento
     DEFB    CMD_GATE, 255           ; Legato
-    DEFB    C4
-    DEFW    LEN_H
-    DEFB    G4
-    DEFW    LEN_H
-    DEFB    A4
-    DEFW    LEN_H
-    DEFB    F4
-    DEFW    LEN_H
-    DEFB    CMD_RESTART
-    DEFW    CH_LEAD
 
-CH_PAD:
-    DEFB    CMD_VOLUME, 10
-    DEFB    CMD_INST, 2             ; Tremolo Pad
-    DEFB    CMD_GATE, 200           ; Short release at the end
-    DEFB    A2
+.LOOP:
+    ; 1. Triangle Wave Vibrato
+    DEFB    CMD_INST, INST_ID_VIB_TRI
+    DEFB    A4
     DEFW    LEN_W
-    DEFB    F2
+
+    ; 2. Sawtooth Wave Vibrato
+    DEFB    CMD_INST, INST_ID_VIB_SAW
+    DEFB    A4
+    DEFW    LEN_W
+
+    ; 3. Square Wave Vibrato
+    DEFB    CMD_INST, INST_ID_VIB_SQR
+    DEFB    A4
+    DEFW    LEN_W
+
+    DEFB    CMD_RESTART
+    DEFW    .LOOP
+
+CH_B:
+    DEFB    REST
     DEFW    LEN_W
     DEFB    CMD_RESTART
-    DEFW    CH_PAD
+    DEFW    CH_B
+
+CH_C:
+    DEFB    REST
+    DEFW    LEN_W
+    DEFB    CMD_RESTART
+    DEFW    CH_C

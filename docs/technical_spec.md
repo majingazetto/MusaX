@@ -98,6 +98,22 @@ Header.PTR_INST  ─►  INST_TBL[N*2]  ─►  16-byte instrument record
 
 Release is triggered by `CMD_GATE` (when the gated portion of the note has elapsed) or by external request.
 
+The four phases can be visualized as follows:
+
+```text
+      Amplitude
+          ^
+          |
+      1.0 +      / \
+          |     /   \
+          |    /     \
+Sustain Level +---/-------\_________
+          |  /         |         \
+          | /          |          \
+      0.0 +------------+-----------+-----> Time
+              A        D         S         R
+```
+
 ### LFO Engine
 - Phase counter `0-255` advances by `speed` units per frame.
 - Wave output is signed `[-127, +127]`, scaled by amplitude `(0-15)/15`.
