@@ -28,6 +28,18 @@ class Note:
 class Rest:
     duration_ticks: int
 
+@dataclass
+class Label:
+    name: str
+
+@dataclass
+class LoopStart:
+    pass
+
+@dataclass
+class LoopEnd:
+    count: int
+
 # --- MusaX Engine Command Classes ---
 @dataclass
 class SetVolume:
@@ -85,6 +97,7 @@ class Instrument:
 
 MMLEvent = Union[
     SetOctave, OctaveUp, OctaveDown, SetLength, Note, Rest,
+    Label, LoopStart, LoopEnd,
     SetVolume, SetInstrument, SetTempo, SetGateTime, SetPortamento,
     VolumeFade, Detune, PhaseDelay, Chorus, GoTo, Restart, Instrument
 ]
@@ -96,13 +109,16 @@ NOTE_PITCH_MAP = {
 }
 BASE_TICK = 768
 
-# This enhanced regex now also captures octave up/down characters and @-commands.
+# Enhanced regex to capture all MSL constructs
 TOKEN_REGEX = re.compile(
-    r'(@INST\s*\([^)]*\)\s*\{[^}]*\})|'  # Group 1 for @INST blocks
-    r'(@[A-Z0-9#\(\)\,\-\_]+)|'           # Group 2 for other @-commands
-    r'([<>])|'                           # Group 3 for octave shifts
-    r'([A-GR])([#\+\-bB]?)(\d*)(\.?)|'    # Group 4,5,6,7 for notes
-    r'([OL])(\d+)',                      # Group 8,9 for O/L commands
+    r'(//.*)|'                                 # Group 1: Comments
+    r'(@INST\s*\([^)]*\)\s*\{[^}]*\})|'        # Group 2: @INST blocks
+    r'(@[A-Z0-9#\_\-]+(?:\s*\([^)]*\))?)|'      # Group 3: other @-commands (added -)
+    r'([A-Z0-9_\.]+):|'                        # Group 4: Labels
+    r'(\{)|(\})\s*(\d*)|'                      # Group 5,6,7: Loops
+    r'([<>])|'                                 # Group 8: octave shifts
+    r'([A-GR])([#\+\-bB]?)(\d*)(\.?)|'          # Group 9,10,11,12: notes
+    r'([OL])(\d+)',                            # Group 13,14: O/L commands
     re.IGNORECASE | re.DOTALL
 )
 
@@ -130,10 +146,10 @@ class MSLParser:
         return int(ticks)
 
     def _parse_at_command(self, command_str: str):
-        command_str = command_str[1:] # Remove @
+        command_str = command_str[1:].strip() # Remove @ and extra spaces
         
-        # Simple commands like @V15, @I3
-        match = re.match(r'([VIGPD])(\-?\d+)', command_str, re.IGNORECASE)
+        # Simple commands like @V15, @I3, @G200, @P10, @D-5
+        match = re.match(r'([VIGPD])\s*(\-?\d+)', command_str, re.IGNORECASE)
         if match:
             cmd, val_str = match.groups()
             val = int(val_str)
@@ -146,7 +162,7 @@ class MSLParser:
             return
 
         # Tempo command @T#0600
-        match = re.match(r'T#([0-9A-F]+)', command_str, re.IGNORECASE)
+        match = re.match(r'T\s*#([0-9A-F]+)', command_str, re.IGNORECASE)
         if match:
             val_str = match.groups()[0]
             val = int(val_str, 16)
@@ -154,14 +170,14 @@ class MSLParser:
             return
             
         # Phase delay @PH12
-        match = re.match(r'PH(\d+)', command_str, re.IGNORECASE)
+        match = re.match(r'PH\s*(\d+)', command_str, re.IGNORECASE)
         if match:
             val = int(match.groups()[0])
             self.events.append(PhaseDelay(val))
             return
 
-        # Commands with two args like @F(1,1), @CH(10,-5)
-        match = re.match(r'([FCH]{1,2})\((\d+),(\-?\d+)\)', command_str, re.IGNORECASE)
+        # Commands with two args like @F(1, 1), @CH(10, -5)
+        match = re.match(r'([FCH]{1,2})\s*\(\s*(\-?\d+)\s*,\s*(\-?\d+)\s*\)', command_str, re.IGNORECASE)
         if match:
             cmd, val1_str, val2_str = match.groups()
             val1, val2 = int(val1_str), int(val2_str)
@@ -171,10 +187,11 @@ class MSLParser:
             return
             
         # GOTO/RESTART commands
-        match = re.match(r'(GOTO|RESTART)\((.+)\)', command_str, re.IGNORECASE)
+        match = re.match(r'(GOTO|RESTART)\s*\(\s*(.+)\s*\)', command_str, re.IGNORECASE)
         if match:
             cmd, label = match.groups()
             cmd = cmd.upper()
+            label = label.strip()
             if cmd == 'GOTO': self.events.append(GoTo(label))
             elif cmd == 'RESTART': self.events.append(Restart(label))
             return
@@ -206,13 +223,27 @@ class MSLParser:
         self.events.append(Instrument(id=inst_id, name=inst_name, adsr=adsr, lfo=lfo, flags=flags))
 
     def _parse_token(self, match):
-        inst_block, at_command, octave_shift, note, alteration, length_str, dot, command, cmd_val = match.groups()
+        (comment, inst_block, at_command, label, loop_start, loop_end, loop_count, 
+         octave_shift, note, alteration, length_str, dot, command, cmd_val) = match.groups()
+
+        if comment:
+            return
 
         if inst_block:
             self._parse_inst_block(inst_block)
         
         elif at_command:
             self._parse_at_command(at_command)
+
+        elif label:
+            self.events.append(Label(label))
+
+        elif loop_start:
+            self.events.append(LoopStart())
+
+        elif loop_end:
+            count = int(loop_count) if loop_count else 2 # Default to 2 if not specified
+            self.events.append(LoopEnd(count))
 
         elif octave_shift:
             if octave_shift == '>':
