@@ -28,7 +28,58 @@ class Note:
 class Rest:
     duration_ticks: int
 
-MMLEvent = Union[SetOctave, OctaveUp, OctaveDown, SetLength, Note, Rest]
+# --- MusaX Engine Command Classes ---
+@dataclass
+class SetVolume:
+    volume: int
+
+@dataclass
+class SetInstrument:
+    instrument_id: int
+
+@dataclass
+class SetTempo:
+    bpm_step: int
+
+@dataclass
+class SetGateTime:
+    gate_time: int
+
+@dataclass
+class SetPortamento:
+    speed: int
+
+@dataclass
+class VolumeFade:
+    target: int
+    step: int
+
+@dataclass
+class Detune:
+    cents: int
+
+@dataclass
+class PhaseDelay:
+    delay: int
+
+@dataclass
+class Chorus:
+    phase: int
+    detune: int
+
+@dataclass
+class GoTo:
+    label: str
+
+@dataclass
+class Restart:
+    label: str
+
+MMLEvent = Union[
+    SetOctave, OctaveUp, OctaveDown, SetLength, Note, Rest,
+    SetVolume, SetInstrument, SetTempo, SetGateTime, SetPortamento,
+    VolumeFade, Detune, PhaseDelay, Chorus, GoTo, Restart
+]
 
 # --- Constants ---
 NOTE_PITCH_MAP = {
@@ -37,9 +88,12 @@ NOTE_PITCH_MAP = {
 }
 BASE_TICK = 768
 
-# This enhanced regex now also captures octave up/down characters.
+# This enhanced regex now also captures octave up/down characters and @-commands.
 TOKEN_REGEX = re.compile(
-    r'([<>])|([A-GR])([#\+\-bB]?)(\d*)(\.?)|([OL])(\d+)',
+    r'(@[A-Z0-9#\(\)\,\-\_]+)|'
+    r'([<>])|'
+    r'([A-GR])([#\+\-bB]?)(\d*)(\.?)|'
+    r'([OL])(\d+)',
     re.IGNORECASE
 )
 
@@ -66,10 +120,63 @@ class MSLParser:
             ticks *= 1.5
         return int(ticks)
 
-    def _parse_token(self, match):
-        octave_shift, note, alteration, length_str, dot, command, cmd_val = match.groups()
+    def _parse_at_command(self, command_str: str):
+        command_str = command_str[1:] # Remove @
+        
+        # Simple commands like @V15, @I3
+        match = re.match(r'([VIGPD])(\-?\d+)', command_str, re.IGNORECASE)
+        if match:
+            cmd, val_str = match.groups()
+            val = int(val_str)
+            cmd = cmd.upper()
+            if cmd == 'V': self.events.append(SetVolume(val))
+            elif cmd == 'I': self.events.append(SetInstrument(val))
+            elif cmd == 'G': self.events.append(SetGateTime(val))
+            elif cmd == 'P': self.events.append(SetPortamento(val))
+            elif cmd == 'D': self.events.append(Detune(val))
+            return
 
-        if octave_shift:
+        # Tempo command @T#0600
+        match = re.match(r'T#([0-9A-F]+)', command_str, re.IGNORECASE)
+        if match:
+            val_str = match.groups()[0]
+            val = int(val_str, 16)
+            self.events.append(SetTempo(val))
+            return
+            
+        # Phase delay @PH12
+        match = re.match(r'PH(\d+)', command_str, re.IGNORECASE)
+        if match:
+            val = int(match.groups()[0])
+            self.events.append(PhaseDelay(val))
+            return
+
+        # Commands with two args like @F(1,1), @CH(10,-5)
+        match = re.match(r'([FCH]{1,2})\((\d+),(\-?\d+)\)', command_str, re.IGNORECASE)
+        if match:
+            cmd, val1_str, val2_str = match.groups()
+            val1, val2 = int(val1_str), int(val2_str)
+            cmd = cmd.upper()
+            if cmd == 'F': self.events.append(VolumeFade(val1, val2))
+            elif cmd == 'CH': self.events.append(Chorus(val1, val2))
+            return
+            
+        # GOTO/RESTART commands
+        match = re.match(r'(GOTO|RESTART)\((.+)\)', command_str, re.IGNORECASE)
+        if match:
+            cmd, label = match.groups()
+            cmd = cmd.upper()
+            if cmd == 'GOTO': self.events.append(GoTo(label))
+            elif cmd == 'RESTART': self.events.append(Restart(label))
+            return
+
+    def _parse_token(self, match):
+        at_command, octave_shift, note, alteration, length_str, dot, command, cmd_val = match.groups()
+
+        if at_command:
+            self._parse_at_command(at_command)
+
+        elif octave_shift:
             if octave_shift == '>':
                 self.state.current_octave += 1
                 self.events.append(OctaveUp())
@@ -104,7 +211,7 @@ class MSLParser:
             elif cmd_char == 'L':
                 self.state.default_length = val
                 self.events.append(SetLength(val))
-
+        
     def parse(self, mml_string: str) -> List[MMLEvent]:
         print(f"--- Starting MML Parse ---")
         print(f"Input: \"{mml_string}\"")
@@ -120,7 +227,7 @@ class MSLParser:
 
 def main():
     parser = MSLParser()
-    mml_source = "L8 O4 C E G > C < G E C R4" 
+    mml_source = "L8 O4 C E G > C < G E C R4 @V15 @I3 @T#0600 @F(1,1) @CH(10,-5) @GOTO(TEST_LABEL) @RESTART(SONG_LOOP)" 
     
     parsed_events = parser.parse(mml_source)
     
