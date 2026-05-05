@@ -1,5 +1,4 @@
-from typing import List
-from msl_parser import MMLEvent, Note, SetVolume, SetInstrument, SetTempo, SetGateTime, SetPortamento, VolumeFade, Detune, PhaseDelay, Chorus, GoTo, Restart, Rest, SetOctave, OctaveUp, OctaveDown, SetLength, MSLParser
+from msl_parser import MMLEvent, Note, SetVolume, SetInstrument, SetTempo, SetGateTime, SetPortamento, VolumeFade, Detune, PhaseDelay, Chorus, GoTo, Restart, Rest, SetOctave, OctaveUp, OctaveDown, SetLength, MSLParser, Instrument
 
 # --- Mappings for Code Generation ---
 
@@ -109,6 +108,32 @@ class CodeGenerator:
                 self._generate_chorus(event)
             # ... more event types to be added
         return self.z80_code
+
+    def generate_instruments(self, instruments: List[Instrument]) -> str:
+        if not instruments:
+            return ""
+
+        # Sort instruments by id
+        instruments.sort(key=lambda i: i.id)
+
+        code = "; --- Instrument pointer table ---\n"
+        code += "INST_TBL:\n"
+        for inst in instruments:
+            code += f"    DEFW    INS_{inst.name.upper()}\n"
+        code += "\n"
+
+        code += "; --- Instrument records (16 bytes each) ---\n"
+        for inst in instruments:
+            code += f"INS_{inst.name.upper()}:\n"
+            # ADSR
+            code += f"    DEFB    {inst.adsr[0]}, {inst.adsr[1]}, {inst.adsr[2]}, {inst.adsr[3]}\n"
+            # LFO
+            lfo_pars = (inst.lfo[2] << 4) | (inst.lfo[3] & 0x0F)
+            code += f"    DEFB    {inst.lfo[0]}, {inst.lfo[1]}, #{lfo_pars:02X}, {inst.lfo[4]}\n"
+            # FLAGS and reserved
+            code += f"    DEFB    {inst.flags}, 0, 0, 0, 0, 0, 0, 0\n"
+        
+        return code
 
 def main():
     parser = MSLParser()

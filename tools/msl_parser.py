@@ -75,10 +75,18 @@ class GoTo:
 class Restart:
     label: str
 
+@dataclass
+class Instrument:
+    id: int
+    name: str
+    adsr: List[int]
+    lfo: List[int]
+    flags: int
+
 MMLEvent = Union[
     SetOctave, OctaveUp, OctaveDown, SetLength, Note, Rest,
     SetVolume, SetInstrument, SetTempo, SetGateTime, SetPortamento,
-    VolumeFade, Detune, PhaseDelay, Chorus, GoTo, Restart
+    VolumeFade, Detune, PhaseDelay, Chorus, GoTo, Restart, Instrument
 ]
 
 # --- Constants ---
@@ -90,11 +98,12 @@ BASE_TICK = 768
 
 # This enhanced regex now also captures octave up/down characters and @-commands.
 TOKEN_REGEX = re.compile(
-    r'(@[A-Z0-9#\(\)\,\-\_]+)|'
-    r'([<>])|'
-    r'([A-GR])([#\+\-bB]?)(\d*)(\.?)|'
-    r'([OL])(\d+)',
-    re.IGNORECASE
+    r'(@INST\s*\([^)]*\)\s*\{[^}]*\})|'  # Group 1 for @INST blocks
+    r'(@[A-Z0-9#\(\)\,\-\_]+)|'           # Group 2 for other @-commands
+    r'([<>])|'                           # Group 3 for octave shifts
+    r'([A-GR])([#\+\-bB]?)(\d*)(\.?)|'    # Group 4,5,6,7 for notes
+    r'([OL])(\d+)',                      # Group 8,9 for O/L commands
+    re.IGNORECASE | re.DOTALL
 )
 
 @dataclass
@@ -170,10 +179,39 @@ class MSLParser:
             elif cmd == 'RESTART': self.events.append(Restart(label))
             return
 
-    def _parse_token(self, match):
-        at_command, octave_shift, note, alteration, length_str, dot, command, cmd_val = match.groups()
+    def _parse_inst_block(self, inst_block: str):
+        # Parse id and name
+        header_match = re.search(r'@INST\s*\((\d+)\s*,\s*"([^"]+)"\)', inst_block, re.IGNORECASE)
+        if not header_match: return
+        inst_id, inst_name = header_match.groups()
+        inst_id = int(inst_id)
 
-        if at_command:
+        # Parse properties
+        adsr = [0,0,0,0]
+        lfo = [0,0,0,0,0]
+        flags = 0
+
+        adsr_match = re.search(r'ADSR:\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)', inst_block, re.IGNORECASE)
+        if adsr_match:
+            adsr = [int(v) for v in adsr_match.groups()]
+
+        lfo_match = re.search(r'LFO:\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)', inst_block, re.IGNORECASE)
+        if lfo_match:
+            lfo = [int(v) for v in lfo_match.groups()]
+            
+        flags_match = re.search(r'FLAGS:\s*(\d+)', inst_block, re.IGNORECASE)
+        if flags_match:
+            flags = int(flags_match.groups()[0])
+
+        self.events.append(Instrument(id=inst_id, name=inst_name, adsr=adsr, lfo=lfo, flags=flags))
+
+    def _parse_token(self, match):
+        inst_block, at_command, octave_shift, note, alteration, length_str, dot, command, cmd_val = match.groups()
+
+        if inst_block:
+            self._parse_inst_block(inst_block)
+        
+        elif at_command:
             self._parse_at_command(at_command)
 
         elif octave_shift:
@@ -227,7 +265,14 @@ class MSLParser:
 
 def main():
     parser = MSLParser()
-    mml_source = "L8 O4 C E G > C < G E C R4 @V15 @I3 @T#0600 @F(1,1) @CH(10,-5) @GOTO(TEST_LABEL) @RESTART(SONG_LOOP)" 
+    mml_source = """
+    @INST(0, "VibratoLead") {
+        ADSR: 10, 5, 255, 10
+        LFO: 1, 0, 2, 12, 20
+        FLAGS: 0
+    }
+    L8 O4 C E G
+    """
     
     parsed_events = parser.parse(mml_source)
     

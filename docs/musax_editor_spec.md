@@ -65,6 +65,37 @@ To enable non-linear song structures, the following syntax will be supported:
     - `@GOTO(label)`: Compiles to a `CMD_GOTO`. This is a technical, unconditional jump. Useful for one-off jumps to specific sections (e.g., an ending).
     - `@RESTART(label)`: Compiles to a `CMD_RESTART`. This is a logical jump that also signals the end of a main loop for inter-channel synchronization. This is the standard way to loop a song.
 
+### 3.4. Instrument Definition
+
+Instruments are defined using a dedicated block structure. Each instrument is 16 bytes long.
+
+```mml
+@INST(<id>, <name>) {
+    ADSR: <att>, <dec>, <sus>, <rel>
+    LFO: <dest>, <wave>, <speed>, <amp>, <delay>
+    FLAGS: <flags>
+}
+```
+
+-   `@INST(<id>, <name>)`: Starts an instrument definition block.
+    -   `<id>`: The instrument ID (0-15).
+    -   `<name>`: A descriptive name for the instrument (e.g., "VibratoLead").
+-   `ADSR: <att>, <dec>, <sus>, <rel>`: Defines the ADSR envelope (4 bytes).
+-   `LFO: <dest>, <wave>, <speed>, <amp>, <delay>`: Defines the LFO parameters (5 bytes). `<speed>` and `<amp>` are combined into one byte.
+-   `FLAGS: <flags>`: Defines the instrument flags (1 byte).
+-   The remaining 7 bytes are reserved and will be set to 0.
+
+Example:
+
+```mml
+@INST(0, "VibratoLead") {
+    ADSR: 10, 5, 255, 10
+    LFO: 1, 0, 2, 12, 20  // Dest=Pitch, Wave=TRI, Speed=2, Amp=12, Delay=20
+    FLAGS: 0
+}
+```
+This would be translated by the compiler into the corresponding 16-byte instrument record in the Z80 assembly output.
+
 ### 4. Example Song Structure
 
 ```mml
