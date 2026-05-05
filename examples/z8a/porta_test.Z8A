@@ -7,6 +7,7 @@ INCLUDE "musax_const.Z8A"
 ; --- Header ---
 
 HDR:
+    DEFB TYPE_SONG                ; Song Signature
     DEFW #0600, CH_A
     DEFW #0600, 0
     DEFW #0600, 0

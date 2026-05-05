@@ -31,6 +31,7 @@ TMP_SLOW    EQU #0D80           ; ~63 BPM  (ominous bridge)
 
 ; --- Song Header ---
 PIREHDR:
+    DEFB    TYPE_SONG
     DEFW    TMP_FAST, PIRCHA  ; BPM_A, PTR_A
     DEFW    TMP_FAST, PIRCHB  ; BPM_B, PTR_B
     DEFW    TMP_FAST, PIRCHC  ; BPM_C, PTR_C

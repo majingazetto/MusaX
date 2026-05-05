@@ -12,6 +12,7 @@ INCLUDE "musax_const.Z8A"
 ; --- BPM: 120 BPM (#1400 for 768-tick base) ---
 
 POLYHDR:
+    DEFB    TYPE_SONG
     DEFW    #1400, POLYCHA  ; BPM_A, PTR_A
     DEFW    #1400, POLYCHB  ; BPM_B, PTR_B
     DEFW    #1400, POLYCHC  ; BPM_C, PTR_C

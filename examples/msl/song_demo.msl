@@ -1,0 +1,40 @@
+
+// --- Song Demo in MusaX-ML (MSL) ---
+// This file demonstrates the 3-channel structure and engine commands.
+
+@INST(0, "SquareWave") {
+    ADSR: 255, 10, 200, 20
+    LFO: 0, 0, 0, 0, 0
+    FLAGS: 0
+}
+
+@INST(1, "VibratoLead") {
+    ADSR: 10, 5, 255, 10
+    LFO: 1, 0, 2, 12, 20
+    FLAGS: 0
+}
+
+// Global tempo for the song
+@T#0600 
+
+// --- Channel A: Bass ---
+CH_A:
+    O3 L8 @I0 @V12
+    { C E G < C }4
+    @RESTART(CH_A)
+
+// --- Channel B: Melody ---
+CH_B:
+    O5 L4 @I1 @V15
+    C E G2
+    F E D2
+    C E G < C
+    > B A G2
+    @RESTART(CH_B)
+
+// --- Channel C: Harmony ---
+CH_C:
+    O4 L4 @I0 @V10
+    R1
+    { G B < D2 }2
+    @RESTART(CH_C)

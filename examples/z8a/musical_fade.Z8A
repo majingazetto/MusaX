@@ -9,6 +9,7 @@
 INCLUDE "musax_const.Z8A"
 
 MUSICAL_HDR:
+    DEFB    TYPE_SONG
     DEFW    #1400, LEAD        ; 120 BPM
     DEFW    #1400, HARMONY
     DEFW    #1400, BASS

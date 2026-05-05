@@ -76,7 +76,8 @@ class MusaXSim:
 
         self.symbols = {
             "REST": 255, "LEN_Q": 768, "LEN_H": 1536, "LEN_E": 384, "LEN_S": 192,
-            "LEN_W": 3072, "LEN_ET": 256, "LEN_QT": 512
+            "LEN_W": 3072, "LEN_ET": 256, "LEN_QT": 512,
+            "TYPE_SONG": 0x80, "TYPE_FX": 0x81
         }
         self.commands = {
             "CMD_TEMPO": 0xFD, "CMD_VOLUME": 0xFC, "CMD_GATE": 0xFB,
@@ -286,37 +287,47 @@ class MusaXSim:
 
         if not is_fx_only:
             # Pass 4: Assign Music Streams
-            music_hdr_name = next((k for k in self.all_streams if "HDR" in k.upper() and "FX" not in k.upper()), None)
-            if music_hdr_name and len(self.all_streams[music_hdr_name]) >= 12:
-                hdr_bytes = self.all_streams[music_hdr_name]
-                for i in range(3):
-                    # Each channel has [BPM (2b), PTR (2b)]
-                    bpm = hdr_bytes[i*4] + (hdr_bytes[i*4 + 1] << 8)
-                    ptr = hdr_bytes[i*4 + 2] + (hdr_bytes[i*4 + 3] << 8)
-
-                    ch = self.channels[i]
-                    ch["bpm_step"] = bpm
-                    if ptr != 0:
-                        s_name = next((name for name, addr in self.stream_bases.items() if addr == ptr), None)
-                        if s_name:
-                            ch["stream"] = self.all_streams[s_name]
-                            ch["stream_base"] = self.stream_bases[s_name]
-                            ch["stream_name"] = s_name
-                            ch["active"] = True
-                # v1.9: Optional PTR_INST at offset 12 (header grew 12b -> 14b).
-                # Older 12-byte headers fall back to PTR_INST=0 (defaults).
-                if len(hdr_bytes) >= 14:
-                    self.music_inst_ptr = hdr_bytes[12] + (hdr_bytes[13] << 8)
-                else:
-                    self.music_inst_ptr = 0
+            # Priority 1: Find by signature TYPE_SONG
+            type_song = self.symbols.get("TYPE_SONG", 0x80)
+            music_hdr_name = next((k for k in self.all_streams if self.all_streams[k] and self.all_streams[k][0] == type_song), None)
             
-        # Pass 5: FX Logic (either from main file or dedicated FX file)
-        # Structure: DEFW PTR_FXHDR, PRIORITY
+            # Priority 2: Fallback to label search
+            if not music_hdr_name:
+                music_hdr_name = next((k for k in self.all_streams if "HDR" in k.upper() and "FX" not in k.upper()), None)
+            
+            if music_hdr_name:
+                hdr_bytes = self.all_streams[music_hdr_name]
+                has_sign = (hdr_bytes[0] == type_song)
+                offset = 1 if has_sign else 0
+                
+                # Minimum expected length check
+                min_len = 13 if has_sign else 12
+                if len(hdr_bytes) >= min_len:
+                    for i in range(3):
+                        # Each channel has [BPM (2b), PTR (2b)]
+                        bpm = hdr_bytes[offset + i*4] + (hdr_bytes[offset + i*4 + 1] << 8)
+                        ptr = hdr_bytes[offset + i*4 + 2] + (hdr_bytes[offset + i*4 + 3] << 8)
+
+                        ch = self.channels[i]
+                        ch["bpm_step"] = bpm
+                        if ptr != 0:
+                            s_name = next((name for name, addr in self.stream_bases.items() if addr == ptr), None)
+                            if s_name:
+                                ch["stream"] = self.all_streams[s_name]
+                                ch["stream_base"] = self.stream_bases[s_name]
+                                ch["stream_name"] = s_name
+                                ch["active"] = True
+                    # v1.9: Optional PTR_INST at offset 12/13
+                    inst_off = offset + 12
+                    if len(hdr_bytes) >= inst_off + 2:
+                        self.music_inst_ptr = hdr_bytes[inst_off] + (hdr_bytes[inst_off + 1] << 8)
+                    else:
+                        self.music_inst_ptr = 0
+            
+        # Pass 5: FX Logic
         fx_table_name = next((k for k in global_labels if "FX_TABLE" in k), None)
         if fx_table_name:
             table_bytes = self.all_streams[fx_table_name]
-            # Clear library if it's a dedicated FX file to avoid duplicates or keep both? 
-            # Let's keep both for now, but usually it's one or the other.
             for i in range(0, len(table_bytes), 4):
                 if i + 3 >= len(table_bytes): break
                 ptr = table_bytes[i] + (table_bytes[i+1] << 8)
@@ -326,22 +337,31 @@ class MusaXSim:
                 hdr_name = next((name for name, addr in self.stream_bases.items() if addr == ptr), None)
                 if hdr_name and hdr_name in self.all_streams:
                     hdr_bytes = self.all_streams[hdr_name]
+                    type_fx = self.symbols.get("TYPE_FX", 0x81)
+                    has_sign = (hdr_bytes[0] == type_fx)
+                    offset = 1 if has_sign else 0
+                    
                     fx_data = []
+                    # Standard FX header is 3 pointers (6 bytes) or 3 [bpm, ptr] pairs (12 bytes)
+                    # We'll check the signature or length to decide
+                    is_extended = (len(hdr_bytes) >= (offset + 12))
+                    
                     for j in range(3):
-                        if j*4 + 3 < len(hdr_bytes):
-                            bpm = hdr_bytes[j*4] + (hdr_bytes[j*4+1] << 8)
-                            ptr_fx = hdr_bytes[j*4+2] + (hdr_bytes[j*4+3] << 8)
+                        if is_extended:
+                            bpm = hdr_bytes[offset + j*4] + (hdr_bytes[offset + j*4+1] << 8)
+                            ptr_fx = hdr_bytes[offset + j*4+2] + (hdr_bytes[offset + j*4+3] << 8)
                             fx_data.append({"bpm": bpm, "ptr": ptr_fx})
                         else:
-                            # Fallback for old 6-byte headers if encountered (though we should update all)
-                            if j*2 + 1 < len(hdr_bytes):
-                                ptr_fx = hdr_bytes[j*2] + (hdr_bytes[j*2+1] << 8)
+                            if offset + j*2 + 1 < len(hdr_bytes):
+                                ptr_fx = hdr_bytes[offset + j*2] + (hdr_bytes[offset + j*2+1] << 8)
                                 fx_data.append({"bpm": 0x2400, "ptr": ptr_fx})
                             else:
                                 fx_data.append({"bpm": 0x2400, "ptr": 0})
-                    # v1.9: Optional PTR_INST at offset 12 of FX header (12b -> 14b).
-                    if len(hdr_bytes) >= 14:
-                        inst_ptr = hdr_bytes[12] + (hdr_bytes[13] << 8)
+                    
+                    # v1.9: Instrument pointer
+                    inst_off = offset + (12 if is_extended else 6)
+                    if len(hdr_bytes) >= inst_off + 2:
+                        inst_ptr = hdr_bytes[inst_off] + (hdr_bytes[inst_off+1] << 8)
                     else:
                         inst_ptr = 0
                     self.fx_library.append({"data": fx_data, "priority": priority, "name": hdr_name, "inst_ptr": inst_ptr})

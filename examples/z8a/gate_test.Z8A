@@ -9,6 +9,7 @@ INCLUDE "musax_const.Z8A"
 
 ; -- Song Header --
 GATE_HDR:
+    DEFB    TYPE_SONG
     DEFW    #0600, SONG_A      ; BPM_A (60), PTR_A
     DEFW    0, 0
     DEFW    0, 0

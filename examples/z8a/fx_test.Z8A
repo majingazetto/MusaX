@@ -6,6 +6,7 @@ INCLUDE "musax_const.Z8A"
 
 ; Music Header
 MUSHDR:
+    DEFB    TYPE_SONG            ; Song Signature
     DEFW    #0800, MUSCHA  ; BPM_A, PTR_A
     DEFW    #0800, MUSCHB  ; BPM_B, PTR_B
     DEFW    #0800, MUSCHC  ; BPM_C, PTR_C
@@ -13,10 +14,11 @@ MUSHDR:
 
 ; FX Header
 FXHDR:
-    DEFW    #2400, FXCHA  ; BPM_A, PTR_A
-    DEFW    #2400, 0      ; BPM_B, PTR_B
-    DEFW    #2400, 0      ; BPM_C, PTR_C
-    DEFW    0             ; PTR_INST (0 = defaults)
+    DEFB    TYPE_FX            ; FX Signature
+    DEFW    FXCHA          ; PTR_A
+    DEFW    0              ; PTR_B
+    DEFW    0              ; PTR_C
+    DEFW    0              ; PTR_INST (0 = defaults)
 
 ; ===========================================================
 ; MUSIC CHANNELS

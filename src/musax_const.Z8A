@@ -150,6 +150,9 @@ B7  EQU 95
 
 ; --- MusaX Bytecode Commands ---
 
+TYPE_SONG   EQU #80
+TYPE_FX     EQU #81
+
 REST        EQU 255
 CMD_RESTART EQU #FE
 CMD_TEMPO   EQU #FD
