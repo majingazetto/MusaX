@@ -1,16 +1,18 @@
-
 import sys
 import os
 from typing import List, Dict, Union
 from dataclasses import dataclass
 
-# Add current directory to path so we can import msl_parser
-sys.path.append(os.getcwd())
+# Ensure we can import msl_parser correctly
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if project_root not in sys.path:
+    sys.path.append(project_root)
+
 from MusaX.tools.msl_parser import (
     MMLEvent, Note, Rest, SetOctave, OctaveUp, OctaveDown, SetLength,
     SetVolume, SetInstrument, SetTempo, SetGateTime, SetPortamento,
     VolumeFade, Detune, PhaseDelay, Chorus, GoTo, Restart, Instrument,
-    Label, LoopStart, LoopEnd
+    Label, LoopStart, LoopEnd, FXBlockStart, FXBlockEnd
 )
 
 class MSLCompiler:
@@ -34,6 +36,7 @@ class MSLCompiler:
         self.bytecode: List[int] = []
         self.labels: Dict[str, int] = {}
         self.instruments: Dict[int, List[int]] = {}
+        self.fx_definitions: Dict[str, Dict] = {}
         self.current_offset = 0
 
     def _add_byte(self, b: int):
@@ -62,19 +65,27 @@ class MSLCompiler:
         record[8] = inst.flags
         return record
 
-    def compile(self, events: List[MMLEvent], base_addr: int = 0) -> Dict[str, Union[List[int], Dict[int, List[int]]]]:
+    def compile(self, events: List[MMLEvent], base_addr: int = 0) -> Dict[str, Union[List[int], Dict[int, List[int]], Dict[str, int], Dict[str, Dict]]]:
         self.bytecode = []
         self.labels = {}
         self.instruments = {}
+        self.fx_definitions = {}
         self.current_offset = 0
 
-        # --- Pass 1: Label Resolution & Loop Pairing ---
+        # --- Pass 1: Label Resolution, Loop Pairing & Instruments ---
         temp_offset = 0
-        loop_stack = [] # Stores (offset_of_loop_s)
+        loop_stack = [] # Stores (LoopStart_id)
+        start_to_count = {}
         
+        current_fx_name = None
         for event in events:
             if isinstance(event, Label):
-                self.labels[event.name] = base_addr + temp_offset
+                name = event.name
+                if current_fx_name:
+                    name = f"{current_fx_name}_{name}"
+                self.labels[name] = base_addr + temp_offset
+                if current_fx_name:
+                    self.fx_definitions[current_fx_name]["labels"].append(name)
             elif isinstance(event, Note):
                 temp_offset += 3 # Note (1b) + Duration (2b)
             elif isinstance(event, Rest):
@@ -102,29 +113,31 @@ class MSLCompiler:
             elif isinstance(event, Restart):
                 temp_offset += 3 # CMD_RESTART (1b) + Addr (2b)
             elif isinstance(event, LoopStart):
-                temp_offset += 2 # CMD_LOOP_S (1b) + Count (1b) (Placeholder count)
+                temp_offset += 2 # CMD_LOOP_S (1b) + Count (1b)
+                loop_stack.append(id(event))
             elif isinstance(event, LoopEnd):
                 temp_offset += 1 # CMD_LOOP_E (1b)
+                if loop_stack:
+                    s_id = loop_stack.pop()
+                    start_to_count[s_id] = event.count
             elif isinstance(event, Instrument):
                 self.instruments[event.id] = self._compile_instrument(event)
+            elif isinstance(event, FXBlockStart):
+                current_fx_name = event.name
+                self.fx_definitions[current_fx_name] = {"start_addr": base_addr + temp_offset, "labels": []}
+            elif isinstance(event, FXBlockEnd):
+                current_fx_name = None
         
         # --- Pass 2: Bytecode Generation ---
-        loop_count_stack = [] # To store counts from LoopEnd to apply to LoopStart
-        
-        # We need a way to match LoopStart and LoopEnd. 
-        # Since MSL syntax is { notes }count, LoopEnd has the count.
-        # Let's pre-scan to associate LoopStart with its LoopEnd count.
-        start_to_count = {}
-        temp_stack = []
+        current_fx_name = None
         for event in events:
-            if isinstance(event, LoopStart):
-                temp_stack.append(event)
-            elif isinstance(event, LoopEnd):
-                if temp_stack:
-                    s = temp_stack.pop()
-                    start_to_count[id(s)] = event.count
+            if isinstance(event, FXBlockStart):
+                current_fx_name = event.name
+                continue
+            if isinstance(event, FXBlockEnd):
+                current_fx_name = None
+                continue
 
-        for event in events:
             if isinstance(event, Note):
                 self._add_byte(event.pitch_val)
                 self._add_word(event.duration_ticks)
@@ -162,11 +175,17 @@ class MSLCompiler:
                 self._add_byte(event.detune)
             elif isinstance(event, GoTo):
                 self._add_byte(self.CMD_GOTO)
-                addr = self.labels.get(event.label, base_addr) # Default to start
+                target = event.label
+                if current_fx_name and f"{current_fx_name}_{target}" in self.labels:
+                    target = f"{current_fx_name}_{target}"
+                addr = self.labels.get(target, base_addr) # Default to start
                 self._add_word(addr)
             elif isinstance(event, Restart):
                 self._add_byte(self.CMD_RESTART)
-                addr = self.labels.get(event.label, base_addr) # Default to start
+                target = event.label
+                if current_fx_name and f"{current_fx_name}_{target}" in self.labels:
+                    target = f"{current_fx_name}_{target}"
+                addr = self.labels.get(target, base_addr) # Default to start
                 self._add_word(addr)
             elif isinstance(event, LoopStart):
                 self._add_byte(self.CMD_LOOP_S)
@@ -178,7 +197,8 @@ class MSLCompiler:
         return {
             "bytecode": self.bytecode,
             "instruments": self.instruments,
-            "labels": self.labels
+            "labels": self.labels,
+            "fx_definitions": self.fx_definitions
         }
 
     def to_z8a(self, bytecode: List[int]) -> str:
@@ -192,11 +212,41 @@ class MSLCompiler:
 
 if __name__ == "__main__":
     # Quick test
-    from MusaX.tools.msl_parser import MSLParser
+    import os
+    import sys
+    
+    # Ensure we can import msl_parser
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    # Add project root to path
+    project_root = os.path.dirname(current_dir)
+    root_parent = os.path.dirname(project_root)
+    if root_parent not in sys.path:
+        sys.path.append(root_parent)
+        
+    try:
+        from MusaX.tools.msl_parser import MSLParser
+    except ImportError:
+        # Fallback for different execution environments
+        sys.path.append(current_dir)
+        from msl_parser import MSLParser
+    
     parser = MSLParser()
     compiler = MSLCompiler()
     
-    mml = "O4 C E G @V15 R4"
+    mml = "L8 O4 C E G R4"
+    print(f"Compiling MML: {mml}")
     events = parser.parse(mml)
-    bc = compiler.compile(events)
-    print(compiler.to_z8a(bc))
+    result = compiler.compile(events)
+    
+    print("\n--- Bytecode Output ---")
+    z8a_out = compiler.to_z8a(result["bytecode"])
+    if z8a_out:
+        print(z8a_out)
+    else:
+        print("(Empty bytecode)")
+    
+    if result["instruments"]:
+        print("\n--- Instruments ---")
+        for idx, data in result["instruments"].items():
+            hex_data = ", ".join([f"#{b:02X}" for b in data])
+            print(f"Inst {idx}: DEFB {hex_data}")

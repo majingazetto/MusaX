@@ -1,0 +1,65 @@
+; ************************************************************************
+; * fx_demo.Z8A - Generated from fx_demo.msl
+; * MusaX-ML Compiler v1.0
+; ************************************************************************
+
+INCLUDE "musax_const.Z8A"
+
+; --- FX Table ---
+FX_TABLE:
+    DEFW HDR_LASER, 10
+    DEFW HDR_JUMP, 10
+    DEFW HDR_EXPLOSION, 10
+    DEFW 0, 0
+
+; --- FX: LASER ---
+HDR_LASER:
+    DEFB TYPE_FX
+    DEFW LASER_CH_A, 0, 0
+    DEFW INST_TABLE
+
+; --- FX: JUMP ---
+HDR_JUMP:
+    DEFB TYPE_FX
+    DEFW JUMP_CH_A, 0, 0
+    DEFW INST_TABLE
+
+; --- FX: EXPLOSION ---
+HDR_EXPLOSION:
+    DEFB TYPE_FX
+    DEFW 0, 0, EXPLOSION_CH_C
+    DEFW INST_TABLE
+
+; --- Instrument Table ---
+INST_TABLE:
+    DEFW INST_0
+    DEFW 0
+    DEFW 0
+    DEFW 0
+    DEFW 0
+    DEFW 0
+    DEFW 0
+    DEFW 0
+    DEFW 0
+    DEFW 0
+    DEFW 0
+    DEFW 0
+    DEFW 0
+    DEFW 0
+    DEFW 0
+    DEFW 0
+
+INST_0:
+    DEFB #FF, #14, #00, #01, #01, #01, #8F, #00, #00, #00, #00, #00, #00, #00, #00, #00
+
+; --- Bytecode Streams ---
+LASER_CH_A:
+    DEFB #FA, #00, #FC, #0F, #48, #C0, #00, #54
+    DEFB #C0, #00, #48, #C0, #00, #54, #C0, #00
+    DEFB #FF, #00, #00
+JUMP_CH_A:
+    DEFB #FC, #0F, #F2, #05, #30, #60, #00, #24
+    DEFB #60, #00, #FF, #00, #00
+EXPLOSION_CH_C:
+    DEFB #FC, #0F, #F5, #0A, #F9, #08, #18, #C0
+    DEFB #00, #FF, #C0, #00, #F8, #FF, #00, #00
