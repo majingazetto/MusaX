@@ -12,7 +12,7 @@ from MusaX.tools.msl_parser import (
     MMLEvent, Note, Rest, SetOctave, OctaveUp, OctaveDown, SetLength,
     SetVolume, SetInstrument, SetTempo, SetGateTime, SetPortamento,
     VolumeFade, Detune, PhaseDelay, Chorus, GoTo, Restart, Instrument,
-    Label, LoopStart, LoopEnd, FXBlockStart, FXBlockEnd
+    Label, LoopStart, LoopEnd, FXBlockStart, FXBlockEnd, Metadata
 )
 
 class MSLCompiler:
@@ -37,6 +37,7 @@ class MSLCompiler:
         self.labels: Dict[str, int] = {}
         self.instruments: Dict[int, List[int]] = {}
         self.fx_definitions: Dict[str, Dict] = {}
+        self.metadata: Dict[str, str] = {}
         self.current_offset = 0
 
     def _add_byte(self, b: int):
@@ -65,20 +66,52 @@ class MSLCompiler:
         record[8] = inst.flags
         return record
 
-    def compile(self, events: List[MMLEvent], base_addr: int = 0) -> Dict[str, Union[List[int], Dict[int, List[int]], Dict[str, int], Dict[str, Dict]]]:
+    def compile(self, events: List[MMLEvent], base_addr: int = 0) -> Dict[str, Union[List[int], Dict[int, List[int]], Dict[str, int], Dict[str, Dict], Dict[str, str]]]:
         self.bytecode = []
         self.labels = {}
         self.instruments = {}
         self.fx_definitions = {}
+        self.metadata = {}
         self.current_offset = 0
 
-        # --- Pass 1: Label Resolution, Loop Pairing & Instruments ---
-        temp_offset = 0
-        loop_stack = [] # Stores (LoopStart_id)
-        start_to_count = {}
+        # --- Pass 1: Label Resolution, Loop Pairing & Instruments & Metadata ---
+        # Note: We need to pre-expand loops that are triplets to get correct offsets
+        expanded_events = []
+        loop_stack = [] # List of (start_index_in_expanded)
         
+        i = 0
+        while i < len(events):
+            ev = events[i]
+            if isinstance(ev, LoopStart):
+                loop_stack.append(len(expanded_events))
+                i += 1
+            elif isinstance(ev, LoopEnd):
+                if loop_stack:
+                    start_idx = loop_stack.pop()
+                    loop_body = expanded_events[start_idx:]
+                    count = ev.count
+                    
+                    if ev.is_triplet:
+                        # Triplet adjustment: scale each note/rest in the body
+                        for j in range(len(loop_body)):
+                            item = loop_body[j]
+                            if isinstance(item, Note):
+                                loop_body[j] = Note(item.pitch_val, int((item.duration_ticks * 2) / 3))
+                            elif isinstance(item, Rest):
+                                loop_body[j] = Rest(int((item.duration_ticks * 2) / 3))
+                    
+                    # Add remaining repetitions (1st repetition already in expanded_events)
+                    for _ in range(count - 1):
+                        expanded_events.extend(loop_body)
+                i += 1
+            else:
+                expanded_events.append(ev)
+                i += 1
+        
+        # Now use expanded_events for bytecode generation
+        temp_offset = 0
         current_fx_name = None
-        for event in events:
+        for event in expanded_events:
             if isinstance(event, Label):
                 name = event.name
                 if current_fx_name:
@@ -86,6 +119,8 @@ class MSLCompiler:
                 self.labels[name] = base_addr + temp_offset
                 if current_fx_name:
                     self.fx_definitions[current_fx_name]["labels"].append(name)
+            elif isinstance(event, Metadata):
+                self.metadata[event.key] = event.value
             elif isinstance(event, Note):
                 temp_offset += 3 # Note (1b) + Duration (2b)
             elif isinstance(event, Rest):
@@ -112,14 +147,6 @@ class MSLCompiler:
                 temp_offset += 3 # CMD_GOTO (1b) + Addr (2b)
             elif isinstance(event, Restart):
                 temp_offset += 3 # CMD_RESTART (1b) + Addr (2b)
-            elif isinstance(event, LoopStart):
-                temp_offset += 2 # CMD_LOOP_S (1b) + Count (1b)
-                loop_stack.append(id(event))
-            elif isinstance(event, LoopEnd):
-                temp_offset += 1 # CMD_LOOP_E (1b)
-                if loop_stack:
-                    s_id = loop_stack.pop()
-                    start_to_count[s_id] = event.count
             elif isinstance(event, Instrument):
                 self.instruments[event.id] = self._compile_instrument(event)
             elif isinstance(event, FXBlockStart):
@@ -130,7 +157,7 @@ class MSLCompiler:
         
         # --- Pass 2: Bytecode Generation ---
         current_fx_name = None
-        for event in events:
+        for event in expanded_events:
             if isinstance(event, FXBlockStart):
                 current_fx_name = event.name
                 continue
@@ -187,18 +214,13 @@ class MSLCompiler:
                     target = f"{current_fx_name}_{target}"
                 addr = self.labels.get(target, base_addr) # Default to start
                 self._add_word(addr)
-            elif isinstance(event, LoopStart):
-                self._add_byte(self.CMD_LOOP_S)
-                count = start_to_count.get(id(event), 2)
-                self._add_byte(count)
-            elif isinstance(event, LoopEnd):
-                self._add_byte(self.CMD_LOOP_E)
 
         return {
             "bytecode": self.bytecode,
             "instruments": self.instruments,
             "labels": self.labels,
-            "fx_definitions": self.fx_definitions
+            "fx_definitions": self.fx_definitions,
+            "metadata": self.metadata
         }
 
     def to_z8a(self, bytecode: List[int]) -> str:

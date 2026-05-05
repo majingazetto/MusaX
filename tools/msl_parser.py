@@ -39,6 +39,7 @@ class LoopStart:
 @dataclass
 class LoopEnd:
     count: int
+    is_triplet: bool = False
 
 # --- MusaX Engine Command Classes ---
 @dataclass
@@ -104,6 +105,11 @@ class Instrument:
     flags: int
 
 @dataclass
+class Metadata:
+    key: str
+    value: str
+
+@dataclass
 class MSLError:
     line: int
     column: int
@@ -114,7 +120,7 @@ MMLEvent = Union[
     Label, LoopStart, LoopEnd,
     SetVolume, SetInstrument, SetTempo, SetGateTime, SetPortamento,
     VolumeFade, Detune, PhaseDelay, Chorus, GoTo, Restart, Instrument,
-    FXBlockStart, FXBlockEnd
+    FXBlockStart, FXBlockEnd, Metadata
 ]
 
 # --- Constants ---
@@ -128,12 +134,12 @@ BASE_TICK = 768
 TOKEN_REGEX = re.compile(
     r'(//[^\n]*)|'                             # Group 1: Comments (fixed to single line)
     r'(@INST\s*\([^)]*\)\s*\{[^}]*\})|'        # Group 2: @INST blocks
-    r'(@[A-Z0-9#\_\-]+(?:\s*\([^)]*\))?)|'      # Group 3: other @-commands (added -)
+    r'(@[A-Z0-9#\_\-]+(?:\s*(?:\([^)]*\)|"[^"]*"))?)|' # Group 3: other @-commands (added support for quoted strings)
     r'([A-Z0-9_\.]+):|'                        # Group 4: Labels
-    r'(\{)|(\})\s*(\d*)|'                      # Group 5,6,7: Loops
-    r'([<>])|'                                 # Group 8: octave shifts
-    r'([A-GR])([#\+\-bB]?)(\d*)(\.?)|'          # Group 9,10,11,12: notes
-    r'([OL])(\d+)',                            # Group 13,14: O/L commands
+    r'(\{)|(\})\s*(\d*)(t?)|'                  # Group 5,6,7,8: Loops (added triplet t)
+    r'([<>])|'                                 # Group 9: octave shifts
+    r'([A-GR])([#\+\-bB]?)(\d*)([\.t]*)|'      # Group 10,11,12,13: notes (added multiple dots and t)
+    r'([OL])(\d+)',                            # Group 14,15: O/L commands
     re.IGNORECASE | re.DOTALL
 )
 
@@ -160,7 +166,7 @@ class MSLParser:
         line, col = self._get_line_col(offset)
         self.errors.append(MSLError(line, col, message))
 
-    def _calculate_ticks(self, length_str: str, is_dotted: bool) -> int:
+    def _calculate_ticks(self, length_str: str, modifiers: str) -> int:
         if not length_str:
             length = self.state.default_length
         else:
@@ -168,13 +174,34 @@ class MSLParser:
         
         if length == 0: return 0 # Avoid division by zero
         ticks = (BASE_TICK * 4) / length
-        if is_dotted:
-            ticks *= 1.5
+        
+        if modifiers:
+            # Handle dots
+            dots = modifiers.count('.')
+            if dots > 0:
+                factor = 1.0
+                add = 0.5
+                for _ in range(dots):
+                    factor += add
+                    add /= 2.0
+                ticks *= factor
+            
+            # Handle triplets
+            if 't' in modifiers.lower():
+                ticks = (ticks * 2) / 3
+                
         return int(ticks)
 
     def _parse_at_command(self, command_str: str, offset: int):
         command_str = command_str[1:].strip() # Remove @ and extra spaces
         
+        # Metadata commands like @TITLE "Song Name", @AUTHOR "Artist"
+        match = re.match(r'(TITLE|AUTHOR|DESC)\s*"([^"]*)"', command_str, re.IGNORECASE)
+        if match:
+            key, val = match.groups()
+            self.events.append(Metadata(key.upper(), val))
+            return
+
         # Simple commands like @V15, @I3, @G200, @P10, @D-5
         match = re.match(r'([VIGPD])\s*(\-?\d+)', command_str, re.IGNORECASE)
         if match:
@@ -259,7 +286,7 @@ class MSLParser:
         self.events.append(Instrument(id=inst_id, name=inst_name, adsr=adsr, lfo=lfo, flags=flags))
 
     def _parse_token(self, match):
-        (comment, inst_block, at_command, label, loop_start, loop_end, loop_count, 
+        (comment, inst_block, at_command, label, loop_start, loop_end, loop_count, loop_triplet, 
          octave_shift, note, alteration, length_str, dot, command, cmd_val) = match.groups()
         
         offset = match.start()
@@ -301,7 +328,8 @@ class MSLParser:
                 self.events.append(FXBlockEnd())
             else:
                 count = int(loop_count) if loop_count else 2 # Default to 2 if not specified
-                self.events.append(LoopEnd(count))
+                is_triplet = loop_triplet.lower() == 't'
+                self.events.append(LoopEnd(count, is_triplet))
 
         elif octave_shift:
             if octave_shift == '>':
@@ -312,8 +340,8 @@ class MSLParser:
                 self.events.append(OctaveDown())
         
         elif note:
-            is_dotted = dot == '.'
-            duration_ticks = self._calculate_ticks(length_str, is_dotted)
+            is_dotted = '.' in dot
+            duration_ticks = self._calculate_ticks(length_str, dot)
             
             if note.upper() == 'R':
                 self.events.append(Rest(duration_ticks))

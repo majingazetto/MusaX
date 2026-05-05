@@ -17,10 +17,31 @@ The 768-tick resolution allows for perfect integer division of standard musical 
 - `LEN_Q` (Quarter/Negra): 768
 - `LEN_E` (Eighth/Corchea): 384
 - `LEN_S` (Sixteenth/Semicorchea): 192
+- `LEN_T` (Thirty-second/Fusa): 96
 - `LEN_ET` (Eighth Triplet): 256
 - `LEN_QT` (Quarter Triplet): 512
+- `LEN_HT` (Half Triplet): 1024
+- `LEN_QD` (Dotted Quarter): 1152
+- `LEN_ED` (Dotted Eighth): 576
+- `LEN_HD` (Dotted Half): 2304
+- `LEN_WD` (Dotted Whole): 4608
+- `LEN_QDD` (Double Dotted Quarter): 1344
+- `LEN_EDD` (Double Dotted Eighth): 672
 
-## 3. Bytecode Structure
+## 3. MusaX-ML (MSL) Features
+The MSL compiler (v1.1) supports advanced rhythmic and metadata features.
+
+### Metadata Tags
+MSL files can include descriptive headers that are reflected in the generated assembly:
+- `@TITLE "Song Title"`: Used for descriptive labels and headers.
+- `@AUTHOR "Name"`: Included in the generated file header.
+- `@DESC "Description"`: Included in the generated file header.
+
+### Advanced Rhythmic Notation
+- **Multiple Dots:** Append `.` for dotted (1.5x), `..` for double-dotted (1.75x), etc.
+- **Triplets:** Append `t` to a note (e.g., `C8t`) or a group (e.g., `{ C D E }t`) to apply a 2/3 duration factor.
+
+## 4. Bytecode Structure
 MusaX uses a stream-based bytecode format. Every event is either a **Note** or a **Command**.
 
 ### Note Format
@@ -37,7 +58,7 @@ MusaX uses a stream-based bytecode format. Every event is either a **Note** or a
 | `CMD_GATE` | `0xFB` | `Val` | Set gate time (0-255). Triggers ADSR Release at the gate point. |
 | `CMD_INST` | `0xFA` | `ID` | Select instrument from the active source's pointer table. |
 | `CMD_LOOP_S` | `0xF9` | `Count` | Start a loop block. |
-| `CMD_LOOP_E` | `0xF8` | | End a loop block (repeat if count > 0). |
+| `CMD_LOOP_E` | `0xF8` | `Modifier` | End a loop block. Modifier `t` applies triplet factor to the body. |
 | `CMD_GOTO` | `0xF7` | `Addr (DEFW)` | Unconditional jump to address. |
 | `CMD_PHASE` | `0xF6` | `Val` | Sub-tick delay (0-255). Shifts event timing. |
 | `CMD_DETUNE` | `0xF5` | `Val (signed)` | Fine pitch offset in cents. |
@@ -45,7 +66,7 @@ MusaX uses a stream-based bytecode format. Every event is either a **Note** or a
 | `CMD_FADE` | `0xF3` | `Target, Step` | Per-channel volume fade (0-255). |
 | `CMD_PORTA` | `0xF2` | `Speed` | Chromatic staircase (frames/semitone). |
 
-## 4. Header Formats (v1.9 — 14 bytes)
+## 5. Header Formats (v1.9 — 14 bytes)
 
 Both Music and FX headers grew from 12 to 14 bytes by appending a `PTR_INST` field at the end.
 

@@ -177,8 +177,14 @@ LEN_S       EQU BASE_TICK / 4
 LEN_T       EQU BASE_TICK / 8
 LEN_ET      EQU BASE_TICK / 3       ; Exact 256
 LEN_ST      EQU BASE_TICK / 6       ; Exact 128
+LEN_QT      EQU (BASE_TICK * 2) / 3 ; Exact 512
+LEN_HT      EQU (BASE_TICK * 4) / 3 ; Exact 1024
 LEN_QD      EQU BASE_TICK + (BASE_TICK / 2)
 LEN_ED      EQU (BASE_TICK / 2) + (BASE_TICK / 4)
+LEN_HD      EQU (BASE_TICK * 2) + BASE_TICK
+LEN_WD      EQU (BASE_TICK * 4) + (BASE_TICK * 2)
+LEN_QDD     EQU BASE_TICK + (BASE_TICK / 2) + (BASE_TICK / 4)
+LEN_EDD     EQU (BASE_TICK / 2) + (BASE_TICK / 4) + (BASE_TICK / 8)
 
 ; --- Common Note Labels (Sharps with #) ---
 C#0  EQU 1
