@@ -89,6 +89,18 @@ class Restart:
     label: str
 
 @dataclass
+class Call:
+    label: str
+
+@dataclass
+class PhraseStart:
+    name: str
+
+@dataclass
+class PhraseEnd:
+    pass
+
+@dataclass
 class FXBlockStart:
     name: str
 
@@ -119,8 +131,8 @@ MMLEvent = Union[
     SetOctave, OctaveUp, OctaveDown, SetLength, Note, Rest,
     Label, LoopStart, LoopEnd,
     SetVolume, SetInstrument, SetTempo, SetGateTime, SetPortamento,
-    VolumeFade, Detune, PhaseDelay, Chorus, GoTo, Restart, Instrument,
-    FXBlockStart, FXBlockEnd, Metadata
+    VolumeFade, Detune, PhaseDelay, Chorus, GoTo, Restart, Call, Instrument,
+    PhraseStart, PhraseEnd, FXBlockStart, FXBlockEnd, Metadata
 ]
 
 # --- Constants ---
@@ -132,14 +144,15 @@ BASE_TICK = 768
 
 # Enhanced regex to capture all MSL constructs
 TOKEN_REGEX = re.compile(
-    r'(//[^\n]*)|'                             # Group 1: Comments (fixed to single line)
+    r'(//[^\n]*)|'                             # Group 1: Comments
     r'(@INST\s*\([^)]*\)\s*\{[^}]*\})|'        # Group 2: @INST blocks
-    r'(@[A-Z0-9#\_\-]+(?:\s*(?:\([^)]*\)|"[^"]*"))?)|' # Group 3: other @-commands (added support for quoted strings)
-    r'([A-Z0-9_\.]+):|'                        # Group 4: Labels
-    r'(\{)|(\})\s*(\d*)(t?)|'                  # Group 5,6,7,8: Loops (added triplet t)
-    r'([<>])|'                                 # Group 9: octave shifts
-    r'([A-GR])([#\+\-bB]?)(\d*)([\.t]*)|'      # Group 10,11,12,13: notes (added multiple dots and t)
-    r'([OL])(\d+)',                            # Group 14,15: O/L commands
+    r'(PHRASE\s*\([^)]*\)\s*\{)|'              # Group 3: PHRASE blocks
+    r'(@[A-Z0-9#\_\-]+(?:\s*(?:\([^)]*\)|"[^"]*"))?)|' # Group 4: other @-commands
+    r'([A-Z0-9_\.]+):|'                        # Group 5: Labels
+    r'(\{)|(\})\s*(\d*)(t?)|'                  # Group 6,7,8,9: Loops
+    r'([<>])|'                                 # Group 10: octave shifts
+    r'([A-GR])([#\+\-bB]?)(\d*)([\.t]*)|'      # Group 11,12,13,14: notes
+    r'([OL])(\d+)',                            # Group 15,16: O/L commands
     re.IGNORECASE | re.DOTALL
 )
 
@@ -240,14 +253,15 @@ class MSLParser:
             elif cmd == 'CH': self.events.append(Chorus(val1, val2))
             return
             
-        # GOTO/RESTART/FX commands
-        match = re.match(r'(GOTO|RESTART|FX)\s*\(\s*([^)]+)\s*\)', command_str, re.IGNORECASE)
+        # GOTO/RESTART/CALL/FX commands
+        match = re.match(r'(GOTO|RESTART|CALL|FX)\s*\(\s*([^)]+)\s*\)', command_str, re.IGNORECASE)
         if match:
             cmd, arg = match.groups()
             cmd = cmd.upper()
             arg = arg.strip()
             if cmd == 'GOTO': self.events.append(GoTo(arg))
             elif cmd == 'RESTART': self.events.append(Restart(arg))
+            elif cmd == 'CALL': self.events.append(Call(arg))
             elif cmd == 'FX': self.events.append(FXBlockStart(arg))
             return
 
@@ -286,7 +300,7 @@ class MSLParser:
         self.events.append(Instrument(id=inst_id, name=inst_name, adsr=adsr, lfo=lfo, flags=flags))
 
     def _parse_token(self, match):
-        (comment, inst_block, at_command, label, loop_start, loop_end, loop_count, loop_triplet, 
+        (comment, inst_block, phrase_block, at_command, label, loop_start, loop_end, loop_count, loop_triplet, 
          octave_shift, note, alteration, length_str, dot, command, cmd_val) = match.groups()
         
         offset = match.start()
@@ -297,6 +311,13 @@ class MSLParser:
         if inst_block:
             self._parse_inst_block(inst_block, offset)
         
+        elif phrase_block:
+            match = re.search(r'PHRASE\s*\(([^)]+)\)\s*\{', phrase_block, re.IGNORECASE)
+            if match:
+                self.events.append(PhraseStart(match.group(1).strip()))
+            else:
+                self._add_error(offset, "Malformed PHRASE header")
+
         elif at_command:
             self._parse_at_command(at_command, offset)
 
@@ -304,28 +325,40 @@ class MSLParser:
             self.events.append(Label(label))
 
         elif loop_start:
-            # If the last event was FXBlockStart, this brace belongs to it
-            if self.events and isinstance(self.events[-1], FXBlockStart):
+            # If the last event was FXBlockStart or PhraseStart, this brace belongs to it
+            if self.events and isinstance(self.events[-1], (FXBlockStart, PhraseStart)):
                 pass 
             else:
                 self.events.append(LoopStart())
 
         elif loop_end:
-            # Check if we are inside an FX block or a loop
-            is_fx_end = False
+            # Check if we are inside an FX block, a Phrase block or a loop
+            is_block_end = False
             if not loop_count:
-                # Count backwards to see if we have an FXBlockStart without a corresponding FXBlockEnd
                 depth = 0
                 for ev in reversed(self.events):
-                    if isinstance(ev, FXBlockEnd): depth += 1
-                    if isinstance(ev, FXBlockStart):
+                    if isinstance(ev, (FXBlockEnd, PhraseEnd)): depth += 1
+                    if isinstance(ev, (FXBlockStart, PhraseStart)):
                         if depth == 0:
-                            is_fx_end = True
+                            is_block_end = True
                             break
                         depth -= 1
             
-            if is_fx_end:
-                self.events.append(FXBlockEnd())
+            if is_block_end:
+                # Check if the closest starting block is a Phrase
+                depth = 0
+                for ev in reversed(self.events):
+                    if isinstance(ev, (FXBlockEnd, PhraseEnd)): depth += 1
+                    if isinstance(ev, PhraseStart):
+                        if depth == 0:
+                            self.events.append(PhraseEnd())
+                            break
+                        depth -= 1
+                    elif isinstance(ev, FXBlockStart):
+                        if depth == 0:
+                            self.events.append(FXBlockEnd())
+                            break
+                        depth -= 1
             else:
                 count = int(loop_count) if loop_count else 2 # Default to 2 if not specified
                 is_triplet = loop_triplet.lower() == 't'

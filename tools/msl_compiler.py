@@ -11,12 +11,14 @@ if project_root not in sys.path:
 from MusaX.tools.msl_parser import (
     MMLEvent, Note, Rest, SetOctave, OctaveUp, OctaveDown, SetLength,
     SetVolume, SetInstrument, SetTempo, SetGateTime, SetPortamento,
-    VolumeFade, Detune, PhaseDelay, Chorus, GoTo, Restart, Instrument,
-    Label, LoopStart, LoopEnd, FXBlockStart, FXBlockEnd, Metadata
+    VolumeFade, Detune, PhaseDelay, Chorus, GoTo, Restart, Call, Instrument,
+    Label, LoopStart, LoopEnd, PhraseStart, PhraseEnd, FXBlockStart, FXBlockEnd, Metadata
 )
 
 class MSLCompiler:
     # --- Bytecode Mapping ---
+    CMD_RET      = 0xF0
+    CMD_CALL     = 0xF1
     CMD_PORTA    = 0xF2
     CMD_FADE     = 0xF3
     CMD_CHORUS   = 0xF4
@@ -111,11 +113,14 @@ class MSLCompiler:
         # Now use expanded_events for bytecode generation
         temp_offset = 0
         current_fx_name = None
+        current_phrase_name = None
         for event in expanded_events:
             if isinstance(event, Label):
                 name = event.name
                 if current_fx_name:
                     name = f"{current_fx_name}_{name}"
+                elif current_phrase_name:
+                    name = f"{current_phrase_name}_{name}"
                 self.labels[name] = base_addr + temp_offset
                 if current_fx_name:
                     self.fx_definitions[current_fx_name]["labels"].append(name)
@@ -147,6 +152,8 @@ class MSLCompiler:
                 temp_offset += 3 # CMD_GOTO (1b) + Addr (2b)
             elif isinstance(event, Restart):
                 temp_offset += 3 # CMD_RESTART (1b) + Addr (2b)
+            elif isinstance(event, Call):
+                temp_offset += 3 # CMD_CALL (1b) + Addr (2b)
             elif isinstance(event, Instrument):
                 self.instruments[event.id] = self._compile_instrument(event)
             elif isinstance(event, FXBlockStart):
@@ -154,15 +161,29 @@ class MSLCompiler:
                 self.fx_definitions[current_fx_name] = {"start_addr": base_addr + temp_offset, "labels": []}
             elif isinstance(event, FXBlockEnd):
                 current_fx_name = None
+            elif isinstance(event, PhraseStart):
+                current_phrase_name = event.name
+                self.labels[current_phrase_name] = base_addr + temp_offset
+            elif isinstance(event, PhraseEnd):
+                current_phrase_name = None
+                temp_offset += 1 # CMD_RET (1b)
         
         # --- Pass 2: Bytecode Generation ---
         current_fx_name = None
+        current_phrase_name = None
         for event in expanded_events:
             if isinstance(event, FXBlockStart):
                 current_fx_name = event.name
                 continue
             if isinstance(event, FXBlockEnd):
                 current_fx_name = None
+                continue
+            if isinstance(event, PhraseStart):
+                current_phrase_name = event.name
+                continue
+            if isinstance(event, PhraseEnd):
+                self._add_byte(self.CMD_RET)
+                current_phrase_name = None
                 continue
 
             if isinstance(event, Note):
@@ -213,6 +234,15 @@ class MSLCompiler:
                 if current_fx_name and f"{current_fx_name}_{target}" in self.labels:
                     target = f"{current_fx_name}_{target}"
                 addr = self.labels.get(target, base_addr) # Default to start
+                self._add_word(addr)
+            elif isinstance(event, Call):
+                self._add_byte(self.CMD_CALL)
+                target = event.label
+                # Phrases are global, so no need for prefixing usually, 
+                # but let's check for scoped labels if they are ever supported within phrases.
+                if current_phrase_name and f"{current_phrase_name}_{target}" in self.labels:
+                    target = f"{current_phrase_name}_{target}"
+                addr = self.labels.get(target, base_addr)
                 self._add_word(addr)
 
         return {

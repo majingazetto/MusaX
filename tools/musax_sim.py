@@ -84,7 +84,7 @@ class MusaXSim:
             "CMD_INST": 0xFA, "CMD_LOOP_S": 0xF9, "CMD_LOOP_E": 0xF8,
             "CMD_GOTO": 0xF7, "CMD_RESTART": 0xFE, "CMD_PHASE": 0xF6,
             "CMD_DETUNE": 0xF5, "CMD_CHORUS": 0xF4, "CMD_FADE": 0xF3,
-            "CMD_PORTA": 0xF2
+            "CMD_PORTA": 0xF2, "CMD_CALL": 0xF1, "CMD_RET": 0xF0
         }
         self.init_notes()
         self.symbols.update(self.commands)
@@ -102,7 +102,7 @@ class MusaXSim:
                 "stream": [], "stream_base": 0, "stream_name": "",
                 "pc": 0, "wait": 0, "sample_idx": 0,
                 "note_name": "---", "loop_count": 0, "loop_ticks": 0,
-                "loop_stack": [],
+                "loop_stack": [], "call_stack": [],
                 "bpm_step": 0x2400 if is_fx else 0x0600, # FX default to 168 BPM
                 "accumulator": 0, "detune": 0, "gate": 255, "total_wait": 0,
                 "fade_vol": 255.0, "fade_target": 255.0, "fade_step": 0.0,
@@ -457,6 +457,25 @@ class MusaXSim:
             else:
                 ch["active"] = False
 
+    def jump_to(self, ch, addr):
+        """Helper to jump to an absolute address, resolving the correct stream."""
+        best_match = None
+        best_base = -1
+        for name, base in self.stream_bases.items():
+            if name in self.all_streams:
+                stream_len = len(self.all_streams[name])
+                if base <= addr < base + stream_len:
+                    if base > best_base:
+                        best_match = name
+                        best_base = base
+        if best_match:
+            ch["stream"] = self.all_streams[best_match]
+            ch["stream_base"] = best_base
+            ch["stream_name"] = best_match
+            ch["pc"] = addr - best_base
+        else:
+            ch["pc"] = 0
+
     def process_events(self, ch_idx):
         ch = self.channels[ch_idx]
         if not ch["active"]: return
@@ -471,6 +490,15 @@ class MusaXSim:
                 break
             
             if ch["pc"] >= len(ch["stream"]): 
+                # End of stream, check call stack
+                if ch["call_stack"]:
+                    ret = ch["call_stack"].pop()
+                    ch["stream"] = ret["stream"]
+                    ch["stream_base"] = ret["base"]
+                    ch["stream_name"] = ret["name"]
+                    ch["pc"] = ret["pc"]
+                    continue
+                
                 ch["active"] = False
                 if ch_idx < 3: self.finished_mask |= (1 << ch_idx)
                 if self.log_file: self.log_file.write(f"T:{self.total_ticks} | CH:{ch_idx} | PC:{ch['pc']:03X} | END OF STREAM\n")
@@ -499,7 +527,7 @@ class MusaXSim:
                         self.log_file.write(f"T:{self.total_ticks} | CH:{ch_idx} | PC:{old_pc:03X} | REST len:{ch['wait']}\n")
                         self.log_file.flush()
                 else: ch["active"] = False
-            elif cmd >= 0xF2 and cmd != 0xFF:
+            elif cmd >= 0xF0 and cmd != 0xFF:
                 if cmd == 0xFC: # VOLUME [Val]
                     ch["vol"] = ch["stream"][ch["pc"]]; ch["pc"] += 1
                 elif cmd == 0xFA: # INST [ID]
@@ -525,48 +553,31 @@ class MusaXSim:
                 elif cmd == 0xF7: # GOTO [Addr (DEFW)]
                     if ch["pc"] + 1 < len(ch["stream"]):
                         addr = ch["stream"][ch["pc"]] + (ch["stream"][ch["pc"]+1] << 8)
-                        # Find the global stream that contains this address
-                        best_match = None
-                        best_base = -1
-                        for name, base in self.stream_bases.items():
-                            if name in self.all_streams:
-                                stream_len = len(self.all_streams[name])
-                                if base <= addr < base + stream_len:
-                                    if base > best_base:
-                                        best_match = name
-                                        best_base = base
-                        if best_match:
-                            ch["stream"] = self.all_streams[best_match]
-                            ch["stream_base"] = best_base
-                            ch["stream_name"] = best_match
-                            ch["pc"] = addr - best_base
-                        else:
-                            ch["pc"] = 0
-                    else:
-                        ch["pc"] = 0
+                        self.jump_to(ch, addr)
+                elif cmd == 0xF1: # CALL [Addr (DEFW)]
+                    if ch["pc"] + 1 < len(ch["stream"]):
+                        addr = ch["stream"][ch["pc"]] + (ch["stream"][ch["pc"]+1] << 8)
+                        ch["pc"] += 2
+                        # Push return address (absolute)
+                        ch["call_stack"].append({
+                            "stream": ch["stream"], "base": ch["stream_base"], 
+                            "name": ch["stream_name"], "pc": ch["pc"]
+                        })
+                        self.jump_to(ch, addr)
+                elif cmd == 0xF0: # RET
+                    if ch["call_stack"]:
+                        ret = ch["call_stack"].pop()
+                        ch["stream"] = ret["stream"]
+                        ch["stream_base"] = ret["base"]
+                        ch["stream_name"] = ret["name"]
+                        ch["pc"] = ret["pc"]
                 elif cmd == 0xFE: # RESTART [Addr (DEFW)]
                     if ch_idx < 3: 
                         self.finished_mask |= (1 << ch_idx)
                         ch["loop_ticks"] = 0
                         if ch["pc"] + 1 < len(ch["stream"]):
                             addr = ch["stream"][ch["pc"]] + (ch["stream"][ch["pc"]+1] << 8)
-                            # Find the global stream that contains this address
-                            best_match = None
-                            best_base = -1
-                            for name, base in self.stream_bases.items():
-                                if name in self.all_streams:
-                                    stream_len = len(self.all_streams[name])
-                                    if base <= addr < base + stream_len:
-                                        if base > best_base:
-                                            best_match = name
-                                            best_base = base
-                            if best_match:
-                                ch["stream"] = self.all_streams[best_match]
-                                ch["stream_base"] = best_base
-                                ch["stream_name"] = best_match
-                                ch["pc"] = addr - best_base
-                            else:
-                                ch["pc"] = 0
+                            self.jump_to(ch, addr)
                         else:
                             ch["pc"] = 0
                     else: # FX should NOT restart unless explicitly coded. RESTART in FX = STOP

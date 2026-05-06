@@ -20,6 +20,12 @@ This document provides detailed information on all bytecode commands available i
 - **Description:** Defines a loop block. The code between `LOOP_S` and `LOOP_E` will repeat `Count` times.
 - **Note:** MusaX supports nested loops via an internal stack.
 
+### CMD_CALL (0xF1) / CMD_RET (0xF0)
+- **Parameters (CALL):** `Address (DEFW)`
+- **Parameters (RET):** None
+- **Description:** Performs a subroutine call. `CALL` pushes the return address onto the stack and jumps to the destination. `RET` pops the address and returns.
+- **Note:** Useful for reusable musical phrases (motifs) across different parts of a song. Supports nesting.
+
 ## Audio & Modulation
 
 ### CMD_VOLUME (0xFC)

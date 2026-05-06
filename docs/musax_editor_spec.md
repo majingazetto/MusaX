@@ -65,6 +65,10 @@ To enable non-linear song structures, the following syntax will be supported:
     - `@GOTO(label)`: Compiles to a `CMD_GOTO`. This is a technical, unconditional jump. Useful for one-off jumps to specific sections (e.g., an ending).
     - `@RESTART(label)`: Compiles to a `CMD_RESTART`. This is a logical jump that also signals the end of a main loop for inter-channel synchronization. This is the standard way to loop a song.
 
+- **Phrases (Subroutines):**
+    - `PHRASE(Name) { ... }`: Defines a reusable musical block. The compiler places this block outside the main flow and appends a `CMD_RET`.
+    - `@CALL(Name)`: Executes the specified phrase. Compiles to `CMD_CALL`.
+
 ### 3.4. Instrument Definition
 
 Instruments are defined using a dedicated block structure. Each instrument is 16 bytes long.

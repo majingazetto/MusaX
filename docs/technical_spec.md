@@ -65,6 +65,8 @@ MusaX uses a stream-based bytecode format. Every event is either a **Note** or a
 | `CMD_CHORUS` | `0xF4` | `Phase, Detune` | Combined command for PSG Chorus effect. |
 | `CMD_FADE` | `0xF3` | `Target, Step` | Per-channel volume fade (0-255). |
 | `CMD_PORTA` | `0xF2` | `Speed` | Chromatic staircase (frames/semitone). |
+| `CMD_CALL` | `0xF1` | `Addr (DEFW)` | Call a subroutine phrase. |
+| `CMD_RET` | `0xF0` | None | Return from a subroutine phrase. |
 
 ## 5. Header Formats (v1.9 — 14 bytes)
 
