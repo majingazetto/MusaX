@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MusaX Web Editor</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.2/ace.js"></script>
+    <style>
+        body { background: #000044; color: white; font-family: 'Courier New', monospace; margin: 0; padding: 10px; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
+        .header { background: #0000AA; padding: 10px; border-bottom: 2px solid #FFAA00; display: flex; justify-content: space-between; align-items: center; }
+        .title { color: #FFAA00; font-weight: bold; font-size: 20px; }
+        .main-container { flex: 1; display: flex; flex-direction: column; gap: 10px; padding-top: 10px; }
+        .top-row { flex: 1; display: flex; gap: 10px; }
+        .bottom-row { flex: 1; display: flex; gap: 10px; }
+        .editor-container { flex: 1; display: flex; flex-direction: column; border: 1px solid #000088; background: #000022; }
+        .editor-label { background: #0000AA; color: #FFAA00; padding: 5px; text-align: center; font-weight: bold; border-bottom: 1px solid #000088; }
+        .ace_editor { flex: 1; width: 100%; font-size: 14px; }
+        .controls { padding: 10px; background: #000066; border-top: 2px solid #FFAA00; display: flex; gap: 20px; align-items: center; }
+        button { background: #FFAA00; border: none; padding: 8px 20px; font-weight: bold; cursor: pointer; border-radius: 4px; }
+        button:hover { background: #FFCC00; }
+        input { background: #000033; color: white; border: 1px solid #FFAA00; padding: 5px; width: 300px; }
+        #status { color: #AAAAAA; font-style: italic; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="title">MUSAX WEB EDITOR v1.0</div>
+        <div>
+            <input type="text" id="filename" placeholder="ruta/al/archivo.msl" value="MusaX/examples/msl/korobeiniki.msl">
+            <button onclick="loadFile()">LOAD</button>
+        </div>
+    </div>
+
+    <div class="main-container">
+        <div class="top-row">
+            <div class="editor-container" style="flex: 2;">
+                <div class="editor-label">GLOBAL / INSTRUMENTS / PHRASES</div>
+                <div id="editor-global"></div>
+            </div>
+            <div class="editor-container">
+                <div class="editor-label">CHANNEL A</div>
+                <div id="editor-cha"></div>
+            </div>
+        </div>
+        <div class="bottom-row">
+            <div class="editor-container">
+                <div class="editor-label">CHANNEL B</div>
+                <div id="editor-chb"></div>
+            </div>
+            <div class="editor-container">
+                <div class="editor-label">CHANNEL C</div>
+                <div id="editor-chc"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="controls">
+        <button onclick="playMusic()" style="background: #00AA00; color: white;">PLAY (Ctrl+P)</button>
+        <div id="status">Ready</div>
+    </div>
+
+    <script>
+        // Inicializar editores Ace
+        const editors = {
+            global: ace.edit("editor-global"),
+            cha: ace.edit("editor-cha"),
+            chb: ace.edit("editor-chb"),
+            chc: ace.edit("editor-chc")
+        };
+
+        Object.values(editors).forEach(ed => {
+            ed.setTheme("ace/theme/dracula");
+            ed.session.setMode("ace/mode/javascript"); // JS mode works well for MSL
+            ed.setShowPrintMargin(false);
+            ed.renderer.setShowGutter(true);
+        });
+
+        async function loadFile() {
+            const filename = document.getElementById('filename').value;
+            const status = document.getElementById('status');
+            status.innerText = "Loading...";
+
+            const response = await fetch('/load', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({filename: filename})
+            });
+            const data = await response.json();
+            
+            if (data.status === 'success') {
+                editors.global.setValue(data.global, -1);
+                editors.cha.setValue(data.cha, -1);
+                editors.chb.setValue(data.chb, -1);
+                editors.chc.setValue(data.chc, -1);
+                status.innerText = "Loaded " + filename;
+            } else {
+                status.innerText = "Error: " + data.message;
+            }
+        }
+
+        async function playMusic() {
+            const status = document.getElementById('status');
+            status.innerText = "Compiling & Playing...";
+
+            const payload = {
+                global: editors.global.getValue(),
+                cha: editors.cha.getValue(),
+                chb: editors.chb.getValue(),
+                chc: editors.chc.getValue()
+            };
+
+            const response = await fetch('/play', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            });
+            const data = await response.json();
+            status.innerText = data.message;
+        }
+
+        // Atajos de teclado
+        document.addEventListener('keydown', function(e) {
+            if (e.ctrlKey && e.key === 'p') {
+                e.preventDefault();
+                playMusic();
+            }
+        });
+    </script>
+</body>
+</html>
