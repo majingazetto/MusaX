@@ -214,24 +214,6 @@ class MusaXSim:
         base_addr = 0x8000 if is_fx_only else 0x1000
         current_offset = 0
         
-        # Pre-scan for stream sizes to avoid overlaps
-        stream_sizes = {}
-        scan_global = None
-        scan_offset = 0
-        for line in lines:
-            m = re.match(r"^([\w.]+):$", line)
-            if m:
-                label = m.group(1)
-                if not label.startswith("."):
-                    if scan_global: stream_sizes[scan_global] = scan_offset
-                    scan_global = label
-                    scan_offset = 0
-                continue
-            if scan_global and (line.startswith("DEFB") or line.startswith("DEFW")):
-                parts = [p.strip() for p in re.split(r",", line[4:].strip())]
-                scan_offset += len(parts) * (2 if line.startswith("DEFW") else 1)
-        if scan_global: stream_sizes[scan_global] = scan_offset
-
         local_stream_bases = {}
         for line in lines:
             m = re.match(r"^([\w.]+):$", line)
@@ -240,16 +222,13 @@ class MusaXSim:
                 if label.startswith("."):
                     if curr_global:
                         full_name = curr_global + label
-                        self.symbols[full_name] = local_stream_bases[curr_global] + current_offset
+                        self.symbols[full_name] = base_addr + current_offset
                         self.channel_labels.setdefault(curr_global, []).append((current_offset, label))
                 else:
-                    if curr_global:
-                        base_addr += stream_sizes[curr_global] + 16 # Add small padding
                     curr_global = label
-                    local_stream_bases[curr_global] = base_addr
-                    self.symbols[curr_global] = base_addr
+                    local_stream_bases[curr_global] = base_addr + current_offset
+                    self.symbols[curr_global] = base_addr + current_offset
                     global_labels[curr_global] = []
-                    current_offset = 0
                 continue
             
             if curr_global and (line.startswith("DEFB") or line.startswith("DEFW")):
@@ -264,10 +243,6 @@ class MusaXSim:
         if not hasattr(self, "all_streams"): self.all_streams = {}
         if not hasattr(self, "stream_bases"): self.stream_bases = {}
         
-        # Merge local stream_bases into the global one
-        for name, addr in local_stream_bases.items():
-            self.stream_bases[name] = addr
-
         for s_name, byte_data in global_labels.items():
             bytes_out = []
             for expr, is_word in byte_data:
@@ -278,20 +253,19 @@ class MusaXSim:
                     bytes_out.append(val & 0xFF)
             self.all_streams[s_name] = bytes_out
             self.stream_bases[s_name] = local_stream_bases[s_name]
-
-        # Pass 3b: Build flat byte-addressed memory for instrument-pointer dereference.
-        for name, bytes_list in self.all_streams.items():
-            base = self.stream_bases.get(name, 0)
-            for i, b in enumerate(bytes_list):
+            base = local_stream_bases[s_name]
+            for i, b in enumerate(bytes_out):
                 self.flat_memory[base + i] = b
 
         if not is_fx_only:
             # Pass 4: Assign Music Streams
-            # Priority 1: Find by signature TYPE_SONG
+            # Build master_stream view for absolute addressing
+            max_addr = max(self.flat_memory.keys()) if self.flat_memory else 0
+            master_stream = [self.flat_memory.get(i, 0) for i in range(max_addr + 1)]
+
+            # Find Music Header
             type_song = self.symbols.get("TYPE_SONG", 0x80)
             music_hdr_name = next((k for k in self.all_streams if self.all_streams[k] and self.all_streams[k][0] == type_song), None)
-            
-            # Priority 2: Fallback to label search
             if not music_hdr_name:
                 music_hdr_name = next((k for k in self.all_streams if "HDR" in k.upper() and "FX" not in k.upper()), None)
             
@@ -300,29 +274,23 @@ class MusaXSim:
                 has_sign = (hdr_bytes[0] == type_song)
                 offset = 1 if has_sign else 0
                 
-                # Minimum expected length check
-                min_len = 13 if has_sign else 12
-                if len(hdr_bytes) >= min_len:
+                if len(hdr_bytes) >= (offset + 12):
                     for i in range(3):
-                        # Each channel has [BPM (2b), PTR (2b)]
                         bpm = hdr_bytes[offset + i*4] + (hdr_bytes[offset + i*4 + 1] << 8)
                         ptr = hdr_bytes[offset + i*4 + 2] + (hdr_bytes[offset + i*4 + 3] << 8)
-
                         ch = self.channels[i]
                         ch["bpm_step"] = bpm
-                        if ptr != 0:
-                            s_name = next((name for name, addr in self.stream_bases.items() if addr == ptr), None)
-                            if s_name:
-                                ch["stream"] = self.all_streams[s_name]
-                                ch["stream_base"] = self.stream_bases[s_name]
-                                ch["stream_name"] = s_name
-                                ch["active"] = True
-                    # v1.9: Optional PTR_INST at offset 12/13
+                        if ptr != 0 and ptr < len(master_stream):
+                            ch["stream"] = master_stream
+                            ch["stream_base"] = 0 
+                            ch["pc"] = ptr
+                            ch["initial_pc"] = ptr
+                            ch["stream_name"] = next((name for name, addr in self.stream_bases.items() if addr == ptr), f"PTR_{ptr:04X}")
+                            ch["active"] = True
+                    
                     inst_off = offset + 12
                     if len(hdr_bytes) >= inst_off + 2:
                         self.music_inst_ptr = hdr_bytes[inst_off] + (hdr_bytes[inst_off + 1] << 8)
-                    else:
-                        self.music_inst_ptr = 0
             
         # Pass 5: FX Logic
         fx_table_name = next((k for k in global_labels if "FX_TABLE" in k), None)
@@ -413,22 +381,14 @@ class MusaXSim:
             if ptr == 0:
                 ch["active"] = False
             else:
-                # Find the global stream that contains this pointer
-                best_match = None
-                best_base = -1
-                for name, base in self.stream_bases.items():
-                    if name in self.all_streams:
-                        stream_len = len(self.all_streams[name])
-                        if base <= ptr < base + stream_len:
-                            if base > best_base:
-                                best_match = name
-                                best_base = base
-                
-                if best_match:
-                    ch["stream"] = self.all_streams[best_match]
-                    ch["stream_base"] = best_base
-                    ch["stream_name"] = best_match
-                    ch["pc"] = ptr - best_base
+                max_addr = max(self.flat_memory.keys()) if self.flat_memory else 0
+                if ptr <= max_addr:
+                    master_stream = [self.flat_memory.get(j, 0) for j in range(max_addr + 1)]
+                    ch["stream"] = master_stream
+                    ch["stream_base"] = 0
+                    ch["stream_name"] = next((name for name, addr in self.stream_bases.items() if addr == ptr), f"PTR_{ptr:04X}")
+                    ch["pc"] = ptr
+                    ch["initial_pc"] = ptr
                     ch["wait"] = 0
                     ch["loop_ticks"] = 0
                     ch["loop_stack"] = []
@@ -448,7 +408,7 @@ class MusaXSim:
         self.sfx_mask = 0
         self.current_fx_priority = 0
         for i, ch in enumerate(self.channels):
-            ch["pc"] = 0; ch["wait"] = 0; ch["loop_count"] = 0; ch["loop_stack"] = []; ch["loop_ticks"] = 0
+            ch["pc"] = ch.get("initial_pc", 0); ch["wait"] = 0; ch["loop_count"] = 0; ch["loop_stack"] = []; ch["loop_ticks"] = 0
             ch["accumulator"] = 0
             if i >= 3: ch["bpm_step"] = 0x2400 # FX default
             if ch["stream"]:
@@ -459,6 +419,13 @@ class MusaXSim:
 
     def jump_to(self, ch, addr):
         """Helper to jump to an absolute address, resolving the correct stream."""
+        # v2.0: If the channel is using the master_stream (stream_base == 0),
+        # just update the absolute PC.
+        if ch.get("stream_base") == 0 and ch.get("stream"):
+            if 0 <= addr < len(ch["stream"]):
+                ch["pc"] = addr
+                return
+
         best_match = None
         best_base = -1
         for name, base in self.stream_bases.items():
@@ -474,7 +441,16 @@ class MusaXSim:
             ch["stream_name"] = best_match
             ch["pc"] = addr - best_base
         else:
-            ch["pc"] = 0
+            # Fallback: if we can't find a fragmented stream but addr is in flat_memory,
+            # switch this channel to master_stream mode.
+            max_addr = max(self.flat_memory.keys()) if self.flat_memory else 0
+            if 0 <= addr <= max_addr:
+                ch["stream"] = [self.flat_memory.get(i, 0) for i in range(max_addr + 1)]
+                ch["stream_base"] = 0
+                ch["pc"] = addr
+                ch["stream_name"] = next((name for name, b in self.stream_bases.items() if b == addr), f"PTR_{addr:04X}")
+            else:
+                ch["pc"] = 0
 
     def process_events(self, ch_idx):
         ch = self.channels[ch_idx]

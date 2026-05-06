@@ -21,7 +21,7 @@ Born on the MSX but designed for any Z80-based (and beyond) machine, MusaX focus
 
 ## Requirements
 
-### Python Simulator (`tools/musax_sim.py`)
+### Python Simulator & Editor (`tools/musax_sim.py`, `tools/msl_editor.py`)
 To run the real-time simulator, you need Python 3 and the PyAudio library. On Ubuntu/Debian:
 
 ```bash
@@ -29,15 +29,28 @@ sudo apt update
 sudo apt install python3-pyaudio portaudio19-dev
 ```
 
+To use the **TUI Editor**, install the `textual` library for your user:
+```bash
+python3 -m pip install --user textual --break-system-packages
+```
+
 ## Project Structure
 
 - `src/`: Core assembly source code (Universal Z80).
-- `tools/`: Python-based simulator and debugging tools.
+- `tools/`: Python-based simulator, compiler, and TUI editor.
 - `docs/`: Technical specifications and hardware frequency tables.
 - `examples/`: Example songs and usage patterns.
 
 ## Getting Started
 
+### Using the TUI Editor
+The fastest way to compose is using the new TUI-based editor:
+```bash
+./MusaX/tools/msl_editor.sh
+```
+Use **Ctrl+P** to instantly compile and play your composition in the simulator.
+
+### Using the CLI Hub
 Check out the documentation in the `docs/` directory:
 - [Technical Specification](docs/technical_spec.md): Architecture, timing, and core concepts.
 - [CLI Hub Guide](docs/cli_hub.md): Using the unified `musax.py` developer tool.

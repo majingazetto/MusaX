@@ -152,7 +152,7 @@ TOKEN_REGEX = re.compile(
     r'(\{)|(\})\s*(\d*)(t?)|'                  # Group 6,7,8,9: Loops
     r'([<>])|'                                 # Group 10: octave shifts
     r'([A-GR])([#\+\-bB]?)(\d*)([\.t]*)|'      # Group 11,12,13,14: notes
-    r'([OL])(\d+)',                            # Group 15,16: O/L commands
+    r'([OL])(\d*)([\.t]*)',                    # Group 15,16,17: O/L commands
     re.IGNORECASE | re.DOTALL
 )
 
@@ -161,6 +161,7 @@ class ParserState:
     """Holds the state of the parser at any given time."""
     current_octave: int = 4
     default_length: int = 4
+    default_length_mod: str = ""
 
 class MSLParser:
     def __init__(self):
@@ -182,6 +183,8 @@ class MSLParser:
     def _calculate_ticks(self, length_str: str, modifiers: str) -> int:
         if not length_str:
             length = self.state.default_length
+            if not modifiers:
+                modifiers = self.state.default_length_mod
         else:
             length = int(length_str)
         
@@ -228,11 +231,20 @@ class MSLParser:
             elif cmd == 'D': self.events.append(Detune(val))
             return
 
-        # Tempo command @T#0600
+        # Tempo command @T#0600 or @T120
         match = re.match(r'T\s*#([0-9A-F]+)', command_str, re.IGNORECASE)
         if match:
             val_str = match.groups()[0]
             val = int(val_str, 16)
+            self.events.append(SetTempo(val))
+            return
+            
+        match = re.match(r'T\s*(\d+)', command_str, re.IGNORECASE)
+        if match:
+            bpm = int(match.groups()[0])
+            # Convert BPM to MusaX bpm_step: (BPM * BASE_TICK * 256) / (60 * INTERRUPT_FREQ)
+            # 60 * 60 = 3600
+            val = int((bpm * BASE_TICK * 256) / 3600)
             self.events.append(SetTempo(val))
             return
             
@@ -300,9 +312,9 @@ class MSLParser:
         self.events.append(Instrument(id=inst_id, name=inst_name, adsr=adsr, lfo=lfo, flags=flags))
 
     def _parse_token(self, match):
-        (comment, inst_block, phrase_block, at_command, label, loop_start, loop_end, loop_count, loop_triplet, 
-         octave_shift, note, alteration, length_str, dot, command, cmd_val) = match.groups()
-        
+        (comment, inst_block, phrase_block, at_command, label, loop_start, loop_end, loop_count, loop_triplet,
+         octave_shift, note, alteration, length_str, dot, command, cmd_val, cmd_mod) = match.groups()
+
         offset = match.start()
 
         if comment:
@@ -310,7 +322,7 @@ class MSLParser:
 
         if inst_block:
             self._parse_inst_block(inst_block, offset)
-        
+
         elif phrase_block:
             match = re.search(r'PHRASE\s*\(([^)]+)\)\s*\{', phrase_block, re.IGNORECASE)
             if match:
@@ -327,7 +339,7 @@ class MSLParser:
         elif loop_start:
             # If the last event was FXBlockStart or PhraseStart, this brace belongs to it
             if self.events and isinstance(self.events[-1], (FXBlockStart, PhraseStart)):
-                pass 
+                pass
             else:
                 self.events.append(LoopStart())
 
@@ -343,7 +355,7 @@ class MSLParser:
                             is_block_end = True
                             break
                         depth -= 1
-            
+
             if is_block_end:
                 # Check if the closest starting block is a Phrase
                 depth = 0
@@ -371,11 +383,11 @@ class MSLParser:
             elif octave_shift == '<':
                 self.state.current_octave -= 1
                 self.events.append(OctaveDown())
-        
+
         elif note:
             is_dotted = '.' in dot
             duration_ticks = self._calculate_ticks(length_str, dot)
-            
+
             if note.upper() == 'R':
                 self.events.append(Rest(duration_ticks))
                 return
@@ -383,23 +395,24 @@ class MSLParser:
             if alteration in ('+', '#'): pitch_name = note.upper() + '#'
             elif alteration in ('-', 'b', 'B'): pitch_name = note.upper() + 'B'
             else: pitch_name = note.upper()
-            
+
             # Use a get with fallback for robustness
             base_pitch = NOTE_PITCH_MAP.get(pitch_name, NOTE_PITCH_MAP.get(note.upper()))
-            
+
             pitch_val = base_pitch + (self.state.current_octave * 12)
             self.events.append(Note(pitch_val, duration_ticks))
 
         elif command:
             cmd_char = command.upper()
-            val = int(cmd_val)
             if cmd_char == 'O':
+                val = int(cmd_val) if cmd_val else self.state.current_octave
                 self.state.current_octave = val
                 self.events.append(SetOctave(val))
             elif cmd_char == 'L':
+                val = int(cmd_val) if cmd_val else self.state.default_length
                 self.state.default_length = val
-                self.events.append(SetLength(val))
-        
+                self.state.default_length_mod = cmd_mod if cmd_mod else ""
+                self.events.append(SetLength(val))        
     def parse(self, mml_string: str) -> List[MMLEvent]:
         self.source = mml_string
         self.state = ParserState()

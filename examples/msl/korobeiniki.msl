@@ -1,0 +1,102 @@
+// ==========================================
+// KOROBEINIKI (TETRIS THEME)
+// A complete MusaX-ML Demonstration
+// ==========================================
+
+@TITLE "Tetris Theme"
+@AUTHOR "Gemini CLI"
+@DESC "Classic 3-Channel Chiptune Demo"
+
+// --- Instruments ---
+
+// Inst 0: Lead Pulse (Sharp attack, 50% duty vibe, slight vibrato)
+@INST(0, "LeadPulse") {
+    ADSR: 255, 10, 150, 15
+    LFO: 1, 0, 3, 10, 15
+    FLAGS: 0
+}
+
+// Inst 1: Harmony Arp (Softer, quick decay to low sustain)
+@INST(1, "Harmony") {
+    ADSR: 150, 15, 80, 20
+    LFO: 0, 0, 0, 0, 0
+    FLAGS: 0
+}
+
+// Inst 2: Plucky Bass (Instant attack, rapid decay, zero sustain)
+@INST(2, "PluckBass") {
+    ADSR: 255, 25, 0, 15
+    LFO: 0, 0, 0, 0, 0
+    FLAGS: 0
+}
+
+// --- Subroutines (Phrases) ---
+
+PHRASE(MELODY_A) {
+    O5
+    L4 E  L8 <B >C  L4 D  L8 C <B
+    L4 A  L8 A >C  L4 E  L8 D C
+    L4. <B L8 >C     L4 D  E
+    L4 C  <A        A     R4
+}
+
+PHRASE(MELODY_B) {
+    O5
+    L4. D L8 F     L4 A  L8 G F
+    L4. E L8 C     L4 E  L8 D C
+    L4 <B  L8 B >C  L4 D  E
+    L4 C  <A        A     R4
+}
+
+PHRASE(HARMONY_A) {
+    O4 L8 { G# B }4
+    O4 L8 { A >C< }4
+    O4 L8 { G# B }4
+    O4 L8 { A >C< }4
+}
+
+PHRASE(HARMONY_B) {
+    O4 L8 { F A }4
+    O4 L8 { E A }4
+    O4 L8 { E G# }4
+    O4 L8 { E A }4
+}
+
+PHRASE(BASS_A) {
+    O3 L4 E > E < E > E <
+    O2 L4 A > A < A > A <
+    O3 L4 E > E < E > E <
+    O2 L4 A > A < A R
+}
+
+PHRASE(BASS_B) {
+    O3 L4 D > D < D > D <
+    O2 L4 A > A < A > A <
+    O3 L4 E > E < E > E <
+    O2 L4 A > A < A R
+}
+
+// --- Main Song Structure ---
+
+@T150
+
+CH_A:
+    @I0 @V14
+    MAIN_MELODY:
+        @CALL(MELODY_A)
+        @CALL(MELODY_B)
+        @RESTART(MAIN_MELODY)
+
+CH_B:
+    @I1 @V10
+    MAIN_HARMONY:
+        @CALL(HARMONY_A)
+        @CALL(HARMONY_B)
+        @RESTART(MAIN_HARMONY)
+
+CH_C:
+    @I2 @V14
+    MAIN_BASS:
+        @CALL(BASS_A)
+        @CALL(BASS_B)
+        @RESTART(MAIN_BASS)
