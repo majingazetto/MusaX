@@ -81,7 +81,8 @@ def load_constants():
         0xFB: "CMD_GATE", 0xFA: "CMD_INST", 0xF9: "CMD_LOOP_S", 
         0xF8: "CMD_LOOP_E", 0xF7: "CMD_GOTO", 0xF6: "CMD_PHASE", 
         0xF5: "CMD_DETUNE", 0xF4: "CMD_CHORUS", 0xF3: "CMD_FADE", 
-        0xF2: "CMD_PORTA", 255: "REST", 0x80: "TYPE_SONG", 0x81: "TYPE_FX"
+        0xF2: "CMD_PORTA", 0xF1: "CMD_CALL", 0xF0: "CMD_RET",
+        255: "REST", 0x80: "TYPE_SONG", 0x81: "TYPE_FX"
     }
     val_to_name.update(priority_cmds)
     return val_to_name
@@ -225,16 +226,16 @@ def msl2z8a(input_file, output_file=None, song_name=None):
                 
                 # Check if it's a command that takes arguments
                 # From musax_const: 
-                # 3-byte cmds: CMD_TEMPO, CMD_GOTO, CMD_RESTART, REST, CMD_FADE, CMD_CHORUS
+                # 3-byte cmds: CMD_TEMPO, CMD_GOTO, CMD_RESTART, CMD_CALL, REST, CMD_FADE, CMD_CHORUS
                 # 2-byte cmds: CMD_VOLUME, CMD_GATE, CMD_INST, CMD_LOOP_S, CMD_PHASE, CMD_DETUNE, CMD_PORTA
                 # Note: Notes are also 3 bytes (Note + 2 bytes Duration)
                 
-                if cmd_name in ["CMD_TEMPO", "CMD_GOTO", "CMD_RESTART", "REST"] or (0 <= b <= 95):
+                if cmd_name in ["CMD_TEMPO", "CMD_GOTO", "CMD_RESTART", "CMD_CALL", "REST"] or (0 <= b <= 95):
                     if i + 2 < len(bytecode):
                         w_val = bytecode[i+1] | (bytecode[i+2] << 8)
                         duration_str = val_to_const.get(w_val, f"#{w_val:04X}")
                         
-                        if cmd_name in ["CMD_GOTO", "CMD_RESTART"]:
+                        if cmd_name in ["CMD_GOTO", "CMD_RESTART", "CMD_CALL"]:
                             # Find label for this address
                             target_label = next((l for l, a in labels.items() if a == w_val), duration_str)
                             f.write(f"    DEFB {cmd_name}\n    DEFW {target_label}\n")
@@ -283,4 +284,3 @@ if __name__ == "__main__":
         
     args = parser.parse_args()
     msl2z8a(args.input, args.output, args.song_name)
-
