@@ -5,15 +5,17 @@ This document outlines the design and specification for a TUI-based editor for t
 ## 1. Core Philosophy & Technology Stack
 
 - **Paradigm:** MML (Music Macro Language) editor, not a tracker. The goal is compositional fluidity over rigid grid-based entry.
-- **Technology:** A TUI (Textual User Interface) application built in Python, likely using the `textual` framework.
-- **Integration:** The editor will be tightly integrated with `musax_sim.py` to provide real-time audio preview.
+- **Technology:** Web-based IDE (Flask + Ace Editor).
+- **Integration:** The editor is tightly integrated with `musax_sim.py` and `msl_compiler.py` to provide real-time audio preview.
 
-## 2. Editor Layout (TUI)
+## 2. Editor Layout
 
-The proposed layout consists of several interactive panes:
-- **Channel Panes:** Three primary text-editing panes, one for each PSG channel (A, B, C). Users will write MusaX-ML directly into these panes.
-- **Instrument Editor Pane:** A form-based pane for creating and modifying the 16-byte instrument records. This will use sliders, input boxes, and dropdown menus instead of requiring direct hex entry.
-- **Status/Output Pane:** A read-only pane for displaying compiler messages, errors, and application status.
+The layout is optimized for horizontal music composition:
+- **Global Pane:** For global settings, instrument definitions (`@INST`), and phrases.
+- **Channel Panes (A, B, C):** Vertically stacked, full-width editors for each PSG channel. 
+- **Dynamic Focus:** The focused channel editor automatically expands while the others minimize, maximizing screen usage.
+- **Instrument Editor:** Integrated syntax highlighting for instrument blocks, with plans for a future form-based overlay.
+- **Status Bar:** Real-time feedback on compilation, saving, and simulator status.
 
 ## 3. "MusaX-ML" Language Specification
 

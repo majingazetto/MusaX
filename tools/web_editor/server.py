@@ -56,6 +56,33 @@ def play():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
 
+@app.route('/save', methods=['POST'])
+def save():
+    data = request.json
+    filename = data.get('filename')
+    global_data = data.get('global', '')
+    ch_a = data.get('cha', '')
+    ch_b = data.get('chb', '')
+    ch_c = data.get('chc', '')
+    
+    if not filename:
+        return jsonify({"status": "error", "message": "No filename specified"})
+        
+    # Recomponer el archivo MSL
+    full_msl = [global_data]
+    if ch_a.strip(): full_msl.append("\nCH_A:\n" + ch_a)
+    if ch_b.strip(): full_msl.append("\nCH_B:\n" + ch_b)
+    if ch_c.strip(): full_msl.append("\nCH_C:\n" + ch_c)
+    
+    msl_source = "\n".join(full_msl)
+    
+    try:
+        with open(filename, 'w') as f:
+            f.write(msl_source)
+        return jsonify({"status": "success", "message": f"Saved to {filename}"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)})
+
 @app.route('/load', methods=['POST'])
 def load():
     filename = request.json.get('filename')
