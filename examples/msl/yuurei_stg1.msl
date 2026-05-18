@@ -1,0 +1,84 @@
+@TITLE "Yuurei-kun Stage 1"
+@AUTHOR "Compile"
+@DESC "Fur Elise arr. for 3ch PSG — transcribed from PSG log at 150 BPM"
+
+@INST(0, "Lead") {
+    ADSR: 255, 12, 200, 40
+    LFO:  0, 0, 0, 0, 0
+    FLAGS: 0
+}
+
+@INST(1, "Bass") {
+    ADSR: 255, 30, 0, 20
+    LFO:  0, 0, 0, 0, 0
+    FLAGS: 0
+}
+
+CH_A:
+    @T150 @V14 @I0
+LOOP_A:
+    O6 L8. E L64 E  L16. D#  R  L8. E  L16. D#  R
+    E  R  O5 L8 A  L16 B  O6 L8 C  L16 D
+    L16. E  R  G  L8.. R  L16 D  L8. R
+    O5 L16. G  L2. R L32 R  O6 G  G#  L1 A L64 A  L8. C
+    D  D#  E  R  G  R
+    L16. G#  L8.. R  L16 E  L8 R  L8. E L64 E  L16. R
+    L8. E  L16. D#  R  L8. E  L16. D#  R
+    E  R  O5 L8 A  L16 B  O6 L8 C  L16 D
+    L16. E  R  G  L8.. R  L16 D  L8. R
+    O5 L16. G  L2. R L32 R  O6 G  G#  L2. A  L8. A#
+    B  G#  E  L1.. A  O4 L8 A  L8. B
+    O5 C  O4 L16 A  O5 C  O4 A  O5 C L64 C  L2. D L64 D
+    L4. E  G L64 G  L4 A  L8. E  D  C
+    O4 L8 A  L8. B  O5 C  O4 L16 A  O5 C
+    @RESTART(LOOP_A)
+
+CH_B:
+    @T150 @V12 @I0
+LOOP_B:
+    O6 L8. E  L16. D#  R  L8. E  L16. D#  R
+    E  R  O5 L8 A  L16 B  O6 L8 C  L16 D
+    L16. E  R  G  L8.. R  L16 D  L8. R
+    O5 L16. G  L2. R L32 R  O6 G  G#  L1 A L64 A  L32 A L64 A
+    L8. C  D  D#  E  R  G
+    R  L16. G#  L8.. R  L16 E  L8 R  L8. E L64 E
+    L16. R  L8. E  L16. D#  R  L8. E  L16. D#
+    R  E  R  O5 L8 A  L16 B  O6 L8 C
+    L16 D  L16. E  R  G  L8.. R  L16 D
+    L8. R  O5 L16. G  L2. R L32 R  O6 G  G#  L2. A L64 A
+    L8. A#  B  G#  L16 R  O3 L16. A  R
+    O4 C  R  L8 D  L16 D#  L8 R  L16 E
+    L8 R  L16 A  L8 E  L16 C  D#  D
+    C  O3 L8 G  L16 A  O5 L2. C  O4 B  O5 D
+    L1.. C L64 C
+    @RESTART(LOOP_B)
+
+CH_C:
+    @T150 @V13 @I1
+LOOP_C:
+    O2 L8 A L64 A  L4 R L64 R  L16. A  L32 R  A L64 A  L8.. R L64 R
+    L8 A L64 A  L4 R L64 R  L16. A  L32 R  A L64 A  L8.. R L64 R
+    L8 G L64 G  L4 R L64 R  L16. G  L32 R  G L64 G  L8.. R L64 R
+    L8 G L64 G  L4 R L64 R  L16. G  L32 R  G L64 G  L8.. R L64 R
+    L8 F L64 F  L4 R L64 R  L16. F  L32 R  O4 L16. A  R
+    A  O2 L32 F L64 F  L16. R  O4 A  L32 R  O2 L16. F
+    L32 R  F L64 F  L8. R L64 R  O5 L32 C  O4 L16. A  R
+    A  L32 R  O3 L16. D L64 D  O4 L16. A  L8. R L64 R  O3 L8 C L64 C
+    L16. R L64 R  O4 L16. A  O2 L16 B L64 B  L32 R L64 R  O4 L16. A  O2 L8 B L64 B
+    O4 L16. A  O2 L16 A L64 A  L4 R L64 R  L16. A L64 A  O4 L16. A  R L64 R
+    L16. A  O2 L16 A L64 A  L16 R  O4 L16. A  L16 R  O2 L16. A
+    L32 R  A L64 A  L8.. R L64 R  L8 G L64 G  L4 R L64 R  L16. G
+    L32 R  G L64 G  L8.. R L64 R  L8 G L64 G  L4 R L64 R  L16. G
+    L32 R  G L64 G  L8.. R L64 R  L8 F L64 F  L4 R L64 R  L16. F
+    L32 R  F L64 F  L8.. R L64 R  L8 E L64 E  L4 R L64 R  L16. E L64 E
+    O4 L16. A  R  A  O2 L32 A  L8 R  O3 L16 C
+    L8 R  L16. D  L32 R  D# L64 D#  L8 R L64 R  O4 L16. A
+    L16 R L64 R  O3 L32 A L64 A  O4 L16. A  L32 R  O3 C L64 C  L32 D# L64 D#
+    L32 D L64 D  L32 C L64 C  O2 L16. G  L32 R  A L64 A  L8 F L64 F
+    L16 R L64 R  O4 L16. A  L16 R L64 R  O2 L16. F  L32 R  F L64 F
+    L8.. R L64 R  L8 G L64 G  L4 R L64 R  L16. G  L32 R  G L64 G
+    L8.. R L64 R  L8 E L64 E  L4 R L64 R  L16. E  L32 R  L16 E L64 E
+    O5 L32 C  L16 F# L64 F#  L16 F# L64 F#  L16 F# L64 F#  L32 R  O2 L16 A L64 A
+    L4 R L64 R  L16. A  L32 R  A L64 A  L8.. R L64 R  L8 F L64 F
+    O5 L32 E  L8.. R L64 R  O2 L16. F  L32 R  F L64 F  L16. R
+    @RESTART(LOOP_C)
