@@ -201,6 +201,9 @@ BORLAND_STYLE = Style.from_dict({
     'cursor-line':           'bg:#000077',
     'errorpanel':            'bg:#AA0000 fg:#FFFFFF',
     'errorpanel.selected':   'bg:#FFFF55 fg:#AA0000 bold',
+    'secpanel':              'bg:#000055 fg:#AAAAFF',
+    'secpanel.selected':     'bg:#55FFFF fg:#000055 bold',
+    'section-ind':           'bg:#000077 fg:#55FFFF bold',
 })
 
 # --- Retrobox (xterm-256 → hex) ---
@@ -235,6 +238,9 @@ RETROBOX_STYLE = Style.from_dict({
     'cursor-line':           'bg:#303030',
     'errorpanel':            'bg:#5F0000 fg:#D7D7AF',
     'errorpanel.selected':   'bg:#FFD75F fg:#1C1C1C bold',
+    'secpanel':              'bg:#1C1C1C fg:#87AFAF',
+    'secpanel.selected':     'bg:#87AFAF fg:#1C1C1C bold',
+    'section-ind':           'bg:#121212 fg:#87AFAF bold',
 })
 
 THEMES      = {'borland': BORLAND_STYLE, 'retrobox': RETROBOX_STYLE}
@@ -255,12 +261,14 @@ class EditorState:
         self.show_errors:    bool        = False
         self.build_message:  str         = ''
         self.build_ok:       bool | None = None
-        self.mode:           str         = 'msl'   # 'msl' | 'z8a' | 'picker'
+        self.mode:           str         = 'msl'   # 'msl' | 'z8a' | 'picker' | 'sections'
         self.vi_mode:        bool        = False
         self.theme:          str         = 'retrobox'
         self.picker_dir:     Path        = Path.cwd()
         self.picker_entries: list        = []
         self.picker_sel:     int         = 0
+        self.sections_list:  list        = []
+        self.sections_sel:   int         = 0
 
 
 # ---------------------------------------------------------------------------
@@ -297,6 +305,13 @@ def _title_text(state: EditorState) -> StyleAndTextTuples:
             ('class:titlebar.name', str(state.picker_dir)),
             ('class:titlebar', ' '),
         ]
+    if state.mode == 'sections':
+        name = state.filepath.name if state.filepath else 'untitled.msl'
+        return [
+            ('class:titlebar', ' MusaX v1.9 ─ Sections ─ '),
+            ('class:titlebar.name', name),
+            ('class:titlebar', ' '),
+        ]
     name = state.filepath.name if state.filepath else 'untitled.msl'
     result: StyleAndTextTuples = [
         ('class:titlebar',      ' MusaX v1.9 ─ '),
@@ -313,6 +328,10 @@ def _status_text(state: EditorState, main_buf: Buffer, z8a_buf: Buffer) -> Style
         n = len(state.picker_entries)
         return [('class:statusbar', f'  {state.picker_sel + 1}/{n}  [Enter] open  [Esc] cancel ')]
 
+    if state.mode == 'sections':
+        n = len(state.sections_list)
+        return [('class:statusbar', f'  {state.sections_sel + 1}/{n}  [Enter] jump  [Esc] cancel ')]
+
     buf = z8a_buf if state.mode == 'z8a' else main_buf
     doc = buf.document
     ln  = doc.cursor_position_row + 1
@@ -324,6 +343,13 @@ def _status_text(state: EditorState, main_buf: Buffer, z8a_buf: Buffer) -> Style
         return [('class:statusbar', pos + '[Z8A read-only ─ Esc or F4 to return] ')]
 
     result: StyleAndTextTuples = [('class:statusbar', pos)]
+
+    sec = _section_at_cursor(main_buf.text, doc.cursor_position_row)
+    if sec:
+        kind, name = sec
+        label = name if kind == 'ch' else (f'FX:{name}' if kind == 'fx' else f'>{name}')
+        result.append(('class:section-ind', f'[{label}] '))
+
     result += _vi_indicator(state)
 
     if state.build_ok is True:
@@ -337,6 +363,8 @@ def _status_text(state: EditorState, main_buf: Buffer, z8a_buf: Buffer) -> Style
 def _fkey_bar(state: EditorState) -> StyleAndTextTuples:
     if state.mode == 'picker':
         keys = [('↑↓', 'Navigate'), ('Enter', 'Open'), ('Esc', 'Cancel')]
+    elif state.mode == 'sections':
+        keys = [('↑↓', 'Navigate'), ('Enter', 'Jump'), ('Esc', 'Cancel')]
     elif state.mode == 'z8a':
         keys = [('F2/^S', 'Save Z8A'), ('Esc', 'Back'), ('F4', 'Back to MSL')]
     else:
@@ -344,7 +372,7 @@ def _fkey_bar(state: EditorState) -> StyleAndTextTuples:
         keys = [
             ('F2/^S', 'Save'), ('F3/^O', 'Open'), ('F4', 'View Z8A'), ('F5', vi_label),
             ('F6', 'Instr'), ('F9/^B', 'Build'), ('F10/^R', 'Play'),
-            ('Ctrl+T', state.theme), ('Ctrl+Q', 'Quit'),
+            ('Ctrl+G', 'Sections'), ('Ctrl+T', state.theme), ('Ctrl+Q', 'Quit'),
         ]
     result: StyleAndTextTuples = []
     for k, label in keys:
@@ -449,6 +477,63 @@ def _picker_text(state: EditorState) -> StyleAndTextTuples:
 
 
 # ---------------------------------------------------------------------------
+# Section Navigation
+# ---------------------------------------------------------------------------
+
+_RE_SECTION_HDR = re.compile(
+    r'^(?:(CH_[ABC])\s*:|@FX\s*\(\s*(\w+)\s*\)|PHRASE\s*\(\s*(\w+)\s*\))',
+    re.MULTILINE,
+)
+
+_SECTION_TAG = {'ch': 'CH', 'fx': 'FX', 'phrase': 'PH'}
+_SECTION_STYLE = {
+    'ch':     'class:ol',
+    'fx':     'class:at_cmd',
+    'phrase': 'class:label',
+}
+
+
+def _get_sections(text: str) -> list[tuple[int, str, str]]:
+    result = []
+    for m in _RE_SECTION_HDR.finditer(text):
+        line = text[:m.start()].count('\n')
+        if m.group(1):
+            result.append((line, 'ch', m.group(1)))
+        elif m.group(2):
+            result.append((line, 'fx', m.group(2)))
+        elif m.group(3):
+            result.append((line, 'phrase', m.group(3)))
+    return result
+
+
+def _section_at_cursor(text: str, cursor_row: int) -> tuple[str, str] | None:
+    current = None
+    for ln, kind, name in _get_sections(text):
+        if ln <= cursor_row:
+            current = (kind, name)
+        else:
+            break
+    return current
+
+
+def _sections_text(state: EditorState) -> StyleAndTextTuples:
+    entries = state.sections_list
+    if not entries:
+        return [('class:comment', '  (no sections found)\n')]
+    result: StyleAndTextTuples = []
+    sel = state.sections_sel
+    for i, (ln, kind, name) in enumerate(entries):
+        tag    = _SECTION_TAG.get(kind, '  ')
+        prefix = '▸ ' if i == sel else '  '
+        if i == sel:
+            style = 'class:secpanel.selected'
+        else:
+            style = _SECTION_STYLE.get(kind, 'class:secpanel')
+        result.append((style, f'{prefix}[{tag}] {name}  (line {ln + 1})\n'))
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Build the Application
 # ---------------------------------------------------------------------------
 
@@ -511,8 +596,14 @@ def build_app(initial_file: Path | None = None) -> Application:
     )
     picker_body = ConditionalContainer(content=picker_window, filter=Condition(lambda: state.mode == 'picker'))
 
+    sections_window = Window(
+        content=FormattedTextControl(lambda: _sections_text(state), focusable=True),
+        style='class:secpanel',
+    )
+    sections_body = ConditionalContainer(content=sections_window, filter=Condition(lambda: state.mode == 'sections'))
+
     layout = Layout(
-        HSplit([title_bar, msl_body, z8a_body, picker_body, error_panel, status_bar, fkey_bar]),
+        HSplit([title_bar, msl_body, z8a_body, picker_body, sections_body, error_panel, status_bar, fkey_bar]),
         focused_element=msl_window,
     )
 
@@ -606,6 +697,50 @@ def build_app(initial_file: Path | None = None) -> Application:
 
     @kb.add('escape', eager=True, filter=_picker_active)
     def _picker_cancel(event):
+        state.mode = 'msl'
+        event.app.layout.focus(msl_window)
+
+    # --- Section navigator (Ctrl+G) ---
+
+    @kb.add('c-g', filter=Condition(lambda: state.mode == 'msl'))
+    def _open_sections(event):
+        state.sections_list = _get_sections(main_buf.text)
+        state.sections_sel  = 0
+        # Pre-select the section the cursor is currently in
+        cur_row = main_buf.document.cursor_position_row
+        for i, (ln, _, _) in enumerate(state.sections_list):
+            if ln <= cur_row:
+                state.sections_sel = i
+        state.mode = 'sections'
+        event.app.layout.focus(sections_window)
+
+    _sec_active = Condition(lambda: state.mode == 'sections')
+
+    @kb.add('up',    eager=True, filter=_sec_active)
+    def _sec_up(event):
+        if state.sections_list:
+            state.sections_sel = max(0, state.sections_sel - 1)
+
+    @kb.add('down',  eager=True, filter=_sec_active)
+    def _sec_down(event):
+        if state.sections_list:
+            state.sections_sel = min(len(state.sections_list) - 1, state.sections_sel + 1)
+
+    @kb.add('enter', eager=True, filter=_sec_active)
+    def _sec_jump(event):
+        if not state.sections_list:
+            state.mode = 'msl'
+            event.app.layout.focus(msl_window)
+            return
+        ln, _, _ = state.sections_list[state.sections_sel]
+        lines    = main_buf.text.split('\n')
+        pos      = sum(len(l) + 1 for l in lines[:ln])
+        main_buf.cursor_position = min(pos, len(main_buf.text))
+        state.mode = 'msl'
+        event.app.layout.focus(msl_window)
+
+    @kb.add('escape', eager=True, filter=_sec_active)
+    def _sec_cancel(event):
         state.mode = 'msl'
         event.app.layout.focus(msl_window)
 
