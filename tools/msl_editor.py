@@ -3,7 +3,9 @@
 
 import sys
 import os
+import argparse
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -253,9 +255,12 @@ class EditorState:
         self.show_errors:    bool        = False
         self.build_message:  str         = ''
         self.build_ok:       bool | None = None
-        self.mode:           str         = 'msl'   # 'msl' | 'z8a'
+        self.mode:           str         = 'msl'   # 'msl' | 'z8a' | 'picker'
         self.vi_mode:        bool        = False
         self.theme:          str         = 'retrobox'
+        self.picker_dir:     Path        = Path.cwd()
+        self.picker_entries: list        = []
+        self.picker_sel:     int         = 0
 
 
 # ---------------------------------------------------------------------------
@@ -286,6 +291,12 @@ def _title_text(state: EditorState) -> StyleAndTextTuples:
             ('class:titlebar.z8a', f' MusaX v1.9 ─ Z8A View: {name}'),
             ('class:titlebar', ' [read-only] '),
         ]
+    if state.mode == 'picker':
+        return [
+            ('class:titlebar', ' MusaX v1.9 ─ Open File ─ '),
+            ('class:titlebar.name', str(state.picker_dir)),
+            ('class:titlebar', ' '),
+        ]
     name = state.filepath.name if state.filepath else 'untitled.msl'
     result: StyleAndTextTuples = [
         ('class:titlebar',      ' MusaX v1.9 ─ '),
@@ -298,6 +309,10 @@ def _title_text(state: EditorState) -> StyleAndTextTuples:
 
 
 def _status_text(state: EditorState, main_buf: Buffer, z8a_buf: Buffer) -> StyleAndTextTuples:
+    if state.mode == 'picker':
+        n = len(state.picker_entries)
+        return [('class:statusbar', f'  {state.picker_sel + 1}/{n}  [Enter] open  [Esc] cancel ')]
+
     buf = z8a_buf if state.mode == 'z8a' else main_buf
     doc = buf.document
     ln  = doc.cursor_position_row + 1
@@ -320,8 +335,10 @@ def _status_text(state: EditorState, main_buf: Buffer, z8a_buf: Buffer) -> Style
 
 
 def _fkey_bar(state: EditorState) -> StyleAndTextTuples:
-    if state.mode == 'z8a':
-        keys = [('Esc', 'Back'), ('F4', 'Back to MSL')]
+    if state.mode == 'picker':
+        keys = [('↑↓', 'Navigate'), ('Enter', 'Open'), ('Esc', 'Cancel')]
+    elif state.mode == 'z8a':
+        keys = [('F2/^S', 'Save Z8A'), ('Esc', 'Back'), ('F4', 'Back to MSL')]
     else:
         vi_label = 'VI:ON' if state.vi_mode else 'VI:off'
         keys = [
@@ -377,6 +394,58 @@ def _do_load(state: EditorState, buf: Buffer, path: Path) -> bool:
         return True
     except OSError:
         return False
+
+
+def _picker_refresh(state: EditorState, new_dir: Path | None = None):
+    if new_dir is not None:
+        state.picker_dir = new_dir
+    d = state.picker_dir
+    try:
+        all_items = list(d.iterdir())
+    except PermissionError:
+        all_items = []
+    dirs  = sorted([p for p in all_items if p.is_dir()], key=lambda p: p.name.lower())
+    files = sorted([p for p in all_items if p.is_file() and p.suffix.lower() == '.msl'],
+                   key=lambda p: p.name.lower())
+    parent = [d.parent] if d.parent != d else []
+    state.picker_entries = parent + dirs + files
+    state.picker_sel     = 0
+
+
+def _picker_text(state: EditorState) -> StyleAndTextTuples:
+    entries = state.picker_entries
+    sel     = state.picker_sel
+    n       = len(entries)
+    try:
+        rows = get_app().output.get_size().rows - 4
+    except Exception:
+        rows = 20
+    rows = max(5, rows)
+
+    start = max(0, min(sel - rows // 2, n - rows))
+    end   = min(start + rows, n)
+
+    result: StyleAndTextTuples = []
+    if not entries:
+        result.append(('class:comment', '  (no .msl files here)\n'))
+        return result
+    for i in range(start, end):
+        p         = entries[i]
+        is_parent = (n > 0 and p == state.picker_dir.parent)
+        if is_parent:
+            label = '../'
+        elif p.is_dir():
+            label = f'{p.name}/'
+        else:
+            label = p.name
+        if i == sel:
+            style = 'class:errorpanel.selected'
+        elif is_parent or p.is_dir():
+            style = 'class:ol'
+        else:
+            style = 'class:note'
+        result.append((style, f'  {label}\n'))
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -436,8 +505,14 @@ def build_app(initial_file: Path | None = None) -> Application:
     )
     z8a_body = ConditionalContainer(content=z8a_window, filter=Condition(lambda: state.mode == 'z8a'))
 
+    picker_window = Window(
+        content=FormattedTextControl(lambda: _picker_text(state), focusable=True),
+        style='class:default',
+    )
+    picker_body = ConditionalContainer(content=picker_window, filter=Condition(lambda: state.mode == 'picker'))
+
     layout = Layout(
-        HSplit([title_bar, msl_body, z8a_body, error_panel, status_bar, fkey_bar]),
+        HSplit([title_bar, msl_body, z8a_body, picker_body, error_panel, status_bar, fkey_bar]),
         focused_element=msl_window,
     )
 
@@ -447,15 +522,38 @@ def build_app(initial_file: Path | None = None) -> Application:
 
     @kb.add('f2')
     @kb.add('c-s')
-    def _save(event):
-        if state.filepath is None or state.mode == 'z8a':
+    async def _save_or_export(event):
+        if state.mode == 'z8a':
+            z8a_src = _get_z8a_path(state)
+            if z8a_src is None or not z8a_src.exists():
+                return
+            def _ask_dest():
+                try:
+                    ans = input(f'Save Z8A as [{z8a_src}]: ').strip()
+                    return ans if ans else str(z8a_src)
+                except (KeyboardInterrupt, EOFError):
+                    return None
+            dest_str = await run_in_terminal(_ask_dest)
+            if dest_str:
+                dest = Path(dest_str).expanduser()
+                try:
+                    shutil.copy2(str(z8a_src), str(dest))
+                except OSError:
+                    pass
+            return
+        if state.filepath is None:
             return
         _do_save(state, main_buf)
 
     @kb.add('f3')
     @kb.add('c-o')
     def _open(event):
-        pass  # TODO: file picker
+        if state.mode != 'msl':
+            return
+        start = state.filepath.parent if state.filepath else Path.cwd()
+        _picker_refresh(state, start)
+        state.mode = 'picker'
+        event.app.layout.focus(picker_window)
 
     @kb.add('f4')
     def _view_z8a(event):
@@ -478,6 +576,39 @@ def build_app(initial_file: Path | None = None) -> Application:
         state.mode = 'msl'
         event.app.layout.focus(msl_window)
 
+    _picker_active = Condition(lambda: state.mode == 'picker')
+
+    @kb.add('up', eager=True, filter=_picker_active)
+    def _picker_up(event):
+        if state.picker_entries:
+            state.picker_sel = max(0, state.picker_sel - 1)
+
+    @kb.add('down', eager=True, filter=_picker_active)
+    def _picker_down(event):
+        if state.picker_entries:
+            state.picker_sel = min(len(state.picker_entries) - 1, state.picker_sel + 1)
+
+    @kb.add('enter', eager=True, filter=_picker_active)
+    def _picker_enter(event):
+        if not state.picker_entries:
+            return
+        p = state.picker_entries[state.picker_sel]
+        if p.is_dir():
+            _picker_refresh(state, p)
+        else:
+            _do_load(state, main_buf, p)
+            state.errors        = []
+            state.show_errors   = False
+            state.build_ok      = None
+            state.build_message = ''
+            state.mode          = 'msl'
+            event.app.layout.focus(msl_window)
+
+    @kb.add('escape', eager=True, filter=_picker_active)
+    def _picker_cancel(event):
+        state.mode = 'msl'
+        event.app.layout.focus(msl_window)
+
     @kb.add('f5', filter=Condition(lambda: state.mode == 'msl'))
     def _toggle_vi(event):
         state.vi_mode = not state.vi_mode
@@ -491,14 +622,14 @@ def build_app(initial_file: Path | None = None) -> Application:
     @kb.add('f9')
     @kb.add('c-b')
     def _compile(event):
-        if state.mode == 'z8a':
+        if state.mode != 'msl':
             return
         _run_compile(state, main_buf)
 
     @kb.add('f10')
     @kb.add('c-r')
     async def _play(event):
-        if state.mode == 'z8a' or state.filepath is None:
+        if state.mode != 'msl' or state.filepath is None:
             return
         _run_compile(state, main_buf)
         if not state.build_ok:
@@ -639,7 +770,18 @@ def _extract_build_summary(output: str) -> str:
 # ---------------------------------------------------------------------------
 
 def main():
-    path = Path(sys.argv[1]) if len(sys.argv) > 1 else None
+    parser = argparse.ArgumentParser(
+        prog='msl_editor',
+        description='MusaX MSL Editor — TUI editor for MSL song files.',
+    )
+    parser.add_argument(
+        'file', nargs='?', metavar='FILE.msl',
+        help='MSL file to open (omit to start with an empty buffer)',
+    )
+    # Future: --instruments FILE.ins  to preload an instrument bank
+    args = parser.parse_args()
+
+    path = Path(args.file) if args.file else None
     app  = build_app(path)
     app.run()
 

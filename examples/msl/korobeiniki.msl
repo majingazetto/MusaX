@@ -17,6 +17,7 @@
     FLAGS: 0
 }
 
+
 // Inst 1: Harmony Arp (Softer, quick decay to low sustain)
 @INST(1, "Harmony") {
     ADSR: 150, 15, 80, 20

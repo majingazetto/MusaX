@@ -30,9 +30,9 @@ The editor has two full-screen modes that switch completely (no split panels):
 │▸ Line 15: Expected duration after note C                        │
 │  Line 23: Undefined label SONG_LOOP                             │
 ├─────────────────────────────────────────────────────────────────┤
-│  Ln 12  Col 4  │  BANK: banco.msxi  │  [STOPPED]               │
+│  Ln 12  Col 4  │  BANK: banco.msxi  │  [OK]  [VI]              │
 ├─────────────────────────────────────────────────────────────────┤
-│ F2 Save  F3 Open  F6 Instr  F9 Compile  F10 Play  F5 Stop      │
+│ F2 Save  F3 Open  F4 Z8A  F5 VI  F6 Instr  F9 Build  F10 Play │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -49,26 +49,50 @@ The editor has two full-screen modes that switch completely (no split panels):
 ### Status Bar
 - Current line and column.
 - Active bank filename (from `@BANK` directive, if present).
-- Simulation state: `[STOPPED]` / `[PLAYING]`.
+- Last build result: `[OK]` or `[N error(s)]` (clears when the file is modified).
+- VI mode indicator: `[VI]` / `[NORMAL]` (only shown when VI mode is active).
 
 ### F-key Bar
 ```
-F2 Save  F3 Open  F5 Stop  F6 Instr  F9 Compile  F10 Play
+F2 Save  F3 Open  F4 Z8A  F5 VI  F6 Instr  F9 Build  F10 Play  Ctrl+T Theme  Ctrl+Q Quit
 ```
 
 ### Keyboard Map
 ```
-F2          Save current file
-F3          Open file
-F5          Stop simulation
-F6          Switch to Instrument Editor
-F9          Compile (shows errors in panel)
-F10         Compile + Play from the beginning
-Ctrl+E      Toggle error panel
-F12         Toggle error panel
-Ctrl+N      New file
-Ctrl+Q      Quit
+F2 / Ctrl+S   Save current file
+F3 / Ctrl+O   Open file (directory picker — ↑↓ navigate, Enter open/descend, Esc cancel)
+F4            Toggle Z8A view (read-only assembled output; Esc or F4 to return)
+F5            Toggle Vi mode (only active in Main Editor mode)
+F6            Switch to Instrument Editor (not yet implemented)
+F9 / Ctrl+B   Build — compiles MSL, shows errors in panel
+F10 / Ctrl+R  Build + Play — compiles, then suspends editor and runs simulator
+Ctrl+E / F12  Toggle error panel (↑↓ to select, Enter to jump to line)
+Ctrl+N        New file (clears buffer)
+Ctrl+T        Cycle colour theme (retrobox → borland → …)
+Ctrl+Q        Quit
 ```
+> Note: F9–F12 may be intercepted by some terminals. Use the Ctrl aliases
+> for reliable cross-terminal operation.
+
+### File Picker (F3 / Ctrl+O)
+Switches the editor to a full-screen file-picker mode. The title bar shows the current directory.
+
+```
+┌─ MusaX v1.9 ─ Open File ─ /home/user/songs ────────────────────┐
+│  ../                                                             │
+│  demos/                                                          │
+│▸ korobeiniki.msl                                                │
+│  synthesis_test.msl                                             │
+│  higedeck.msl                                                   │
+├─────────────────────────────────────────────────────────────────┤
+│  3/5  [Enter] open  [Esc] cancel                                │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+- Entries are sorted: `../` first, then subdirectories, then `.msl` files.
+- `Enter` on a directory descends into it; `Enter` on a file loads it and returns to the editor.
+- `Esc` cancels without loading.
+- Opening a file clears the `[OK]`/error indicator immediately.
 
 ### Simulator Integration (F10)
 The editor suspends itself and hands the terminal to `musax_sim.py` completely (the sim's interactive UI and dashboard remain fully functional). When the user exits the sim, the editor resumes exactly where it was.
