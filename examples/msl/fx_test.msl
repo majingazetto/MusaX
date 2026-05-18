@@ -1,0 +1,76 @@
+// ==========================================
+// FX_TEST.MSL — Ghost Playback & FX Test
+// ==========================================
+// Tests ghost playback (music continues silently while FX play)
+// and multi-priority, multi-channel FX triggering.
+//
+// Tempo is slow by design — makes the ghost effect clearly audible:
+// trigger an FX, hear it over the music, then hear the music resume
+// in sync from where it left off internally.
+//
+// Trigger FX in the simulator with keys [1]–[4].
+
+@TITLE "FX Test"
+@DESC "Ghost playback + multi-priority FX (Jump, Siren, Fanfare, Power-up)"
+
+// --- Instruments ---
+
+@INST(0, "Plucky") {
+    ADSR: 255, 10, 200, 20
+    LFO:  0, 0, 0, 0, 0
+    FLAGS: 0
+}
+
+@INST(1, "VibratoLead") {
+    ADSR: 10, 5, 255, 10
+    LFO:  1, 0, 10, 2, 15
+    FLAGS: 0
+}
+
+// --- Tempo (38 BPM = BPM_STEP #0800 — intentionally slow) ---
+@T38
+
+// --- Song Channels ---
+
+CH_A:
+    @I0 @V10
+    MAIN_A:
+        O4 L4 C D E F
+        @RESTART(MAIN_A)
+
+CH_B:
+    @I0 @V8
+    MAIN_B:
+        O4 L4 E G
+        @RESTART(MAIN_B)
+
+CH_C:
+    @I0 @V12
+    MAIN_C:
+        O3 L4 C E G E
+        @RESTART(MAIN_C)
+
+// --- FX (trigger with keys 1-4 in the simulator) ---
+
+// 1 — Jump: single channel, arpeggio up + landing note
+@FX(JUMP) {
+    CH_A: @I1 @V15 O4 L16 C E G > L4 C R0
+}
+
+// 2 — Siren: single channel, 4-cycle alternating pitch
+@FX(SIREN) {
+    CH_A: @I0 @V15 O6 L8 { A E }4 R0
+}
+
+// 3 — Fanfare: 2-channel, triple knock + resolution
+@FX(FANFARE) {
+    CH_A: @I0 @V15 O4 L16 G G G > L2 C R0
+    CH_B: @I0 @V12 O4 L16 E E E    L2 G R0
+}
+
+// 4 — Power-up: 3-channel stagger, top priority
+@FX(POWERUP) {
+    CH_A: @I1 @V15 O4 L16 C E G > L2 C R0
+    CH_B: @I1 @V13 O4 L16 E G > C  L2 E R0
+    CH_C: @I1 @V11 O4 L16 G > C E  L2 G R0
+}
