@@ -7,6 +7,7 @@ import argparse
 import re
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 from prompt_toolkit import Application
@@ -19,7 +20,7 @@ from prompt_toolkit.filters import Condition
 from prompt_toolkit.formatted_text import StyleAndTextTuples
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.layout import Layout
-from prompt_toolkit.layout.containers import HSplit, Window, ConditionalContainer
+from prompt_toolkit.layout.containers import HSplit, VSplit, Window, ConditionalContainer
 from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
 from prompt_toolkit.lexers import Lexer
 from prompt_toolkit.styles import Style
@@ -168,6 +169,135 @@ class Z8ALexer(Lexer):
 
 
 # ---------------------------------------------------------------------------
+# Instrument Data Model
+# ---------------------------------------------------------------------------
+
+_LFO_DEST_NAMES = ['Off', 'Pitch', 'Vol']
+_LFO_WAVE_NAMES = ['TRI', 'SAW', 'SQR', 'RND']
+_LFO_DEST_MAX   = len(_LFO_DEST_NAMES) - 1
+_LFO_WAVE_MAX   = len(_LFO_WAVE_NAMES) - 1
+
+_INST_FORM_FIELD_COUNT = 11   # Name + 4 ADSR + 5 LFO + FLAGS
+
+_RE_INST_BLOCK = re.compile(
+    r'@INST\s*\(\s*(\d+)\s*,\s*"([^"]*)"\s*\)\s*\{([^}]*)\}',
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+class InstrumentData:
+    def __init__(self, id: int, name: str, adsr: list, lfo: list, flags: int, source: str = 'song'):
+        self.id     = id
+        self.name   = name
+        self.adsr   = list(adsr)   # [att, dec, sus, rel]
+        self.lfo    = list(lfo)    # [dest, wave, speed, amp, delay]
+        self.flags  = flags
+        self.source = source       # 'bank' | 'song'
+
+    def copy(self) -> 'InstrumentData':
+        return InstrumentData(self.id, self.name, self.adsr, self.lfo, self.flags, self.source)
+
+
+def _inst_make_default(inst_id: int) -> InstrumentData:
+    return InstrumentData(inst_id, f'Inst{inst_id}', [0, 0, 0, 0], [0, 0, 0, 0, 0], 0, 'song')
+
+
+def _inst_get_field(inst: InstrumentData, idx: int):
+    if idx == 0:  return inst.name
+    if 1 <= idx <= 4: return inst.adsr[idx - 1]
+    if 5 <= idx <= 9: return inst.lfo[idx - 5]
+    return inst.flags
+
+
+def _inst_set_field(inst: InstrumentData, idx: int, raw_val: str) -> bool:
+    try:
+        if idx == 0:
+            inst.name = str(raw_val).strip()[:24]
+        elif 1 <= idx <= 4:
+            inst.adsr[idx - 1] = max(0, min(255, int(raw_val)))
+        elif 5 <= idx <= 9:
+            if idx == 5:
+                inst.lfo[0] = max(0, min(_LFO_DEST_MAX, int(raw_val)))
+            elif idx == 6:
+                inst.lfo[1] = max(0, min(_LFO_WAVE_MAX, int(raw_val)))
+            else:
+                inst.lfo[idx - 5] = max(0, min(255, int(raw_val)))
+        else:
+            inst.flags = max(0, min(255, int(raw_val)))
+        return True
+    except (ValueError, IndexError):
+        return False
+
+
+def _inst_cycle_field(inst: InstrumentData, idx: int, delta: int):
+    if idx == 0:
+        return
+    if idx == 5:
+        inst.lfo[0] = (inst.lfo[0] + delta) % (len(_LFO_DEST_NAMES))
+    elif idx == 6:
+        inst.lfo[1] = (inst.lfo[1] + delta) % (len(_LFO_WAVE_NAMES))
+    elif 1 <= idx <= 4:
+        inst.adsr[idx - 1] = max(0, min(255, inst.adsr[idx - 1] + delta))
+    elif 7 <= idx <= 9:
+        inst.lfo[idx - 5] = max(0, min(255, inst.lfo[idx - 5] + delta))
+    else:
+        inst.flags = max(0, min(255, inst.flags + delta))
+
+
+def _parse_inst_blocks(text: str, source: str = 'song') -> dict:
+    result = {}
+    for m in _RE_INST_BLOCK.finditer(text):
+        inst_id   = int(m.group(1))
+        inst_name = m.group(2)
+        body      = m.group(3)
+        adsr  = [0, 0, 0, 0]
+        lfo   = [0, 0, 0, 0, 0]
+        flags = 0
+        am = re.search(r'ADSR:\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)', body, re.I)
+        if am:
+            adsr = [int(v) for v in am.groups()]
+        lm = re.search(r'LFO:\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)', body, re.I)
+        if lm:
+            lfo = [int(v) for v in lm.groups()]
+        fm = re.search(r'FLAGS:\s*(\d+)', body, re.I)
+        if fm:
+            flags = int(fm.group(1))
+        result[inst_id] = InstrumentData(inst_id, inst_name, adsr, lfo, flags, source)
+    return result
+
+
+def _format_inst_block(inst: InstrumentData) -> str:
+    a, l = inst.adsr, inst.lfo
+    return (
+        f'@INST({inst.id}, "{inst.name}") {{\n'
+        f'    ADSR: {a[0]}, {a[1]}, {a[2]}, {a[3]}\n'
+        f'    LFO:  {l[0]}, {l[1]}, {l[2]}, {l[3]}, {l[4]}\n'
+        f'    FLAGS: {inst.flags}\n'
+        f'}}'
+    )
+
+
+def _update_text_inst(text: str, inst: InstrumentData) -> str:
+    pattern = re.compile(
+        r'@INST\s*\(\s*' + str(inst.id) + r'\s*,\s*"[^"]*"\s*\)\s*\{[^}]*\}',
+        re.IGNORECASE | re.DOTALL,
+    )
+    block = _format_inst_block(inst)
+    if pattern.search(text):
+        return pattern.sub(block, text, count=1)
+    sep = '\n' if text and not text.endswith('\n') else ''
+    return text + sep + block + '\n'
+
+
+def _remove_text_inst(text: str, inst_id: int) -> str:
+    pattern = re.compile(
+        r'\n?@INST\s*\(\s*' + str(inst_id) + r'\s*,\s*"[^"]*"\s*\)\s*\{[^}]*\}\n?',
+        re.IGNORECASE | re.DOTALL,
+    )
+    return pattern.sub('\n', text)
+
+
+# ---------------------------------------------------------------------------
 # Colour Schemes
 # ---------------------------------------------------------------------------
 
@@ -261,7 +391,7 @@ class EditorState:
         self.show_errors:    bool        = False
         self.build_message:  str         = ''
         self.build_ok:       bool | None = None
-        self.mode:           str         = 'msl'   # 'msl' | 'z8a' | 'picker' | 'sections'
+        self.mode:           str         = 'msl'   # 'msl' | 'z8a' | 'picker' | 'sections' | 'instr'
         self.vi_mode:        bool        = False
         self.theme:          str         = 'retrobox'
         self.picker_dir:     Path        = Path.cwd()
@@ -269,6 +399,13 @@ class EditorState:
         self.picker_sel:     int         = 0
         self.sections_list:  list        = []
         self.sections_sel:   int         = 0
+        # Instrument editor
+        self.instr_bank:     dict        = {}   # {id: InstrumentData}
+        self.instr_song:     dict        = {}   # {id: InstrumentData}
+        self.instr_list_sel: int         = 0
+        self.instr_form_sel: int         = 0
+        self.instr_focus:    str         = 'list'  # 'list' | 'form'
+        self.instr_edit:     object      = None    # InstrumentData working copy
 
 
 # ---------------------------------------------------------------------------
@@ -312,6 +449,13 @@ def _title_text(state: EditorState) -> StyleAndTextTuples:
             ('class:titlebar.name', name),
             ('class:titlebar', ' '),
         ]
+    if state.mode == 'instr':
+        bank = f' ─ BANK: {state.bank_file}' if state.bank_file else ''
+        return [
+            ('class:titlebar', ' MusaX Instrument Editor'),
+            ('class:titlebar.name', bank),
+            ('class:titlebar', ' '),
+        ]
     name = state.filepath.name if state.filepath else 'untitled.msl'
     result: StyleAndTextTuples = [
         ('class:titlebar',      ' MusaX v1.9 ─ '),
@@ -331,6 +475,13 @@ def _status_text(state: EditorState, main_buf: Buffer, z8a_buf: Buffer) -> Style
     if state.mode == 'sections':
         n = len(state.sections_list)
         return [('class:statusbar', f'  {state.sections_sel + 1}/{n}  [Enter] jump  [Esc] cancel ')]
+
+    if state.mode == 'instr':
+        inst = state.instr_edit
+        slot = f'Slot {state.instr_list_sel}'
+        panel = f'  [{state.instr_focus.upper()}]'
+        name  = f'  {inst.name}' if inst else ''
+        return [('class:statusbar', f'  {slot}{name}{panel}  Tab=switch panel ')]
 
     buf = z8a_buf if state.mode == 'z8a' else main_buf
     doc = buf.document
@@ -383,12 +534,15 @@ def _fkey_bar(state: EditorState) -> StyleAndTextTuples:
         return _row_var([('↑↓', 'Navigate'), ('Enter', 'Open'), ('Esc', 'Cancel')])
     if state.mode == 'sections':
         return _row_var([('↑↓', 'Navigate'), ('Enter', 'Jump'), ('Esc', 'Cancel')])
+    if state.mode == 'instr':
+        row1 = [('F2', 'Save'), ('F4', 'ToBank'), ('F5', 'ToSong'), ('Del', 'Delete'), ('F6', 'Try!')]
+        return _row_fixed(row1) + _row_fixed([('Tab', 'Focus'), ('↑↓', 'Move'), ('←→', '±value'), ('Ret', 'Name'), ('Esc', 'Back')])
     if state.mode == 'z8a':
         return _row_var([('F2/^S', 'Save Z8A'), ('Esc', 'Back'), ('F4', 'Back')])
 
     vi_label = 'VI:ON' if state.vi_mode else 'VI:off'
-    row1 = [('F2', 'Save'),  ('F3',  'Open'),  ('^N', 'New'),  ('F5', vi_label), ('^Q', 'Quit')]
-    row2 = [('F9', 'Build'), ('F10', 'Play'),  ('^G', 'Sect'), ('F4', 'Z8A'),    ('^T', 'Theme')]
+    row1 = [('F2', 'Save'),  ('F3',  'Open'),  ('F4', 'Z8A'),  ('F5', vi_label), ('F6', 'Instr')]
+    row2 = [('F9', 'Build'), ('F10', 'Play'),  ('^G', 'Sect'), ('^T', 'Theme'),  ('^Q', 'Quit')]
     return _row_fixed(row1) + _row_fixed(row2)
 
 
@@ -545,6 +699,120 @@ def _sections_text(state: EditorState) -> StyleAndTextTuples:
 
 
 # ---------------------------------------------------------------------------
+# Instrument Editor UI
+# ---------------------------------------------------------------------------
+
+def _instr_load_edit(state: EditorState):
+    i = state.instr_list_sel
+    if i in state.instr_song:
+        state.instr_edit = state.instr_song[i].copy()
+        state.instr_edit.source = 'song'
+    elif i in state.instr_bank:
+        state.instr_edit = state.instr_bank[i].copy()
+        state.instr_edit.source = 'bank'
+    else:
+        state.instr_edit = _inst_make_default(i)
+
+
+def _instr_load_bank(state: EditorState):
+    if state.bank_file:
+        bank_path = state.filepath.parent / state.bank_file if state.filepath else Path(state.bank_file)
+        try:
+            text = bank_path.read_text(encoding='utf-8')
+            state.instr_bank = _parse_inst_blocks(text, 'bank')
+        except OSError:
+            state.instr_bank = {}
+    else:
+        state.instr_bank = {}
+
+
+def _inst_list_text(state: EditorState) -> StyleAndTextTuples:
+    result: StyleAndTextTuples = []
+    focused = state.instr_focus == 'list'
+    sel = state.instr_list_sel
+    for i in range(16):
+        in_bank = i in state.instr_bank
+        in_song = i in state.instr_song
+        if in_bank and in_song:
+            tag  = '[SONG]*'
+            name = state.instr_song[i].name
+            tag_style = 'class:loop'
+        elif in_song:
+            tag  = '[SONG] '
+            name = state.instr_song[i].name
+            tag_style = 'class:note'
+        elif in_bank:
+            tag  = '[BANK] '
+            name = state.instr_bank[i].name
+            tag_style = 'class:at_cmd'
+        else:
+            tag  = '       '
+            name = '(empty)'
+            tag_style = 'class:comment'
+        if focused and i == sel:
+            row_style = 'class:secpanel.selected'
+            prefix    = '▸'
+        elif not focused and i == sel:
+            row_style = 'class:label'
+            prefix    = '▸'
+        else:
+            row_style = 'class:comment' if not (in_bank or in_song) else 'class:default'
+            prefix    = ' '
+        result.append((row_style, f'{prefix}{i:>2}  {name:<16}  '))
+        result.append((tag_style if not (focused and i == sel) else row_style, f'{tag}\n'))
+    return result
+
+
+def _inst_form_text(state: EditorState) -> StyleAndTextTuples:
+    inst = state.instr_edit
+    if inst is None:
+        return [('class:comment', '  (no instrument)\n')]
+    result: StyleAndTextTuples = []
+    focused = state.instr_focus == 'form'
+    sel     = state.instr_form_sel
+
+    W = 11   # label column width — colon always at the same column
+
+    def field_row(idx: int, label: str, value: str):
+        if focused and idx == sel:
+            sty = 'class:secpanel.selected'
+            pfx = '▸ '
+        elif not focused and idx == sel:
+            sty = 'class:label'
+            pfx = '▸ '
+        else:
+            sty = 'class:default'
+            pfx = '  '
+        result.append((sty, f'{pfx}{label:<{W}}: {value}\n'))
+
+    def grp(title: str):
+        result.append(('class:comment', f'  ── {title} {"─" * (W - len(title) - 1)}\n'))
+
+    field_row(0, 'Name', inst.name[:30])
+    a = inst.adsr
+    grp('ADSR')
+    field_row(1, 'Att', f'{a[0]:>3}')
+    field_row(2, 'Dec', f'{a[1]:>3}')
+    field_row(3, 'Sus', f'{a[2]:>3}')
+    field_row(4, 'Rel', f'{a[3]:>3}')
+    l = inst.lfo
+    dest_name = _LFO_DEST_NAMES[l[0]] if 0 <= l[0] <= _LFO_DEST_MAX else str(l[0])
+    wave_name = _LFO_WAVE_NAMES[l[1]] if 0 <= l[1] <= _LFO_WAVE_MAX else str(l[1])
+    grp('LFO')
+    field_row(5, 'Dest',  dest_name)
+    field_row(6, 'Wave',  wave_name)
+    field_row(7, 'Speed', f'{l[2]:>3}')
+    field_row(8, 'Amp',   f'{l[3]:>3}')
+    field_row(9, 'Delay', f'{l[4]:>3}')
+    grp('FLAGS')
+    field_row(10, 'FLAGS', f'{inst.flags}')
+
+    src_label = 'SONG' if inst.source == 'song' else 'BANK'
+    result.append(('class:comment', f'\n  [{src_label}]  ←→/±=change  Ret=name\n'))
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Build the Application
 # ---------------------------------------------------------------------------
 
@@ -613,8 +881,21 @@ def build_app(initial_file: Path | None = None) -> Application:
     )
     sections_body = ConditionalContainer(content=sections_window, filter=Condition(lambda: state.mode == 'sections'))
 
+    instr_list_window = Window(
+        content=FormattedTextControl(lambda: _inst_list_text(state), focusable=True),
+        width=32, style='class:default',
+    )
+    instr_form_window = Window(
+        content=FormattedTextControl(lambda: _inst_form_text(state), focusable=True),
+        style='class:default',
+    )
+    instr_body = ConditionalContainer(
+        content=VSplit([instr_list_window, instr_form_window]),
+        filter=Condition(lambda: state.mode == 'instr'),
+    )
+
     layout = Layout(
-        HSplit([title_bar, msl_body, z8a_body, picker_body, sections_body, error_panel, status_bar, fkey_bar]),
+        HSplit([title_bar, msl_body, z8a_body, picker_body, sections_body, instr_body, error_panel, status_bar, fkey_bar]),
         focused_element=msl_window,
     )
 
@@ -786,9 +1067,207 @@ def build_app(initial_file: Path | None = None) -> Application:
             )
         await run_in_terminal(do_play)
 
-    @kb.add('f6')
-    def _instr(event):
-        pass  # TODO: Instrument Editor
+    @kb.add('f6', filter=Condition(lambda: state.mode == 'msl'))
+    def _instr_open(event):
+        state.instr_song = _parse_inst_blocks(main_buf.text, 'song')
+        _instr_load_bank(state)
+        state.instr_list_sel = 0
+        state.instr_form_sel = 0
+        state.instr_focus    = 'list'
+        _instr_load_edit(state)
+        state.mode = 'instr'
+        event.app.layout.focus(instr_list_window)
+
+    _instr_active = Condition(lambda: state.mode == 'instr')
+
+    @kb.add('escape', eager=True, filter=_instr_active)
+    def _instr_back(event):
+        state.mode = 'msl'
+        event.app.layout.focus(msl_window)
+
+    @kb.add('tab', eager=True, filter=_instr_active)
+    def _instr_tab(event):
+        if state.instr_focus == 'list':
+            state.instr_focus = 'form'
+            event.app.layout.focus(instr_form_window)
+        else:
+            state.instr_focus = 'list'
+            event.app.layout.focus(instr_list_window)
+
+    @kb.add('up', eager=True, filter=_instr_active)
+    def _instr_up(event):
+        if state.instr_focus == 'list':
+            state.instr_list_sel = max(0, state.instr_list_sel - 1)
+            _instr_load_edit(state)
+        else:
+            state.instr_form_sel = max(0, state.instr_form_sel - 1)
+
+    @kb.add('down', eager=True, filter=_instr_active)
+    def _instr_down(event):
+        if state.instr_focus == 'list':
+            state.instr_list_sel = min(15, state.instr_list_sel + 1)
+            _instr_load_edit(state)
+        else:
+            state.instr_form_sel = min(_INST_FORM_FIELD_COUNT - 1, state.instr_form_sel + 1)
+
+    def _form_change(delta: int):
+        if state.instr_focus == 'form' and state.instr_edit:
+            _inst_cycle_field(state.instr_edit, state.instr_form_sel, delta)
+
+    @kb.add('+',     eager=True, filter=_instr_active)
+    @kb.add('right', eager=True, filter=_instr_active)
+    def _instr_inc(event):
+        _form_change(1)
+
+    @kb.add('-',    eager=True, filter=_instr_active)
+    @kb.add('left', eager=True, filter=_instr_active)
+    def _instr_dec(event):
+        _form_change(-1)
+
+    @kb.add('enter', eager=True, filter=_instr_active)
+    async def _instr_edit_name(event):
+        if state.instr_focus != 'form' or state.instr_edit is None:
+            return
+        if state.instr_form_sel != 0:
+            return                      # only Name needs free-text entry
+        inst = state.instr_edit
+        def _ask():
+            try:
+                ans = input(f'Name [{inst.name}]: ').strip()
+                return ans if ans != '' else None
+            except (KeyboardInterrupt, EOFError):
+                return None
+        val = await run_in_terminal(_ask)
+        if val is not None:
+            inst.name = val[:24]
+
+    @kb.add('f2', filter=_instr_active)
+    async def _instr_save(event):
+        inst = state.instr_edit
+        if inst is None:
+            return
+        if inst.source == 'song':
+            new_text = _update_text_inst(main_buf.text, inst)
+            main_buf.set_document(Document(new_text, main_buf.cursor_position), bypass_readonly=True)
+            state.instr_song[inst.id] = inst.copy()
+            _do_save(state, main_buf)
+        else:
+            if not state.bank_file:
+                def _ask_bank():
+                    try:
+                        return input('Bank file name [instruments.msxi]: ').strip() or 'instruments.msxi'
+                    except (KeyboardInterrupt, EOFError):
+                        return None
+                name = await run_in_terminal(_ask_bank)
+                if not name:
+                    return
+                state.bank_file = name
+            bank_path = (state.filepath.parent / state.bank_file) if state.filepath else Path(state.bank_file)
+            try:
+                existing = bank_path.read_text(encoding='utf-8') if bank_path.exists() else ''
+            except OSError:
+                existing = ''
+            new_bank = _update_text_inst(existing, inst)
+            try:
+                bank_path.write_text(new_bank, encoding='utf-8')
+                state.instr_bank[inst.id] = inst.copy()
+                state.instr_bank[inst.id].source = 'bank'
+            except OSError:
+                pass
+
+    @kb.add('f4', filter=_instr_active)
+    async def _instr_copy_to_bank(event):
+        inst = state.instr_edit
+        if inst is None:
+            return
+        if not state.bank_file:
+            def _ask_bank():
+                try:
+                    return input('Bank file name [instruments.msxi]: ').strip() or 'instruments.msxi'
+                except (KeyboardInterrupt, EOFError):
+                    return None
+            name = await run_in_terminal(_ask_bank)
+            if not name:
+                return
+            state.bank_file = name
+        bank_path = (state.filepath.parent / state.bank_file) if state.filepath else Path(state.bank_file)
+        try:
+            existing = bank_path.read_text(encoding='utf-8') if bank_path.exists() else ''
+        except OSError:
+            existing = ''
+        copy = inst.copy()
+        copy.source = 'bank'
+        new_bank = _update_text_inst(existing, copy)
+        try:
+            bank_path.write_text(new_bank, encoding='utf-8')
+            state.instr_bank[copy.id] = copy
+        except OSError:
+            pass
+
+    @kb.add('f5', filter=_instr_active)
+    def _instr_copy_to_song(event):
+        inst = state.instr_edit
+        if inst is None:
+            return
+        copy = inst.copy()
+        copy.source = 'song'
+        new_text = _update_text_inst(main_buf.text, copy)
+        main_buf.set_document(Document(new_text, main_buf.cursor_position), bypass_readonly=True)
+        state.instr_song[copy.id] = copy
+        state.instr_edit = copy
+
+    @kb.add('delete', eager=True, filter=_instr_active)
+    def _instr_delete(event):
+        i = state.instr_list_sel
+        in_song = i in state.instr_song
+        in_bank = i in state.instr_bank
+        if in_song:
+            new_text = _remove_text_inst(main_buf.text, i)
+            main_buf.set_document(Document(new_text, main_buf.cursor_position), bypass_readonly=True)
+            del state.instr_song[i]
+        elif in_bank and state.bank_file:
+            bank_path = (state.filepath.parent / state.bank_file) if state.filepath else Path(state.bank_file)
+            try:
+                existing = bank_path.read_text(encoding='utf-8')
+                new_bank = _remove_text_inst(existing, i)
+                bank_path.write_text(new_bank, encoding='utf-8')
+                del state.instr_bank[i]
+            except OSError:
+                pass
+        _instr_load_edit(state)
+
+    @kb.add('f6', filter=_instr_active)
+    async def _instr_preview(event):
+        inst = state.instr_edit
+        if inst is None:
+            return
+        inst_block = _format_inst_block(inst)
+        preview_msl = (
+            f'{inst_block}\n\n'
+            f'CH_A:\n'
+            f'@T120\n'
+            f'@V15\n'
+            f'@I{inst.id}\n'
+            f'O4 C2 E2 G2 >C2 R4\n'
+        )
+        tmp = tempfile.NamedTemporaryFile(
+            suffix='.msl', mode='w', delete=False,
+            prefix='musax_preview_', encoding='utf-8',
+        )
+        tmp.write(preview_msl)
+        tmp.close()
+        tmp_path = tmp.name
+        def do_preview():
+            try:
+                subprocess.run(
+                    [sys.executable, str(_TOOLS_DIR / 'musax.py'), 'play', '-l', '1', tmp_path],
+                )
+            finally:
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+        await run_in_terminal(do_preview)
 
     @kb.add('c-t')
     def _cycle_theme(event):
