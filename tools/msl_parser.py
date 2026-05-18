@@ -147,7 +147,7 @@ TOKEN_REGEX = re.compile(
     r'(//[^\n]*)|'                             # Group 1: Comments
     r'(@INST\s*\([^)]*\)\s*\{[^}]*\})|'        # Group 2: @INST blocks
     r'(PHRASE\s*\([^)]*\)\s*\{)|'              # Group 3: PHRASE blocks
-    r'(@[A-Z0-9#\_\-]+(?:\s*(?:\([^)]*\)|"[^"]*"))?)|' # Group 4: other @-commands
+    r'(@(?:MODULE|NAMESPACE)\s+[A-Za-z_][A-Za-z0-9_]*|@[A-Z0-9#\_\-]+(?:\s*(?:\([^)]*\)|"[^"]*"))?)|' # Group 4: @-commands (MODULE/NAMESPACE bare-ident or general)
     r'([A-Z0-9_\.]+):|'                        # Group 5: Labels
     r'(\{)|(\})\s*(\d*)(t?)|'                  # Group 6,7,8,9: Loops
     r'([<>])|'                                 # Group 10: octave shifts
@@ -216,6 +216,12 @@ class MSLParser:
         if match:
             key, val = match.groups()
             self.events.append(Metadata(key.upper(), val))
+            return
+
+        # Module/namespace declaration: @MODULE IDENT or @NAMESPACE IDENT (aliases)
+        match = re.match(r'(?:MODULE|NAMESPACE)\s+([A-Za-z_][A-Za-z0-9_]*)', command_str, re.IGNORECASE)
+        if match:
+            self.events.append(Metadata('MODULE', match.group(1).upper()))
             return
 
         # Simple commands like @V15, @I3, @G200, @P10, @D-5

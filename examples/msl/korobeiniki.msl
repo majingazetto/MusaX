@@ -6,6 +6,7 @@
 @TITLE "Tetris Theme"
 @AUTHOR "Gemini CLI"
 @DESC "Classic 3-Channel Chiptune Demo"
+@NAMESPACE TETRIS
 
 // --- Instruments ---
 

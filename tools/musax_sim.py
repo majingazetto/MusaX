@@ -171,6 +171,9 @@ class MusaXSim:
 
     def eval_expr(self, expr):
         try:
+            # Strip sjasmplus global-scope @ prefix (e.g. @TYPE_SONG → TYPE_SONG)
+            expr = re.sub(r'@(\w)', r'\1', expr)
+
             # Handle Sjasmplus low/high byte operators
             expr = re.sub(r"([^\w])<(\w+)", r"\1(\2 & 0xFF)", expr)
             if expr.startswith("<"): expr = re.sub(r"^<(\w+)", r"(\1 & 0xFF)", expr)
@@ -195,12 +198,31 @@ class MusaXSim:
         except Exception:
             return 0
 
+    def _preload_base_constants(self):
+        """Load EQU symbols from musax_const.Z8A into self.symbols (idempotent)."""
+        if getattr(self, '_base_constants_loaded', False):
+            return
+        self._base_constants_loaded = True
+        const_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'src', 'musax_const.Z8A')
+        if not os.path.exists(const_file):
+            return
+        const_lines = self.read_with_includes(os.path.basename(const_file), os.path.dirname(const_file))
+        for _ in range(5):
+            for line in const_lines:
+                m = re.match(r"^(\w+)\s+EQU\s+(.+)$", line)
+                if m:
+                    self.symbols[m.group(1)] = self.eval_expr(m.group(2))
+
     def load_z8a(self, filename, is_fx_only=False):
         if not os.path.exists(filename): print(f"Error: {filename} not found"); sys.exit(1)
-        
+
+        # Ensure base constants (note pitches, durations, commands) are always available,
+        # even when the Z8A was generated in MODULE mode and has no INCLUDE line.
+        self._preload_base_constants()
+
         base_path = os.path.dirname(filename)
         lines = self.read_with_includes(os.path.basename(filename), base_path)
-        
+
         # Pass 1: Gather EQU symbols
         for _ in range(5):
             for line in lines:
@@ -208,14 +230,26 @@ class MusaXSim:
                 if m: self.symbols[m.group(1)] = self.eval_expr(m.group(2))
 
         # Pass 2: Map global and local labels
-        global_labels = {} 
-        curr_global = None
+        # Track MODULE context so labels inside a MODULE are registered under both
+        # their bare name and their fully-qualified "MODULE.label" name.
+        global_labels = {}
+        curr_global   = None
+        curr_module   = None   # active sjasmplus MODULE name, or None
         # Start base_addr high for FX if merging
         base_addr = 0x8000 if is_fx_only else 0x1000
         current_offset = 0
-        
+
         local_stream_bases = {}
         for line in lines:
+            # MODULE / ENDMODULE directives
+            mod_m = re.match(r'^MODULE\s+(\w+)$', line, re.IGNORECASE)
+            if mod_m:
+                curr_module = mod_m.group(1)
+                continue
+            if re.match(r'^ENDMODULE\b', line, re.IGNORECASE):
+                curr_module = None
+                continue
+
             m = re.match(r"^([\w.]+):$", line)
             if m:
                 label = m.group(1)
@@ -226,11 +260,15 @@ class MusaXSim:
                         self.channel_labels.setdefault(curr_global, []).append((current_offset, label))
                 else:
                     curr_global = label
-                    local_stream_bases[curr_global] = base_addr + current_offset
-                    self.symbols[curr_global] = base_addr + current_offset
+                    addr = base_addr + current_offset
+                    local_stream_bases[curr_global] = addr
+                    self.symbols[curr_global] = addr
+                    # Also register the module-qualified name so cross-file DEFW references work
+                    if curr_module:
+                        self.symbols[f'{curr_module}.{label}'] = addr
                     global_labels[curr_global] = []
                 continue
-            
+
             if curr_global and (line.startswith("DEFB") or line.startswith("DEFW")):
                 is_word = line.startswith("DEFW")
                 parts = [p.strip() for p in re.split(r",", line[4:].strip())]
@@ -263,11 +301,16 @@ class MusaXSim:
             max_addr = max(self.flat_memory.keys()) if self.flat_memory else 0
             master_stream = [self.flat_memory.get(i, 0) for i in range(max_addr + 1)]
 
-            # Find Music Header
+            # Find Music Header — primary: TYPE_SONG byte; fallback: label name heuristic
             type_song = self.symbols.get("TYPE_SONG", 0x80)
             music_hdr_name = next((k for k in self.all_streams if self.all_streams[k] and self.all_streams[k][0] == type_song), None)
             if not music_hdr_name:
-                music_hdr_name = next((k for k in self.all_streams if "HDR" in k.upper() and "FX" not in k.upper()), None)
+                # Matches HDR_xxx (standalone) and HEADER / MODULE.HEADER (module mode)
+                music_hdr_name = next(
+                    (k for k in self.all_streams
+                     if ("HDR" in k.upper() or k.upper().endswith("HEADER")) and "FX" not in k.upper()),
+                    None
+                )
             
             if music_hdr_name:
                 hdr_bytes = self.all_streams[music_hdr_name]
