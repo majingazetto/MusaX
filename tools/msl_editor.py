@@ -173,7 +173,7 @@ class Z8ALexer(Lexer):
 # ---------------------------------------------------------------------------
 
 _LFO_DEST_NAMES = ['Off', 'Pitch', 'Vol']
-_LFO_WAVE_NAMES = ['TRI', 'SAW', 'SQR', 'RND']
+_LFO_WAVE_NAMES = ['TRI', 'SAW', 'SQR']   # 3 waves only — sim has no wave 3
 _LFO_DEST_MAX   = len(_LFO_DEST_NAMES) - 1
 _LFO_WAVE_MAX   = len(_LFO_WAVE_NAMES) - 1
 

@@ -68,24 +68,41 @@ MusaX uses a stream-based bytecode format. Every event is either a **Note** or a
 | `CMD_CALL` | `0xF1` | `Addr (DEFW)` | Call a subroutine phrase. |
 | `CMD_RET` | `0xF0` | None | Return from a subroutine phrase. |
 
-## 5. Header Formats (v1.9 — 14 bytes)
+## 5. Header Formats (v1.9)
 
-Both Music and FX headers grew from 12 to 14 bytes by appending a `PTR_INST` field at the end.
+### Music Header — 15 bytes
 
-### Music Header
 ```
 HDR:
-    DEFW    BPM_A, PTR_A
-    DEFW    BPM_B, PTR_B
-    DEFW    BPM_C, PTR_C
-    DEFW    PTR_INST_TBL    ; 0 = use engine defaults
+    DEFB    TYPE_SONG       ; #80 — identifies this as a song header (1 byte)
+    DEFW    BPM_A, PTR_A    ; Channel A: tempo step + entry point (4 bytes)
+    DEFW    BPM_B, PTR_B    ; Channel B (4 bytes)
+    DEFW    BPM_C, PTR_C    ; Channel C (4 bytes)
+    DEFW    PTR_INST_TBL    ; Instrument table pointer; 0 = engine defaults (2 bytes)
 ```
 
-### FX Header
-Identical layout. Each FX entry registered in `FX_TABLE` (`DEFW PTR_HDR, PRIORITY`) carries its own header. FX may share the music's instrument table by reusing the same pointer, or define its own.
+Total: **15 bytes** (1 + 4 + 4 + 4 + 2).
 
-### Backward compatibility
-A header of exactly 12 bytes is treated as `PTR_INST = 0` (defaults). All examples in `examples/` continue to work without modification.
+### FX Header — 9 bytes
+
+```
+HDR_FX:
+    DEFB    TYPE_FX         ; #81 — identifies this as an FX header (1 byte)
+    DEFW    PTR_A           ; Channel A entry point; 0 = channel unused (2 bytes)
+    DEFW    PTR_B           ; Channel B (2 bytes)
+    DEFW    PTR_C           ; Channel C (2 bytes)
+    DEFW    PTR_INST_TBL    ; Instrument table pointer; 0 = engine defaults (2 bytes)
+```
+
+Total: **9 bytes** (1 + 2 + 2 + 2 + 2). FX headers carry no BPM fields; each FX channel uses its own default tempo (168 BPM).
+
+### FX Table
+
+Each registered effect in `FX_TABLE` is a `DEFW PTR_HDR, PRIORITY` pair, terminated by `DEFW 0, 0`. A higher `PRIORITY` value overrides a lower-priority active FX on the same channel.
+
+### Instrument Table
+
+`PTR_INST_TBL` points to a table of 16 `DEFW` pointers (one per instrument slot, IDs 0–15). Each non-zero entry points to a 16-byte instrument record. Slots not used are `DEFW 0`. When `PTR_INST_TBL == 0`, the engine uses its built-in 5-instrument default table.
 
 ## 5. Instrument System (v1.9)
 
@@ -97,18 +114,20 @@ Header.PTR_INST  ─►  INST_TBL[N*2]  ─►  16-byte instrument record
 `CMD_INST N` reads the pointer at `[PTR_INST + N*2]` and resolves the 16-byte record. The Z80 cost of resolution is `ADD HL,HL` (×2), one indirect load (`LD E,(HL); INC HL; LD D,(HL)`), and a copy of 16 bytes into channel-state RAM.
 
 ### 16-byte Instrument Record
-| Offset | Bytes | Field | Description |
-|--------|-------|-------|-------------|
-| 0 | 1 | `ATT` | Attack rate (0-255 added per frame to envelope accumulator). |
-| 1 | 1 | `DEC` | Decay rate (subtracted per frame until reaching `SUS`). |
-| 2 | 1 | `SUS` | Sustain level (target value 0-255). |
-| 3 | 1 | `REL` | Release rate (subtracted per frame until 0). |
-| 4 | 1 | `LFODEST` | 0=off, 1=pitch (vibrato), 2=volume (tremolo). |
-| 5 | 1 | `LFOWAVE` | 0=triangle, 1=saw, 2=square. |
-| 6 | 1 | `LFOPARS` | High nibble = speed, low nibble = amplitude. |
-| 7 | 1 | `LFODELAY` | Frames to wait before LFO begins (delayed vibrato). |
-| 8 | 1 | `FLAGS` | Reserved for future flags. |
-| 9-15 | 7 | `RES` | Reserved (zero-fill). |
+| Offset | Bytes | Field | Range | Description |
+|--------|-------|-------|-------|-------------|
+| 0 | 1 | `ATT` | 0–255 | Attack rate — added to envelope accumulator per frame until ≥ 255. |
+| 1 | 1 | `DEC` | 0–255 | Decay rate — subtracted per frame until ≤ `SUS`. |
+| 2 | 1 | `SUS` | 0–255 | Sustain level — envelope is held at this value. |
+| 3 | 1 | `REL` | 0–255 | Release rate — subtracted per frame after gate, until ≤ 0. |
+| 4 | 1 | `LFODEST` | 0–2 | LFO destination: `0`=off, `1`=pitch (vibrato), `2`=volume (tremolo). |
+| 5 | 1 | `LFOWAVE` | 0–2 | LFO waveform: `0`=triangle, `1`=sawtooth, `2`=square. |
+| 6 | 1 | `LFOPARS` | — | Packed byte: **high nibble = speed (0–15)**, **low nibble = amplitude (0–15)**. |
+| 7 | 1 | `LFODELAY` | 0–255 | Frames before LFO begins after note-on. |
+| 8 | 1 | `FLAGS` | 0 | Reserved for future flags. Always 0. |
+| 9–15 | 7 | `RES` | 0 | Reserved — zero-fill. |
+
+> **LFOPARS packing:** The MSL `@INST` block accepts `speed` and `amp` as separate integers (0–15 each). The compiler packs them into `LFOPARS` as `(speed << 4) | (amp & 0x0F)`. Values outside 0–15 will corrupt the adjacent nibble.
 
 ### ADSR State Machine
 | State | Code | Behavior |
@@ -145,12 +164,16 @@ Sustain Level +---/-------\_________
 - LFO is gated by ADSR: it only updates while `adsr_state != IDLE`.
 
 ### Default Instruments (PTR_INST == 0)
+
+Five built-in instruments are available when no custom table is defined:
+
 | ID | Name | ATT | DEC | SUS | REL | LFO |
 |----|------|-----|-----|-----|-----|-----|
-| 0 | Plucky | 255 | 10 | 200 | 20 | — |
-| 1 | Vibrato Lead | 10 | 5 | 255 | 10 | Pitch tri, delay 20 |
-| 2 | Organ | 255 | 0 | 255 | 0 | — |
-| 3 | Tremolo Pad | 5 | 10 | 150 | 5 | Volume tri |
+| 0 | Linear Decay | 255 | 16 | 0 | 1 | — |
+| 1 | Plucky | 255 | 10 | 200 | 20 | — |
+| 2 | Smooth Lead | 10 | 5 | 255 | 10 | Pitch, triangle, speed=8, amp=4, delay=20 |
+| 3 | Full Sustain (Organ) | 255 | 0 | 255 | 0 | — |
+| 4 | Ambient Pad | 5 | 10 | 150 | 5 | Volume, triangle, speed=6, amp=8 |
 
 ## 6. High-Precision Simulator
 The Python simulator (`musax_sim.py`) implements a **sample-accurate** rendering engine.

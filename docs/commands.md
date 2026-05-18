@@ -1,6 +1,63 @@
 # MusaX Command Reference
 
-This document provides detailed information on all bytecode commands available in the MusaX sound engine (v1.9).
+This document covers bytecode commands (v1.9) and the MSL structural elements that the compiler translates into them. For the full MSL syntax, see `msl_language.md`.
+
+---
+
+## Song Structure (MSL-level, not bytecode)
+
+These constructs are processed by the MSL compiler. They produce bytecode but are not themselves opcodes.
+
+### Channel Sections — `CH_A:` / `CH_B:` / `CH_C:`
+
+Regular labels that the compiler recognises as channel entry points. Their addresses are written into the song header's `PTR_A`, `PTR_B`, `PTR_C` fields.
+
+```msl
+CH_A:
+    @I0 @T120 @V14
+    LOOP_A:
+        O4 L8 C D E F
+        @RESTART(LOOP_A)
+```
+
+### Phrases — `PHRASE(NAME) { ... }`
+
+Defines a reusable subroutine. The compiler emits the body followed by `CMD_RET`. Called with `@CALL(NAME)`.
+
+```msl
+PHRASE(ARPUP) {
+    O5 L16 C E G >C
+}
+```
+
+### Sound Effects — `@FX(NAME) { ... }`
+
+Defines a self-contained sound effect block. May contain `CH_A:`, `CH_B:`, and/or `CH_C:` sub-sections. Each channel stream must end with `R0` (immediate stop). The compiler emits an FX header and registers the block in the FX table.
+
+```msl
+@FX(COIN) {
+    CH_A: @I0 @V15 O5 L16 E >G R0
+}
+```
+
+### Instrument Definitions — `@INST(ID, "Name") { ... }`
+
+Defines a custom instrument. Collected and emitted as a 16-byte record in the instrument table. See `technical_spec.md §5` for the full field layout.
+
+```msl
+@INST(0, "Lead") {
+    ADSR: 255, 10, 200, 15
+    LFO:  1, 0, 8, 4, 20
+    FLAGS: 0
+}
+```
+
+Fields:
+- `ADSR: att, dec, sus, rel` — all 0–255.
+- `LFO: dest, wave, speed, amp, delay` — dest 0–2; wave 0–2; speed 0–15; amp 0–15; delay 0–255.
+- `FLAGS: 0` — reserved.
+
+---
 
 ## Flow Control
 
@@ -76,6 +133,20 @@ This document provides detailed information on all bytecode commands available i
     - `>0`: Portamento ON. `Speed` defines the number of 60Hz frames to wait before stepping to the next semitone.
 - **Articulation:** Slides are played **Legato** (the instrument envelope is NOT re-triggered during the steps).
 - **Usage:** Used for harp-like or trombone-style chromatic runs.
+
+## Notes and Rests
+
+### Note (0x00–0x5F)
+- **Format:** `[NoteID (1 byte)], [Duration (DEFW)]`
+- **NoteID:** 0–95. Encoding: `octave × 12 + semitone` (C0=0, C4=48, B7=95).
+- **Duration:** 16-bit tick count, little-endian.
+
+### REST (0xFF)
+- **Format:** `[0xFF], [Duration (DEFW)]`
+- **Normal rest:** Duration > 0 — channel waits silently.
+- **`R0` (Channel Stop):** Duration = 0 (`0xFF 0x00 0x00`). Immediately halts the channel. Required at the end of every FX channel stream.
+
+---
 
 ## Transport
 
