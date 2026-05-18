@@ -361,13 +361,13 @@ def _status_text(state: EditorState, main_buf: Buffer, z8a_buf: Buffer) -> Style
 
 
 def _fkey_bar(state: EditorState) -> StyleAndTextTuples:
-    # Fixed-width cells: key left-aligned in 6-char field + label left-aligned in 8-char field.
-    # Each cell = 8 + 11 = 19 chars → 4 cells = 76 chars, fits in 80-col terminals.
+    # Fixed-width cells: key in 4-char field + label in 7-char field.
+    # Each cell = 6 + 10 = 16 chars → 5 cells = 80 chars, exact fit for 80-col terminals.
     def _row_fixed(keys: list) -> StyleAndTextTuples:
         row: StyleAndTextTuples = []
         for k, label in keys:
-            row.append(('class:fkey',       f' {k:<6} '))
-            row.append(('class:fkey-label', f' {label:<8}  '))
+            row.append(('class:fkey',       f' {k:<4} '))
+            row.append(('class:fkey-label', f' {label:<7}  '))
         row.append(('class:fkeybar', '\n'))
         return row
 
@@ -386,8 +386,9 @@ def _fkey_bar(state: EditorState) -> StyleAndTextTuples:
     if state.mode == 'z8a':
         return _row_var([('F2/^S', 'Save Z8A'), ('Esc', 'Back'), ('F4', 'Back')])
 
-    row1 = [('F2/^S', 'Save'), ('F3/^O', 'Open'), ('^N', 'New'),   ('^Q', 'Quit')]
-    row2 = [('F9/^B', 'Build'), ('F10/^R', 'Play'), ('^G', 'Sections'), ('F4', 'Z8A')]
+    vi_label = 'VI:ON' if state.vi_mode else 'VI:off'
+    row1 = [('F2', 'Save'),  ('F3',  'Open'),  ('^N', 'New'),  ('F5', vi_label), ('^Q', 'Quit')]
+    row2 = [('F9', 'Build'), ('F10', 'Play'),  ('^G', 'Sect'), ('F4', 'Z8A'),    ('^T', 'Theme')]
     return _row_fixed(row1) + _row_fixed(row2)
 
 
