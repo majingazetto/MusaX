@@ -361,7 +361,17 @@ def _status_text(state: EditorState, main_buf: Buffer, z8a_buf: Buffer) -> Style
 
 
 def _fkey_bar(state: EditorState) -> StyleAndTextTuples:
-    def _render_row(keys: list) -> StyleAndTextTuples:
+    # Fixed-width cells: key left-aligned in 6-char field + label left-aligned in 8-char field.
+    # Each cell = 8 + 11 = 19 chars → 4 cells = 76 chars, fits in 80-col terminals.
+    def _row_fixed(keys: list) -> StyleAndTextTuples:
+        row: StyleAndTextTuples = []
+        for k, label in keys:
+            row.append(('class:fkey',       f' {k:<6} '))
+            row.append(('class:fkey-label', f' {label:<8}  '))
+        row.append(('class:fkeybar', '\n'))
+        return row
+
+    def _row_var(keys: list) -> StyleAndTextTuples:
         row: StyleAndTextTuples = []
         for k, label in keys:
             row.append(('class:fkey',       f' {k} '))
@@ -370,17 +380,15 @@ def _fkey_bar(state: EditorState) -> StyleAndTextTuples:
         return row
 
     if state.mode == 'picker':
-        return _render_row([('↑↓', 'Navigate'), ('Enter', 'Open'), ('Esc', 'Cancel')])
+        return _row_var([('↑↓', 'Navigate'), ('Enter', 'Open'), ('Esc', 'Cancel')])
     if state.mode == 'sections':
-        return _render_row([('↑↓', 'Navigate'), ('Enter', 'Jump'), ('Esc', 'Cancel')])
+        return _row_var([('↑↓', 'Navigate'), ('Enter', 'Jump'), ('Esc', 'Cancel')])
     if state.mode == 'z8a':
-        return _render_row([('F2/^S', 'Save Z8A'), ('Esc', 'Back'), ('F4', 'Back to MSL')])
+        return _row_var([('F2/^S', 'Save Z8A'), ('Esc', 'Back'), ('F4', 'Back')])
 
-    vi_label = 'VI:ON' if state.vi_mode else 'VI:off'
-    row1 = [('F2/^S', 'Save'), ('F3/^O', 'Open'), ('^N', 'New'), ('^Q', 'Quit')]
-    row2 = [('F9/^B', 'Build'), ('F10/^R', 'Play'), ('^G', 'Sections'),
-            ('F4', 'Z8A'), ('F5', vi_label), ('F6', 'Instr'), ('^T', state.theme)]
-    return _render_row(row1) + _render_row(row2)
+    row1 = [('F2/^S', 'Save'), ('F3/^O', 'Open'), ('^N', 'New'),   ('^Q', 'Quit')]
+    row2 = [('F9/^B', 'Build'), ('F10/^R', 'Play'), ('^G', 'Sections'), ('F4', 'Z8A')]
+    return _row_fixed(row1) + _row_fixed(row2)
 
 
 def _error_lines(state: EditorState) -> StyleAndTextTuples:
