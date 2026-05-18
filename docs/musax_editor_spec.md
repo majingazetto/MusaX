@@ -1,131 +1,187 @@
-# MusaX-ML Editor Specification
+# MusaX Editor Specification
 
-This document outlines the design and specification for a TUI-based editor for the MusaX sound engine. The editor will use a custom Music Macro Language (MML) dialect, tentatively named "MusaX-ML", designed for fluid composition.
+TUI-based editor for the MusaX sound engine. Uses MSL (MusaX Sound Language), a custom MML dialect.
 
 ## 1. Core Philosophy & Technology Stack
 
-- **Paradigm:** MML (Music Macro Language) editor, not a tracker. The goal is compositional fluidity over rigid grid-based entry.
-- **Technology:** Web-based IDE (Flask + Ace Editor).
-- **Integration:** The editor is tightly integrated with `musax_sim.py` and `msl_compiler.py` to provide real-time audio preview.
+- **Paradigm:** MML editor, not a tracker. Compositional fluidity over rigid grid-based entry.
+- **Technology:** TUI, full-screen terminal application using `prompt_toolkit`.
+- **Style:** Borland-inspired layout. Colors configurable in the future.
+- **Integration:** Tightly integrated with `msl_compiler.py` and `musax_sim.py`.
 
-## 2. Editor Layout
+## 2. Modes
 
-The layout is optimized for horizontal music composition:
-- **Global Pane:** For global settings, instrument definitions (`@INST`), and phrases.
-- **Channel Panes (A, B, C):** Vertically stacked, full-width editors for each PSG channel. 
-- **Dynamic Focus:** The focused channel editor automatically expands while the others minimize, maximizing screen usage.
-- **Instrument Editor:** Integrated syntax highlighting for instrument blocks, with plans for a future form-based overlay.
-- **Status Bar:** Real-time feedback on compilation, saving, and simulator status.
+The editor has two full-screen modes that switch completely (no split panels):
 
-## 3. "MusaX-ML" Language Specification
+1. **Main Editor** — MSL text editor.
+2. **Instrument Editor** — Form-based instrument manager (F6).
 
-### 3.1. Note & Time Syntax
+---
 
-- **Notes:** `C, D, E, F, G, A, B`. Case-insensitive.
-- **Alterations:**
-    - Sharps: `+` or `#`. Example: `C#`, `F+`.
-    - Flats: `-` or `b`. Example: `Bb`, `E-`.
-- **Octave:**
-    - `O<num>`: Sets the current octave (e.g., `O4`).
-    - `>`: Increase octave by 1.
-    - `<`: Decrease octave by 1.
-- **Duration:**
-    - `L<num>`: Sets the default note duration (e.g., `L4` for quarter notes, `L8` for eighth notes).
-    - A number directly after a note sets its specific duration. Example: `C4`, `E8`, `G16`.
-    - A `.` after the duration number creates a dotted note (duration * 1.5). Example: `C4.`.
-- **Rests (Silences):**
-    - `R`. Follows the same duration rules as notes. Example: `R4`, `R8.`.
+## 3. Main Editor Layout
 
-### 3.2. MusaX Engine Commands
-
-MusaX-specific commands are prefixed with `@`.
-
-- `@V<num>`: Sets channel volume (0-15).
-- `@I<num>`: Sets the active instrument (by ID).
-- `@T<hex>`: Sets the tempo via the `BPM_STEP` value. Must be a hex value. Example: `@T#0600`.
-- `@G<num>`: Sets the note gate time (0-255).
-- `@P<num>`: Sets the portamento speed.
-- `@F(<target>,<step>)`: Initiates a volume fade.
-- `@D<num>`: Applies a signed pitch detune in cents.
-- `@PH<num>`: Applies a sub-tick phase delay.
-- `@CH(<phase>,<detune>)`: A macro for the Chorus command.
-
-### 3.3. Flow Control: Labels, Loops, and Jumps
-
-To enable non-linear song structures, the following syntax will be supported:
-
-- **Labels:** A name followed by a colon defines a jump destination.
-  ```mml
-  MAIN_LOOP:
-    C D E F
-  ```
-- **Local Loops:** A block of MML surrounded by `{...}` and followed by a number will be repeated. The compiler translates this to `CMD_LOOP_S`/`CMD_LOOP_E`.
-  ```mml
-  { C E G }4 // Arpeggio repeats 4 times
-  ```
-- **Jumps:**
-    - `@GOTO(label)`: Compiles to a `CMD_GOTO`. This is a technical, unconditional jump. Useful for one-off jumps to specific sections (e.g., an ending).
-    - `@RESTART(label)`: Compiles to a `CMD_RESTART`. This is a logical jump that also signals the end of a main loop for inter-channel synchronization. This is the standard way to loop a song.
-
-- **Phrases (Subroutines):**
-    - `PHRASE(Name) { ... }`: Defines a reusable musical block. The compiler places this block outside the main flow and appends a `CMD_RET`.
-    - `@CALL(Name)`: Executes the specified phrase. Compiles to `CMD_CALL`.
-
-### 3.4. Instrument Definition
-
-Instruments are defined using a dedicated block structure. Each instrument is 16 bytes long.
-
-```mml
-@INST(<id>, <name>) {
-    ADSR: <att>, <dec>, <sus>, <rel>
-    LFO: <dest>, <wave>, <speed>, <amp>, <delay>
-    FLAGS: <flags>
-}
+```
+┌─ MusaX v1.9 ─ song.msl [modified] ─────────────────────────────┐
+│                                                                  │
+│  (MSL text area — full width, channels A/B/C in same file)      │
+│                                                                  │
+├─ Errors (3) ────────────────────────────────────────────────────┤
+│  Line 12: Unknown command @X                                     │
+│▸ Line 15: Expected duration after note C                        │
+│  Line 23: Undefined label SONG_LOOP                             │
+├─────────────────────────────────────────────────────────────────┤
+│  Ln 12  Col 4  │  BANK: banco.msxi  │  [STOPPED]               │
+├─────────────────────────────────────────────────────────────────┤
+│ F2 Save  F3 Open  F6 Instr  F9 Compile  F10 Play  F5 Stop      │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
--   `@INST(<id>, <name>)`: Starts an instrument definition block.
-    -   `<id>`: The instrument ID (0-15).
-    -   `<name>`: A descriptive name for the instrument (e.g., "VibratoLead").
--   `ADSR: <att>, <dec>, <sus>, <rel>`: Defines the ADSR envelope (4 bytes).
--   `LFO: <dest>, <wave>, <speed>, <amp>, <delay>`: Defines the LFO parameters (5 bytes). `<speed>` and `<amp>` are combined into one byte.
--   `FLAGS: <flags>`: Defines the instrument flags (1 byte).
--   The remaining 7 bytes are reserved and will be set to 0.
+### Text Area
+- Single MSL file. Channels A, B, C coexist in the same file as classic MML.
+- Syntax highlighting for notes, `@` commands, `@INST` blocks, labels, loops, comments.
 
-Example:
+### Error Panel
+- **Height:** 5 lines, fixed.
+- **Behaviour:** Opens automatically when compilation has errors. Closes automatically on clean compile.
+- **Toggle:** `Ctrl+E` or `F12`.
+- **Navigation:** `↑↓` to select an error, `Enter` to jump to that line in the text area.
 
-```mml
-@INST(0, "VibratoLead") {
+### Status Bar
+- Current line and column.
+- Active bank filename (from `@BANK` directive, if present).
+- Simulation state: `[STOPPED]` / `[PLAYING]`.
+
+### F-key Bar
+```
+F2 Save  F3 Open  F5 Stop  F6 Instr  F9 Compile  F10 Play
+```
+
+### Keyboard Map
+```
+F2          Save current file
+F3          Open file
+F5          Stop simulation
+F6          Switch to Instrument Editor
+F9          Compile (shows errors in panel)
+F10         Compile + Play from the beginning
+Ctrl+E      Toggle error panel
+F12         Toggle error panel
+Ctrl+N      New file
+Ctrl+Q      Quit
+```
+
+### Simulator Integration (F10)
+The editor suspends itself and hands the terminal to `musax_sim.py` completely (the sim's interactive UI and dashboard remain fully functional). When the user exits the sim, the editor resumes exactly where it was.
+
+---
+
+## 4. Instrument Editor Layout (F6)
+
+```
+┌─ MusaX Instrument Editor ─────────────────────────────────────────┐
+│  [BANK: mi_banco.msxi]              [SONG: cancion.msl]           │
+│                                                                    │
+│  0  Piano          [BANK]    │  Name:  Piano                      │
+│  1  VibratoLead    [SONG]    │  ──────────────────────────────    │
+│  2  BassDrum       [BANK]    │  ADSR   Att: 10  Dec:  5           │
+│  3  SquareLead     [SONG]*   │         Sus:255  Rel: 10           │
+│  4  (empty)                  │  ──────────────────────────────    │
+│  ...                         │  LFO    Dest: Pitch  Wave: TRI     │
+│  15 (empty)                  │         Speed:  2    Amp:   12     │
+│                              │         Delay: 20                  │
+│                              │  ──────────────────────────────    │
+│                              │  FLAGS: 0                          │
+├────────────────────────────────────────────────────────────────────┤
+│  * = SONG overrides BANK instrument with same ID                  │
+├────────────────────────────────────────────────────────────────────┤
+│ F2 Save  F4 Copy→Bank  F5 Copy→Song  Del Delete  Esc/F6 Back     │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+### Instrument List (left panel)
+- Always shows all 16 slots (IDs 0–15), including empty ones.
+- Labels: `[BANK]` — from bank file only. `[SONG]` — defined inline in MSL. `[SONG]*` — defined in both; SONG overrides BANK (compiler emits a warning).
+
+### Instrument Form (right panel)
+- Fields: Name, ADSR (Att/Dec/Sus/Rel), LFO (Dest/Wave/Speed/Amp/Delay), FLAGS.
+- `Tab` moves focus between list and form.
+- `↑↓` navigates the list or form fields.
+
+### Keyboard Map
+```
+F2          Save (bank file or MSL depending on selected instrument source)
+F4          Copy selected instrument → Bank file
+F5          Copy selected instrument → Song (inline @INST)
+Del         Delete selected instrument from its source
+Tab         Toggle focus: list ↔ form
+↑ ↓         Navigate list / form fields
+Esc / F6    Return to Main Editor
+```
+
+---
+
+## 5. Instrument Bank File Format (`.msxi`)
+
+Plain text, same `@INST(...)` syntax as MSL. No special header required.
+
+```msl
+// mi_banco.msxi
+@INST(0, "Piano") {
+    ADSR: 2, 8, 200, 15
+    LFO:  0, 0, 0, 0, 0
+    FLAGS: 0
+}
+@INST(1, "VibratoLead") {
     ADSR: 10, 5, 255, 10
-    LFO: 1, 0, 2, 12, 20  // Dest=Pitch, Wave=TRI, Speed=2, Amp=12, Delay=20
+    LFO:  1, 0, 2, 12, 20
     FLAGS: 0
 }
 ```
-This would be translated by the compiler into the corresponding 16-byte instrument record in the Z80 assembly output.
 
-### 4. Example Song Structure
+---
 
-```mml
-// --- Channel A ---
-// An intro that plays only once
-INTRO:
-  O4 L8 @I1 @V15
-  C E G <C
+## 6. Instrument Resolution Model
 
-// The main loop of the song starts here
-SONG_LOOP:
-  O5 L4 @I2
-  C C G G A A G2
-  F F E E D D C2
-  // ... more music ...
+When a song uses both a bank and inline instruments, the priority is:
 
-// At the end of the song, jump back to the main loop
-@RESTART(SONG_LOOP)
+```
+CLI --bank  <  @BANK directive in .msl  <  @INST inline in .msl
 ```
 
-## 5. Workflow
+- The `@BANK` directive in the MSL file overrides the `--bank` CLI argument.
+- Inline `@INST` blocks override any bank definition for the same ID.
+- If an ID is defined in both the bank and inline, the compiler emits a warning and uses the inline definition.
 
-1.  User edits MML and instrument definitions in the TUI.
-2.  On pressing a "Play" hotkey, the editor invokes the **MusaX-ML Compiler**.
-3.  The compiler parses the MML from all channels and generates a valid `.Z8A` byte stream in memory or to a temporary file.
-4.  The editor launches `musax_sim.py` with the compiled temporary file for instant audio preview.
-5.  A "File -> Export" command generates the final, human-readable `.Z8A` file for inclusion in a project.
+### `@BANK` Directive
+Declared at the top of the MSL file:
+```msl
+@BANK "mi_banco.msxi"
+```
+The editor reads this directive on file open and automatically loads the bank into the Instrument Editor.
+
+---
+
+## 7. MSL Language Reference
+
+See `technical_spec.md` for the full MSL language specification.
+
+### Quick Reference
+- **Notes:** `C D E F G A B` with `+`/`#` (sharp) or `-`/`b` (flat).
+- **Octave:** `O4`, `>` (up), `<` (down).
+- **Duration:** `L8`, `C4`, `R4.` (dotted), `C8t` (triplet).
+- **Commands:** `@V` (volume), `@I` (instrument), `@T` (tempo), `@G` (gate).
+- **Flow:** `{ ... }4` (loop), `@RESTART(label)`, `@GOTO(label)`, `@CALL(name)`.
+- **Bank:** `@BANK "file.msxi"`.
+
+---
+
+## 8. Workflow
+
+1. Open or create an MSL file (`F3` / `Ctrl+N`).
+2. Optionally declare `@BANK "banco.msxi"` at the top.
+3. Define instruments inline with `@INST(...)` or manage them via `F6`.
+4. Write music for channels A, B, C in the same file.
+5. `F9` to compile and check for errors.
+6. `F10` to compile and play — editor suspends, simulator runs interactively.
+7. `F5` to stop simulation and return to the editor.
+8. `F2` to save.
