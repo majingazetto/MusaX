@@ -6,7 +6,7 @@
 ; * MusaX-ML Compiler v1.1
 ; ************************************************************************
 
-MODULE TETRIS
+                MODULE  TETRIS
 
 ; --- Song Header ---
 
@@ -347,4 +347,4 @@ MAIN_BASS       DEFB    @CMD_CALL
                 DEFB    @CMD_RESTART
                 DEFW    MAIN_BASS
 
-ENDMODULE ; TETRIS
+                ENDMODULE ; TETRIS

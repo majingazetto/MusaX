@@ -8,7 +8,7 @@ import subprocess
 from pathlib import Path
 
 from prompt_toolkit import Application
-from prompt_toolkit.application import get_app
+from prompt_toolkit.application import get_app, run_in_terminal
 from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.document import Document
 from prompt_toolkit.enums import EditingMode
@@ -325,8 +325,8 @@ def _fkey_bar(state: EditorState) -> StyleAndTextTuples:
     else:
         vi_label = 'VI:ON' if state.vi_mode else 'VI:off'
         keys = [
-            ('F2', 'Save'), ('F3', 'Open'), ('F4', 'View Z8A'), ('F5', vi_label),
-            ('F6', 'Instr'), ('F9', 'Build'), ('F10', 'Play'),
+            ('F2/^S', 'Save'), ('F3/^O', 'Open'), ('F4', 'View Z8A'), ('F5', vi_label),
+            ('F6', 'Instr'), ('F9/^B', 'Build'), ('F10/^R', 'Play'),
             ('Ctrl+T', state.theme), ('Ctrl+Q', 'Quit'),
         ]
     result: StyleAndTextTuples = []
@@ -387,8 +387,10 @@ def build_app(initial_file: Path | None = None) -> Application:
     state = EditorState()
 
     def _on_text_changed(_buf):
-        state.modified  = True
-        state.bank_file = _extract_bank(main_buf.text)
+        state.modified      = True
+        state.bank_file     = _extract_bank(main_buf.text)
+        state.build_ok      = None
+        state.build_message = ''
 
     main_buf = Buffer(name='main', multiline=True, on_text_changed=_on_text_changed)
     # Z8A viewer buffer — read_only=True prevents user edits; bypass_readonly=True
@@ -444,12 +446,14 @@ def build_app(initial_file: Path | None = None) -> Application:
     kb = KeyBindings()
 
     @kb.add('f2')
+    @kb.add('c-s')
     def _save(event):
         if state.filepath is None or state.mode == 'z8a':
             return
         _do_save(state, main_buf)
 
     @kb.add('f3')
+    @kb.add('c-o')
     def _open(event):
         pass  # TODO: file picker
 
@@ -485,16 +489,25 @@ def build_app(initial_file: Path | None = None) -> Application:
             event.app.editing_mode = EditingMode.EMACS
 
     @kb.add('f9')
+    @kb.add('c-b')
     def _compile(event):
         if state.mode == 'z8a':
             return
         _run_compile(state, main_buf)
 
     @kb.add('f10')
-    def _play(event):
-        if state.mode == 'z8a':
+    @kb.add('c-r')
+    async def _play(event):
+        if state.mode == 'z8a' or state.filepath is None:
             return
-        _run_play(state, main_buf, event.app)
+        _run_compile(state, main_buf)
+        if not state.build_ok:
+            return
+        def do_play():
+            subprocess.run(
+                [sys.executable, str(_TOOLS_DIR / 'musax.py'), 'play', str(state.filepath)],
+            )
+        await run_in_terminal(do_play)
 
     @kb.add('f6')
     def _instr(event):
@@ -590,32 +603,6 @@ def _run_compile(state: EditorState, buf: Buffer):
         state.build_ok     = False
         state.build_message = ''
         state.show_errors   = True
-
-
-def _run_play(state: EditorState, buf: Buffer, app: Application):
-    if state.filepath is None:
-        return
-    _do_save(state, buf)
-    result = subprocess.run(
-        [sys.executable, str(_TOOLS_DIR / 'musax.py'), 'build', str(state.filepath)],
-        capture_output=True, text=True, timeout=10,
-    )
-    combined    = result.stdout + result.stderr
-    state.errors = _parse_compiler_errors(combined)
-    state.selected_error = 0
-    if state.errors:
-        state.build_ok      = False
-        state.build_message = ''
-        state.show_errors   = True
-        return
-    state.build_ok      = True
-    state.build_message = _extract_build_summary(combined)
-    with app.input.detach():
-        subprocess.run(
-            [sys.executable, str(_TOOLS_DIR / 'musax.py'), 'play', str(state.filepath)],
-        )
-    app.renderer.reset()
-    app.invalidate()
 
 
 def _load_z8a_view(state: EditorState, z8a_buf: Buffer):

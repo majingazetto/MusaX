@@ -166,7 +166,7 @@ def msl2z8a(input_file, output_file=None, song_name=None):
         f.write(f"; {'*' * 72}\n\n")
 
         if use_module:
-            f.write(f'MODULE {module_name}\n\n')
+            f.write(_line('MODULE', module_name) + '\n')
         else:
             f.write('INCLUDE "musax_const.Z8A"\n\n')
 
@@ -298,7 +298,7 @@ def msl2z8a(input_file, output_file=None, song_name=None):
                 i += 1
 
         if use_module:
-            f.write(f'\nENDMODULE ; {module_name}\n')
+            f.write('\n' + _line('ENDMODULE', f' ; {module_name}'))
 
     print(f"Successfully compiled {input_file} -> {output_file}")
 

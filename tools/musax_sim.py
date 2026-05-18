@@ -269,6 +269,33 @@ class MusaXSim:
                     global_labels[curr_global] = []
                 continue
 
+            # Inline label+directive (sjasmplus style, no colon):  LABEL   DEFB/DEFW   data
+            inline_m = re.match(r"^([\w.]+)\s+(DEFB|DEFW)\s+(.+)$", line, re.IGNORECASE)
+            if inline_m:
+                label     = inline_m.group(1)
+                directive = inline_m.group(2).upper()
+                rest      = inline_m.group(3)
+                if label.startswith("."):
+                    if curr_global:
+                        full_name = curr_global + label
+                        self.symbols[full_name] = base_addr + current_offset
+                        self.channel_labels.setdefault(curr_global, []).append((current_offset, label))
+                else:
+                    curr_global = label
+                    addr = base_addr + current_offset
+                    local_stream_bases[curr_global] = addr
+                    self.symbols[curr_global] = addr
+                    if curr_module:
+                        self.symbols[f'{curr_module}.{label}'] = addr
+                    global_labels[curr_global] = []
+                if curr_global:
+                    is_word = (directive == 'DEFW')
+                    for p in [p.strip() for p in re.split(r",", rest.strip())]:
+                        if p.startswith("."): p = curr_global + p
+                        global_labels[curr_global].append((p, is_word))
+                        current_offset += 2 if is_word else 1
+                continue
+
             if curr_global and (line.startswith("DEFB") or line.startswith("DEFW")):
                 is_word = line.startswith("DEFW")
                 parts = [p.strip() for p in re.split(r",", line[4:].strip())]
