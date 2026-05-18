@@ -199,7 +199,7 @@ class InstrumentData:
 
 
 def _inst_make_default(inst_id: int) -> InstrumentData:
-    return InstrumentData(inst_id, f'Inst{inst_id}', [0, 0, 0, 0], [0, 0, 0, 0, 0], 0, 'song')
+    return InstrumentData(inst_id, f'Inst{inst_id}', [255, 10, 200, 20], [0, 0, 0, 0, 0], 0, 'song')
 
 
 def _inst_get_field(inst: InstrumentData, idx: int):
@@ -835,6 +835,23 @@ def build_app(initial_file: Path | None = None) -> Application:
     elif initial_file:
         state.filepath = initial_file
 
+    async def _ask_save_path() -> bool:
+        """Prompt for a file path when none is set. Returns True if path was acquired."""
+        def _ask():
+            try:
+                ans = input('Save as: ').strip()
+                return ans if ans else None
+            except (KeyboardInterrupt, EOFError):
+                return None
+        path_str = await run_in_terminal(_ask)
+        if path_str:
+            p = Path(path_str).expanduser()
+            if not p.suffix:
+                p = p.with_suffix('.msl')
+            state.filepath = p
+            return True
+        return False
+
     # --- Widgets ---
 
     title_bar = Window(
@@ -925,7 +942,8 @@ def build_app(initial_file: Path | None = None) -> Application:
                     pass
             return
         if state.filepath is None:
-            return
+            if not await _ask_save_path():
+                return
         _do_save(state, main_buf)
 
     @kb.add('f3')
@@ -1048,16 +1066,22 @@ def build_app(initial_file: Path | None = None) -> Application:
 
     @kb.add('f9')
     @kb.add('c-b')
-    def _compile(event):
+    async def _compile(event):
         if state.mode != 'msl':
             return
+        if state.filepath is None:
+            if not await _ask_save_path():
+                return
         _run_compile(state, main_buf)
 
     @kb.add('f10')
     @kb.add('c-r')
     async def _play(event):
-        if state.mode != 'msl' or state.filepath is None:
+        if state.mode != 'msl':
             return
+        if state.filepath is None:
+            if not await _ask_save_path():
+                return
         _run_compile(state, main_buf)
         if not state.build_ok:
             return
@@ -1245,10 +1269,12 @@ def build_app(initial_file: Path | None = None) -> Application:
         preview_msl = (
             f'{inst_block}\n\n'
             f'CH_A:\n'
-            f'@T120\n'
-            f'@V15\n'
-            f'@I{inst.id}\n'
-            f'O4 C2 E2 G2 >C2 R4\n'
+            f'PREVIEW:\n'
+            f'    @T120\n'
+            f'    @V15\n'
+            f'    @I{inst.id}\n'
+            f'    O4 C2 E2 G2 >C2\n'
+            f'    @RESTART(PREVIEW)\n'
         )
         tmp = tempfile.NamedTemporaryFile(
             suffix='.msl', mode='w', delete=False,
