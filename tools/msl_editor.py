@@ -1085,9 +1085,10 @@ def build_app(initial_file: Path | None = None) -> Application:
         _run_compile(state, main_buf)
         if not state.build_ok:
             return
+        z8a_path = state.filepath.with_suffix('.Z8A')
         def do_play():
             subprocess.run(
-                [sys.executable, str(_TOOLS_DIR / 'musax.py'), 'play', str(state.filepath)],
+                [sys.executable, str(_TOOLS_DIR / 'musax.py'), 'play', str(z8a_path)],
             )
         await run_in_terminal(do_play)
 
@@ -1432,7 +1433,7 @@ def main():
     # Future: --instruments FILE.ins  to preload an instrument bank
     args = parser.parse_args()
 
-    path = Path(args.file) if args.file else None
+    path = Path(args.file).resolve() if args.file else None
     app  = build_app(path)
     app.run()
 
