@@ -1,0 +1,203 @@
+; ************************************************************************
+; * fx_test.Z8A - Generated from fx_test.msl
+; * Title: FX Test
+; * Description: Ghost playback + multi-priority FX (Jump, Siren, Fanfare, Power-up)
+; * MusaX-ML Compiler v1.1
+; ************************************************************************
+
+                MODULE  FXTEST
+
+; --- FX Table ---
+
+FX_TABLE        DEFW    HDR_JUMP, 10
+                DEFW    HDR_SIREN, 10
+                DEFW    HDR_FANFARE, 10
+                DEFW    HDR_POWERUP, 10
+                DEFW    0, 0
+
+; --- FX: JUMP
+
+HDR_JUMP        DEFB    @TYPE_FX
+                DEFW    JUMP_CH_A, 0, 0
+                DEFW    INST_TABLE
+
+; --- FX: SIREN
+
+HDR_SIREN       DEFB    @TYPE_FX
+                DEFW    SIREN_CH_A, 0, 0
+                DEFW    INST_TABLE
+
+; --- FX: FANFARE
+
+HDR_FANFARE     DEFB    @TYPE_FX
+                DEFW    FANFARE_CH_A, FANFARE_CH_B, 0
+                DEFW    INST_TABLE
+
+; --- FX: POWERUP
+
+HDR_POWERUP     DEFB    @TYPE_FX
+                DEFW    POWERUP_CH_A, POWERUP_CH_B, POWERUP_CH_C
+                DEFW    INST_TABLE
+
+; --- Song Header ---
+
+HEADER          DEFB    @TYPE_SONG
+                DEFW    #081B, CH_A
+                DEFW    #081B, CH_B
+                DEFW    #081B, CH_C
+                DEFW    INST_TABLE
+
+; --- Instrument Table ---
+
+INST_TABLE      DEFW    INST_0
+                DEFW    INST_1
+                DEFW    0
+                DEFW    0
+                DEFW    0
+                DEFW    0
+                DEFW    0
+                DEFW    0
+                DEFW    0
+                DEFW    0
+                DEFW    0
+                DEFW    0
+                DEFW    0
+                DEFW    0
+                DEFW    0
+                DEFW    0
+
+INST_0          DEFB    #FF, #0A, #C8, #14, #00, #00, #00, #00
+                DEFB    #00, #00, #00, #00, #00, #00, #00, #00
+INST_1          DEFB    #0A, #05, #FF, #0A, #01, #00, #A2, #0F
+                DEFB    #00, #00, #00, #00, #00, #00, #00, #00
+
+; --- Bytecode Streams ---
+
+                DEFB    @CMD_TEMPO
+                DEFW    #081B
+CH_A            DEFB    @CMD_INST, #00
+                DEFB    @CMD_VOLUME, #0A
+MAIN_A          DEFB    @C4
+                DEFW    @LEN_Q
+                DEFB    @D4
+                DEFW    @LEN_Q
+                DEFB    @E4
+                DEFW    @LEN_Q
+                DEFB    @F4
+                DEFW    @LEN_Q
+                DEFB    @CMD_RESTART
+                DEFW    MAIN_A
+CH_B            DEFB    @CMD_INST, #00
+                DEFB    @CMD_VOLUME, #08
+MAIN_B          DEFB    @E4
+                DEFW    @LEN_Q
+                DEFB    @G4
+                DEFW    @LEN_Q
+                DEFB    @CMD_RESTART
+                DEFW    MAIN_B
+CH_C            DEFB    @CMD_INST, #00
+                DEFB    @CMD_VOLUME, #0C
+MAIN_C          DEFB    @C3
+                DEFW    @LEN_Q
+                DEFB    @E3
+                DEFW    @LEN_Q
+                DEFB    @G3
+                DEFW    @LEN_Q
+                DEFB    @E3
+                DEFW    @LEN_Q
+                DEFB    @CMD_RESTART
+                DEFW    MAIN_C
+JUMP_CH_A       DEFB    @CMD_INST, #00
+                DEFB    @CMD_VOLUME, #0F
+                DEFB    @C4
+                DEFW    @LEN_S
+                DEFB    @E4
+                DEFW    @LEN_S
+                DEFB    @G4
+                DEFW    @LEN_S
+                DEFB    @C5
+                DEFW    @LEN_Q
+                DEFB    @REST
+                DEFW    @C0
+SIREN_CH_A      DEFB    @CMD_INST, #00
+                DEFB    @CMD_VOLUME, #0F
+                DEFB    @A6
+                DEFW    @LEN_E
+                DEFB    @E6
+                DEFW    @LEN_E
+                DEFB    @A6
+                DEFW    @LEN_E
+                DEFB    @E6
+                DEFW    @LEN_E
+                DEFB    @A6
+                DEFW    @LEN_E
+                DEFB    @E6
+                DEFW    @LEN_E
+                DEFB    @A6
+                DEFW    @LEN_E
+                DEFB    @E6
+                DEFW    @LEN_E
+                DEFB    @REST
+                DEFW    @C0
+FANFARE_CH_A    DEFB    @CMD_INST, #00
+                DEFB    @CMD_VOLUME, #0F
+                DEFB    @G4
+                DEFW    @LEN_S
+                DEFB    @G4
+                DEFW    @LEN_S
+                DEFB    @G4
+                DEFW    @LEN_S
+                DEFB    @C5
+                DEFW    @LEN_H
+                DEFB    @REST
+                DEFW    @C0
+FANFARE_CH_B    DEFB    @CMD_INST, #00
+                DEFB    @CMD_VOLUME, #0C
+                DEFB    @E4
+                DEFW    @LEN_S
+                DEFB    @E4
+                DEFW    @LEN_S
+                DEFB    @E4
+                DEFW    @LEN_S
+                DEFB    @G4
+                DEFW    @LEN_H
+                DEFB    @REST
+                DEFW    @C0
+POWERUP_CH_A    DEFB    @CMD_INST, #00
+                DEFB    @CMD_VOLUME, #0F
+                DEFB    @C4
+                DEFW    @LEN_S
+                DEFB    @E4
+                DEFW    @LEN_S
+                DEFB    @G4
+                DEFW    @LEN_S
+                DEFB    @C5
+                DEFW    @LEN_H
+                DEFB    @REST
+                DEFW    @C0
+POWERUP_CH_B    DEFB    @CMD_INST, #00
+                DEFB    @CMD_VOLUME, #0D
+                DEFB    @E4
+                DEFW    @LEN_S
+                DEFB    @G4
+                DEFW    @LEN_S
+                DEFB    @C5
+                DEFW    @LEN_S
+                DEFB    @E5
+                DEFW    @LEN_H
+                DEFB    @REST
+                DEFW    @C0
+POWERUP_CH_C    DEFB    @CMD_INST, #00
+                DEFB    @CMD_VOLUME, #0B
+                DEFB    @G4
+                DEFW    @LEN_S
+                DEFB    @C5
+                DEFW    @LEN_S
+                DEFB    @E5
+                DEFW    @LEN_S
+                DEFB    @G5
+                DEFW    @LEN_H
+                DEFB    @REST
+                DEFW    @C0
+
+                ENDMODULE ; FXTEST

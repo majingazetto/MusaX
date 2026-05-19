@@ -1,0 +1,45 @@
+@INST(0, "Lead") {
+    ADSR: 247, 8, 0, 0
+    LFO:  0, 0, 0, 0, 0
+    FLAGS: 0
+}
+
+CH_A:
+    @T112  @V9  @I0
+LOOP_A:
+    O7  L8..  E  L32  R  L8..  G  L32
+    R  L8..  A  L8  R  L32  R  L8..
+    G  L32  R  L8..  E  L32  R  L8
+    D  L8..  C  L8  R  L32  R  O6
+    L8..  A  L32  R  O7  L8..  C  L32
+    R  L8  D  L8..  A  L8  R  L32
+    R  L8..  G  L32  R  L8  E  L8..
+    G  L32  R  O6  L16  A  O7  C
+    E  L4.  A  L1  R
+    @RESTART(LOOP_A)
+
+CH_B:
+    @T112  @V9  @I0
+LOOP_B:
+    L2  R  O6  L4  F  O7  L8  C
+    O6  L8..  B  L32  R  L8..  G  L32
+    R  L8..  E  L8.  R  L8..  F  L8.
+    R  L8..  F  L32  R  L8  G  L64
+    R  O7  L8..  C  L8.  R  O6  L8..
+    B  L32  R  L8  G  L8..  B  L1
+    R
+    @RESTART(LOOP_B)
+
+CH_C:
+    @T112  @V9  @I0
+LOOP_C:
+    L16.  R  O7  L8..  E  L32  R  L8..
+    G  L32  R  L8..  A  L8.  R  L8..
+    G  L32  R  L8..  E  L32  R  L8
+    D  L8..  C  L8.  R  O6  L8..  A
+    L32  R  O7  L8..  C  L32  R  L8
+    D  L8..  A  L8.  R  L8..  G  L32
+    R  L8  E  L8..  G  L32  R  O6
+    L16  A  O7  C  E  L4.  A  L1
+    R  L4.  R
+    @RESTART(LOOP_C)

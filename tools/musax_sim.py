@@ -728,15 +728,23 @@ class MusaXSim:
                     ch["adsr_acc"] = 255.0
                     ch["adsr_state"] = 2 # Pass to DECAY
             elif ch["adsr_state"] == 2: # DECAY
-                ch["adsr_acc"] -= inst[1]
-                if ch["adsr_acc"] <= inst[2]: # Sustain Level
+                if inst[1] == 0: # decay_rate=0 → instant: skip to SUSTAIN
                     ch["adsr_acc"] = float(inst[2])
-                    ch["adsr_state"] = 3 # Pass to SUSTAIN
+                    ch["adsr_state"] = 3
+                else:
+                    ch["adsr_acc"] -= inst[1]
+                    if ch["adsr_acc"] <= inst[2]: # Sustain Level
+                        ch["adsr_acc"] = float(inst[2])
+                        ch["adsr_state"] = 3 # Pass to SUSTAIN
             elif ch["adsr_state"] == 4: # RELEASE
-                ch["adsr_acc"] -= inst[3]
-                if ch["adsr_acc"] <= 0.0:
+                if inst[3] == 0: # release_rate=0 → instant
                     ch["adsr_acc"] = 0.0
-                    ch["adsr_state"] = 0 # IDLE
+                    ch["adsr_state"] = 0
+                else:
+                    ch["adsr_acc"] -= inst[3]
+                    if ch["adsr_acc"] <= 0.0:
+                        ch["adsr_acc"] = 0.0
+                        ch["adsr_state"] = 0 # IDLE
 
             # --- 2. LFO ENGINE ---
             # Phase is a 0..255 unsigned counter, advanced by `speed` units/frame.
@@ -816,12 +824,22 @@ class MusaXSim:
         return s + " " * max(0, width - self._vis_len(s))
 
     def _current_label(self, ch):
+        # Try .local channel labels first (hand-written Z80 asm convention)
         labels = self.channel_labels.get(ch.get("stream_name", ""), [])
         result = ""
         for offset, label in labels:
             if offset <= ch["pc"]:
                 result = label
-        return result
+        if result:
+            return result
+        # Fallback for MSL-generated Z8A: find the closest global label address <= pc
+        best_name = ""
+        best_addr = -1
+        for name, addr in self.stream_bases.items():
+            if addr <= ch["pc"] and addr > best_addr:
+                best_addr = addr
+                best_name = name
+        return best_name
 
     def _loop_info(self, ch):
         if not ch["loop_stack"]:

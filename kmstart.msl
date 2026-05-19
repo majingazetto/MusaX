@@ -1,0 +1,43 @@
+@INST(0, "Lead") {
+    ADSR: 255, 27, 166, 66
+    LFO:  0, 0, 0, 0, 0
+    FLAGS: 0
+}
+
+CH_A:
+    @T112  @V11  @I0
+LOOP_A:
+    O5  L16  E  R  O4  A  O5  L4
+    E  L16  E  L8  C#  O4  L16  B
+    A  O5  L8  E  O4  L16  A  O5
+    L8.  E  O4  L8  A  B  O5  C#
+    L16  E  R  E  L8.  A  G  D
+    L2  E  L4.  R  L32  R
+    @RESTART(LOOP_A)
+
+CH_B:
+    @T112  @V11  @I0
+LOOP_B:
+    O4  L32  A  L64  A  L16  R  L64
+    R  L16  E  L4  A  L16  A  L4
+    E  L8  A  L16  E  L8.  A  L8
+    C#  E  L8.  A  L16  R  A  O5
+    L8.  E  C  O4  A  L4..  G#  L32
+    G#  L4..  R
+    @RESTART(LOOP_B)
+
+CH_C:
+    @T112  @V12  @I0
+LOOP_C:
+    O2  L8  A  O3  L16  E  L32  A
+    L64  A  L16  E  A  L64  A  O2
+    L8  A  O3  L16  E  A  E  A
+    O2  L8  G  O3  L16  E  L32  A
+    L64  A  L16  E  A  L64  A  O2
+    L8  G  O3  L32  E  L64  E  L16
+    A  L64  A  L32  E  L64  E  L16
+    A  L64  A  O2  L8  F  O3  L16
+    C  L32  F  L64  F  L16  C  F
+    O2  L8  F  O3  L16  C  F  C
+    F  O2  L2  E  L4.  R  L32  R
+    @RESTART(LOOP_C)

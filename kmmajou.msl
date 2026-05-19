@@ -94,7 +94,7 @@ LOOP_A:
 CH_B:
     @T75  @V13  @I0
 LOOP_B:
-    @I2  O3  L2  C  O2  L4  G#  A#
+    @I2  O3  L16  C L32 C C L16 C L32 C C L16 C L32 C C L16 C L32 C C  O2  L4  G#  A#
     O3  L2  C  L4  D#  O2  A#  O3
     L2  C  O2  L4  G#  A#  O3  L2
     C  L4  D#  O2  A#  O3  L2  C

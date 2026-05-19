@@ -50,7 +50,7 @@ CH_A            DEFB    CMD_TEMPO
                 DEFW    #1000
                 DEFB    CMD_VOLUME, #0A
                 DEFB    CMD_INST, #00
-                DEFB    Bb6
+LOOP_A          DEFB    Bb6
                 DEFW    LEN_S
                 DEFB    Ab6
                 DEFW    LEN_S
@@ -83,14 +83,10 @@ CH_A            DEFB    CMD_TEMPO
                 DEFW    LEN_ED
                 DEFB    G5
                 DEFW    LEN_QD
-                DEFB    C6
-                DEFW    LEN_S
-LOOP_A          DEFB    C6
-                DEFW    LEN_Q
-                DEFB    C6
-                DEFW    LEN_S
-                DEFB    CMD_INST, #02
                 DEFB    CMD_VOLUME, #0B
+                DEFB    C6
+                DEFW    LEN_QD
+                DEFB    CMD_INST, #02
                 DEFB    Ab6
                 DEFW    LEN_S
                 DEFB    Ab6
@@ -534,7 +530,7 @@ CH_B            DEFB    CMD_TEMPO
                 DEFW    #1000
                 DEFB    CMD_VOLUME, #0A
                 DEFB    CMD_INST, #00
-                DEFB    G6
+LOOP_B          DEFB    G6
                 DEFW    LEN_S
                 DEFB    F6
                 DEFW    LEN_S
@@ -567,12 +563,11 @@ CH_B            DEFB    CMD_TEMPO
                 DEFW    LEN_ED
                 DEFB    Eb5
                 DEFW    LEN_QD
-                DEFB    Ab2
-                DEFW    LEN_S
-LOOP_B          DEFB    Ab2
-                DEFW    LEN_E
-                DEFB    CMD_INST, #02
+                DEFB    CMD_INST, #04
                 DEFB    CMD_VOLUME, #0B
+                DEFB    Ab2
+                DEFW    LEN_ED
+                DEFB    CMD_INST, #02
                 DEFB    Eb3
                 DEFW    LEN_S
                 DEFB    Ab3
@@ -1103,7 +1098,7 @@ CH_C            DEFB    CMD_TEMPO
                 DEFW    #1000
                 DEFB    CMD_VOLUME, #07
                 DEFB    CMD_INST, #00
-                DEFB    CMD_INST, #04
+LOOP_C          DEFB    CMD_INST, #04
                 DEFB    Bb6
                 DEFW    LEN_E
                 DEFB    CMD_INST, #02
@@ -1140,13 +1135,11 @@ CH_C            DEFB    CMD_TEMPO
                 DEFW    LEN_Q
                 DEFB    G5
                 DEFW    LEN_S
-                DEFB    Eb5
-                DEFW    LEN_S
-LOOP_C          DEFB    Eb5
-                DEFW    LEN_Q
-                DEFB    Eb5
-                DEFW    LEN_S
+                DEFB    CMD_INST, #01
                 DEFB    CMD_VOLUME, #0A
+                DEFB    Eb5
+                DEFW    LEN_QD
+                DEFB    CMD_INST, #04
                 DEFB    C6
                 DEFW    LEN_Q
                 DEFB    CMD_INST, #00
