@@ -769,13 +769,16 @@ def print_info(frames: list[list[int]], fps: float, clock: float):
 import array as _array
 
 
-def _synthesize_iter(frames: list[list[int]], fps: float, clock: float):
+def _synthesize_iter(frames: list[list[int]], fps: float, clock: float,
+                     channels: set[int] | None = None):
     """Generator: yield (regs, pcm_bytes) per PSG frame, maintaining oscillator state.
 
     Uses square-wave tone generators, a 17-bit LFSR noise generator, and
     the empirical AY-3-8910 volume curve.  Output: 44100 Hz, 16-bit mono.
+    channels: set of channel indices to mix {0,1,2}; None means all three.
     """
-    ch_amp      = int(32767 / 3)
+    active = channels if channels is not None else {0, 1, 2}
+    ch_amp      = int(32767 / max(1, len(active)))
     spf         = SAMPLE_RATE / fps
     phase       = [0.0, 0.0, 0.0]
     lfsr        = 0x1FFFF
@@ -805,6 +808,8 @@ def _synthesize_iter(frames: list[list[int]], fps: float, clock: float):
 
             sample = 0
             for c in range(3):
+                if c not in active:
+                    continue
                 amp = int(_AY_VOL[vols[c]] * ch_amp)
                 p   = periods[c]
                 if amp == 0 or (p == 0 and not noise_en[c]):
@@ -826,9 +831,10 @@ def _synthesize_iter(frames: list[list[int]], fps: float, clock: float):
         yield regs, buf.tobytes()
 
 
-def synthesize_psg(frames: list[list[int]], fps: float, clock: float) -> bytes:
+def synthesize_psg(frames: list[list[int]], fps: float, clock: float,
+                   channels: set[int] | None = None) -> bytes:
     """Render PSG register snapshots to 16-bit mono PCM bytes (44100 Hz, mono)."""
-    return b''.join(chunk for _, chunk in _synthesize_iter(frames, fps, clock))
+    return b''.join(chunk for _, chunk in _synthesize_iter(frames, fps, clock, channels))
 
 
 def _reg_display(regs: list[int]) -> str:
@@ -847,16 +853,22 @@ class _Quit(Exception):
 
 
 def play_audio(frames: list[list[int]], fps: float, clock: float,
-               show_regs: bool = False) -> None:
+               show_regs: bool = False,
+               channels: set[int] | None = None) -> None:
     """Play PSG frames with progress bar and keyboard control.
 
     Keys: Space / p = pause/resume    q / Esc / Ctrl+C = quit
     Requires pyaudio for streaming; falls back to aplay/afplay (no interactivity).
+    channels: set of channel indices {0,1,2} to mix; None means all three.
     """
     import os, time, tempfile, subprocess as sp, wave as _wave
 
+    active    = channels if channels is not None else {0, 1, 2}
     total     = len(frames)
     total_sec = total / fps
+
+    _CH_LABELS = ['A', 'B', 'C']
+    ch_tag = '[' + ''.join(l if i in active else '-' for i, l in enumerate(_CH_LABELS)) + ']'
 
     # ---- Unix raw-mode keyboard reader ----
     read_key = lambda: ''
@@ -881,7 +893,7 @@ def play_audio(frames: list[list[int]], fps: float, clock: float,
         filled = int(30 * pct)
         bar    = '█' * filled + '░' * (30 - filled)
         state  = 'PAUSED' if paused else f'{i / fps:.1f}/{total_sec:.1f}s'
-        line   = f'\r[{bar}] {state}  [p]=pause  [q]=quit'
+        line   = f'\r[{bar}] {ch_tag} {state}  [p]=pause  [q]=quit'
         if show_regs:
             line += '  │  ' + _reg_display(regs)
         return line
@@ -911,7 +923,7 @@ def play_audio(frames: list[list[int]], fps: float, clock: float,
             sys.stderr.write(_progress(0, frames[0] if frames else [0] * 16, False))
             sys.stderr.flush()
 
-            for i, (regs, chunk) in enumerate(_synthesize_iter(frames, fps, clock)):
+            for i, (regs, chunk) in enumerate(_synthesize_iter(frames, fps, clock, active)):
                 k = read_key()
                 if k and k[0] in ('q', 'Q', '\x1b', '\x03'):
                     raise _Quit
@@ -938,7 +950,7 @@ def play_audio(frames: list[list[int]], fps: float, clock: float,
             # Fallback: pre-synthesize then hand off to aplay/afplay
             sys.stderr.write('  Synthesizing')
             buf = bytearray()
-            for i, (_, chunk) in enumerate(_synthesize_iter(frames, fps, clock)):
+            for i, (_, chunk) in enumerate(_synthesize_iter(frames, fps, clock, active)):
                 buf.extend(chunk)
                 if i % max(1, round(fps)) == 0:
                     sys.stderr.write('.')
@@ -970,6 +982,21 @@ def play_audio(frames: list[list[int]], fps: float, clock: float,
         if pa:
             try: pa.terminate()
             except Exception: pass
+
+
+# ---------------------------------------------------------------------------
+# CLI helpers
+# ---------------------------------------------------------------------------
+
+def parse_play_channels(spec: str) -> set[int]:
+    """Parse a channel spec string into a set of indices {0,1,2}.
+
+    Accepts letters A/B/C or digits 1/2/3, in any order/combination.
+    Unknown characters are silently ignored.  Returns {0,1,2} for empty input.
+    """
+    _MAP = {'A': 0, 'B': 1, 'C': 2, '1': 0, '2': 1, '3': 2}
+    result = {_MAP[c] for c in spec.upper() if c in _MAP}
+    return result if result else {0, 1, 2}
 
 
 # ---------------------------------------------------------------------------
@@ -1015,6 +1042,9 @@ Examples:
                     help='Print analysis only, do not generate MSL')
     ap.add_argument('--play',     action='store_true',
                     help='Play the PSG log as audio (pyaudio or aplay/afplay)')
+    ap.add_argument('--play-ch', default='ABC',
+                    help='Channels to play with --play: A/B/C or 1/2/3, any combo '
+                         '(e.g. A, BC, 13, ABC). Default: ABC (all)')
     ap.add_argument('--regs',     action='store_true',
                     help='Show live PSG register values during --play')
     ap.add_argument('--fx',       action='store_true',
@@ -1062,6 +1092,8 @@ Examples:
     if args.verbose:
         print(f'Range: frames {args.start}–{args.end}', file=sys.stderr)
 
+    play_channels = parse_play_channels(args.play_ch)
+
     # Info mode
     if args.info:
         print_info(frames, fps, args.clock)
@@ -1069,7 +1101,7 @@ Examples:
             dur = (args.end - args.start) / fps
             print(f'\nPlaying {args.input}  ({dur:.1f}s)', file=sys.stderr)
             play_audio(frames[args.start:args.end], fps, args.clock,
-                       show_regs=args.regs)
+                       show_regs=args.regs, channels=play_channels)
         return
 
     # Play mode
@@ -1077,7 +1109,7 @@ Examples:
         dur = (args.end - args.start) / fps
         print(f'Playing {args.input}  ({dur:.1f}s)', file=sys.stderr)
         play_audio(frames[args.start:args.end], fps, args.clock,
-                   show_regs=args.regs)
+                   show_regs=args.regs, channels=play_channels)
         if not args.output:
             return
 
