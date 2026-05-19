@@ -758,37 +758,36 @@ def print_info(frames: list[list[int]], fps: float, clock: float):
 # PSG audio synthesis + playback
 # ---------------------------------------------------------------------------
 
-def synthesize_psg(frames: list[list[int]], fps: float, clock: float) -> list[int]:
-    """Render PSG register snapshots to 16-bit mono PCM samples.
+import array as _array
+
+
+def _synthesize_iter(frames: list[list[int]], fps: float, clock: float):
+    """Generator: yield (regs, pcm_bytes) per PSG frame, maintaining oscillator state.
 
     Uses square-wave tone generators, a 17-bit LFSR noise generator, and
-    the empirical AY-3-8910 volume curve.  Produces SAMPLE_RATE samples/sec.
+    the empirical AY-3-8910 volume curve.  Output: 44100 Hz, 16-bit mono.
     """
-    ch_amp = int(32767 / 3)           # max amplitude per channel (3 mixed)
-    spf    = SAMPLE_RATE / fps        # samples per PSG frame
-
-    phase = [0.0, 0.0, 0.0]          # tone oscillator phases (in samples)
-    lfsr  = 0x1FFFF                   # 17-bit noise LFSR state
+    ch_amp      = int(32767 / 3)
+    spf         = SAMPLE_RATE / fps
+    phase       = [0.0, 0.0, 0.0]
+    lfsr        = 0x1FFFF
     noise_phase = 0.0
 
-    all_samples: list[int] = []
     for regs in frames:
-        mixer  = regs[7]
-        periods = [
+        mixer        = regs[7]
+        periods      = [
             ((regs[1] & 0x0F) << 8) | regs[0],
             ((regs[3] & 0x0F) << 8) | regs[2],
             ((regs[5] & 0x0F) << 8) | regs[4],
         ]
         noise_period = max(1, regs[6] & 0x1F)
         vols         = [regs[8] & 0x0F, regs[9] & 0x0F, regs[10] & 0x0F]
-        tone_en  = [not bool(mixer & (1 << c))       for c in range(3)]
-        noise_en = [not bool(mixer & (1 << (c + 3))) for c in range(3)]
+        tone_en      = [not bool(mixer & (1 << c))       for c in range(3)]
+        noise_en     = [not bool(mixer & (1 << (c + 3))) for c in range(3)]
+        noise_spd    = SAMPLE_RATE * 16 * noise_period / clock
 
-        # f_noise = clock / (16 * noise_period)  →  period in samples
-        noise_spd = SAMPLE_RATE * 16 * noise_period / clock
-
+        buf = _array.array('h')
         for _ in range(round(spf)):
-            # Advance LFSR (taps 0 and 3)
             noise_phase += 1.0
             if noise_phase >= noise_spd:
                 noise_phase -= noise_spd
@@ -804,7 +803,6 @@ def synthesize_psg(frames: list[list[int]], fps: float, clock: float) -> list[in
                     if p > 0:
                         phase[c] = (phase[c] + 1.0) % (SAMPLE_RATE * 16 * p / clock)
                     continue
-
                 if p > 0:
                     period_s = SAMPLE_RATE * 16 * p / clock
                     phase[c] += 1.0
@@ -813,46 +811,148 @@ def synthesize_psg(frames: list[list[int]], fps: float, clock: float) -> list[in
                     tone_out = 1 if phase[c] < period_s / 2 else 0
                 else:
                     tone_out = 0
-
                 out = (tone_en[c] and bool(tone_out)) or (noise_en[c] and bool(noise_out))
                 sample += amp if out else -amp
+            buf.append(max(-32768, min(32767, sample)))
 
-            all_samples.append(max(-32768, min(32767, sample)))
-
-    return all_samples
+        yield regs, buf.tobytes()
 
 
-def play_audio(samples: list[int]) -> None:
-    """Play 16-bit mono PCM.  Uses pyaudio if available, falls back to aplay/afplay."""
-    import struct
-    import wave as _wave
-    import tempfile
-    import os
-    import subprocess as sp
+def synthesize_psg(frames: list[list[int]], fps: float, clock: float) -> bytes:
+    """Render PSG register snapshots to 16-bit mono PCM bytes (44100 Hz, mono)."""
+    return b''.join(chunk for _, chunk in _synthesize_iter(frames, fps, clock))
 
-    data = struct.pack(f'<{len(samples)}h', *samples)
 
+def _reg_display(regs: list[int]) -> str:
+    """Compact single-line PSG register summary."""
+    pa = ((regs[1] & 0x0F) << 8) | regs[0]
+    pb = ((regs[3] & 0x0F) << 8) | regs[2]
+    pc = ((regs[5] & 0x0F) << 8) | regs[4]
+    return (f'A:{pa:03X}/v{regs[8] & 0xF:X}'
+            f'  B:{pb:03X}/v{regs[9] & 0xF:X}'
+            f'  C:{pc:03X}/v{regs[10] & 0xF:X}'
+            f'  NP:{regs[6] & 0x1F:02X}  MX:{regs[7]:02X}')
+
+
+class _Quit(Exception):
+    pass
+
+
+def play_audio(frames: list[list[int]], fps: float, clock: float,
+               show_regs: bool = False) -> None:
+    """Play PSG frames with progress bar and keyboard control.
+
+    Keys: Space / p = pause/resume    q / Esc / Ctrl+C = quit
+    Requires pyaudio for streaming; falls back to aplay/afplay (no interactivity).
+    """
+    import os, time, tempfile, subprocess as sp, wave as _wave
+
+    total     = len(frames)
+    total_sec = total / fps
+
+    # ---- Unix raw-mode keyboard reader ----
+    read_key = lambda: ''
+    restore  = lambda: None
+    if sys.stdin.isatty():
+        try:
+            import tty, termios, select as _sel
+            _fd  = sys.stdin.fileno()
+            _old = termios.tcgetattr(_fd)
+            tty.setraw(_fd)
+            def read_key():
+                if _sel.select([sys.stdin], [], [], 0)[0]:
+                    return os.read(_fd, 4).decode('utf-8', errors='replace')
+                return ''
+            def restore():
+                termios.tcsetattr(_fd, termios.TCSADRAIN, _old)
+        except Exception:
+            pass
+
+    def _progress(i: int, regs: list[int], paused: bool) -> str:
+        pct    = i / max(total - 1, 1)
+        filled = int(30 * pct)
+        bar    = '█' * filled + '░' * (30 - filled)
+        state  = 'PAUSED' if paused else f'{i / fps:.1f}/{total_sec:.1f}s'
+        line   = f'\r[{bar}] {state}  [p]=pause  [q]=quit'
+        if show_regs:
+            line += '  │  ' + _reg_display(regs)
+        return line
+
+    # ---- pyaudio streaming ----
     try:
         import pyaudio  # type: ignore
         pa = pyaudio.PyAudio()
         st = pa.open(format=pyaudio.paInt16, channels=1, rate=SAMPLE_RATE, output=True)
-        st.write(data)
-        st.stop_stream(); st.close(); pa.terminate()
-        return
     except ImportError:
-        pass
+        pa = st = None
 
-    with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
-        tmp_name = tmp.name
+    paused   = False
+    interval = max(1, round(fps / 10))   # progress refresh: ~10 Hz
+
     try:
-        with _wave.open(tmp_name, 'wb') as w:
-            w.setnchannels(1); w.setsampwidth(2); w.setframerate(SAMPLE_RATE)
-            w.writeframesraw(data)
-        cmd = (['afplay', tmp_name] if sys.platform == 'darwin'
-               else ['aplay', '-q', '-c', '1', '-r', str(SAMPLE_RATE), '-f', 'S16_LE', tmp_name])
-        sp.run(cmd)
+        if pa:
+            sys.stderr.write(_progress(0, frames[0] if frames else [0] * 16, False))
+            sys.stderr.flush()
+
+            for i, (regs, chunk) in enumerate(_synthesize_iter(frames, fps, clock)):
+                k = read_key()
+                if k and k[0] in ('q', 'Q', '\x1b', '\x03'):
+                    raise _Quit
+                if k and k[0] in (' ', 'p', 'P'):
+                    paused = not paused
+
+                while paused:
+                    sys.stderr.write(_progress(i, regs, True))
+                    sys.stderr.flush()
+                    time.sleep(0.05)
+                    k = read_key()
+                    if k and k[0] in ('q', 'Q', '\x1b', '\x03'):
+                        raise _Quit
+                    if k and k[0] in (' ', 'p', 'P'):
+                        paused = False
+
+                st.write(chunk)
+
+                if i % interval == 0 or i == total - 1:
+                    sys.stderr.write(_progress(i, regs, False))
+                    sys.stderr.flush()
+
+        else:
+            # Fallback: pre-synthesize then hand off to aplay/afplay
+            sys.stderr.write('  Synthesizing')
+            buf = bytearray()
+            for i, (_, chunk) in enumerate(_synthesize_iter(frames, fps, clock)):
+                buf.extend(chunk)
+                if i % max(1, round(fps)) == 0:
+                    sys.stderr.write('.')
+                    sys.stderr.flush()
+            sys.stderr.write(f'  {total_sec:.1f}s\n')
+
+            tmp = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
+            tmp_name = tmp.name; tmp.close()
+            try:
+                with _wave.open(tmp_name, 'wb') as w:
+                    w.setnchannels(1); w.setsampwidth(2); w.setframerate(SAMPLE_RATE)
+                    w.writeframesraw(bytes(buf))
+                cmd = (['afplay', tmp_name] if sys.platform == 'darwin'
+                       else ['aplay', '-q', '-c', '1', '-r', str(SAMPLE_RATE),
+                             '-f', 'S16_LE', tmp_name])
+                sp.run(cmd)
+            finally:
+                os.unlink(tmp_name)
+
+    except _Quit:
+        pass
     finally:
-        os.unlink(tmp_name)
+        sys.stderr.write('\n')
+        sys.stderr.flush()
+        restore()
+        if st:
+            try: st.stop_stream(); st.close()
+            except Exception: pass
+        if pa:
+            try: pa.terminate()
+            except Exception: pass
 
 
 # ---------------------------------------------------------------------------
@@ -898,6 +998,8 @@ Examples:
                     help='Print analysis only, do not generate MSL')
     ap.add_argument('--play',     action='store_true',
                     help='Play the PSG log as audio (pyaudio or aplay/afplay)')
+    ap.add_argument('--regs',     action='store_true',
+                    help='Show live PSG register values during --play')
     ap.add_argument('--fx',       action='store_true',
                     help='Output as @FX block (sound effect mode, ends with R0)')
     ap.add_argument('--name',     default='',
@@ -943,15 +1045,17 @@ Examples:
         print_info(frames, fps, args.clock)
         if args.play:
             dur = (args.end - args.start) / fps
-            print(f'\nPlaying {args.input}  ({dur:.1f}s) ...', file=sys.stderr)
-            play_audio(synthesize_psg(frames[args.start:args.end], fps, args.clock))
+            print(f'\nPlaying {args.input}  ({dur:.1f}s)', file=sys.stderr)
+            play_audio(frames[args.start:args.end], fps, args.clock,
+                       show_regs=args.regs)
         return
 
     # Play mode
     if args.play:
         dur = (args.end - args.start) / fps
-        print(f'Playing {args.input}  ({dur:.1f}s) ...', file=sys.stderr)
-        play_audio(synthesize_psg(frames[args.start:args.end], fps, args.clock))
+        print(f'Playing {args.input}  ({dur:.1f}s)', file=sys.stderr)
+        play_audio(frames[args.start:args.end], fps, args.clock,
+                   show_regs=args.regs)
         if not args.output:
             return
 

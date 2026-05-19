@@ -12,6 +12,7 @@
 
 @TITLE "FX Test"
 @DESC "Ghost playback + multi-priority FX (Jump, Siren, Fanfare, Power-up)"
+@NAMESPACE FXTEST
 
 // --- Instruments ---
 
