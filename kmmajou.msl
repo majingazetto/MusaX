@@ -1,0 +1,110 @@
+@INST(0, "Lead") {
+    ADSR: 255, 47, 209, 102
+    LFO:  0, 0, 0, 0, 0
+    FLAGS: 0
+}
+
+@INST(1, "Inst1") {
+    ADSR: 11, 0, 255, 0
+    LFO:  0, 0, 0, 0, 0
+    FLAGS: 0
+}
+
+@INST(2, "Inst2") {
+    ADSR: 255, 8, 200, 13
+    LFO:  0, 0, 0, 0, 0
+    FLAGS: 0
+}
+
+@INST(3, "Inst3") {
+    ADSR: 255, 23, 232, 232
+    LFO:  0, 0, 0, 0, 0
+    FLAGS: 0
+}
+
+CH_A:
+    @T75  @V11  @I0
+LOOP_A:
+    O5  L16  D#  L32  C  R  @I2  O2
+    L8  C  O3  D#  @I0  O4  L32  F
+    G  G#  A#  O5  L16  C  O4  L32
+    G#  O5  C  O4  D  D#  F  D#
+    L16  D  O3  L32  A#  O4  D  F
+    D  A#  F  @I2  O5  L8  C  L32
+    C  R  @I0  D  D#  L16  D  @I2
+    L16.  C  L32  R  @I0  O4  G  A#
+    @I2  O5  L16.  C  @I0  L32  D  D#
+    F  G  F  D#  D  @I2  L8  C
+    @I0  O4  L32  G  A#  O5  L16  D#
+    L32  C  R  @I2  O2  L8  C  O3
+    D#  @I0  O4  L32  F  G  G#  A#
+    O5  L16  C  O4  L32  G#  O5  C
+    O4  D  D#  F  D#  L16  D  O3
+    L32  A#  O4  D  F  D  A#  F
+    @I2  O5  L8  C  L32  C  R  @I0
+    D  D#  L16  D  @I2  L16.  C  L32
+    R  @I0  O4  G  A#  @I2  O5  L16.
+    C  @I0  L32  D  D#  F  G  F
+    D#  D  @I2  L8  C  @I0  O4  L32
+    G  A#  @I1  @V12  O5  L4  C  L16
+    R  @I0  @V9  L32  C  L16  R  @V7
+    L32  C  L16  R  @V12  L32  D#  C
+    R  @V9  D#  C  @V8  D#  C  R
+    @V12  D#  C  R  @V9  D#  C  @V8
+    D#  C  R  @V12  G  F  D#  R
+    @V10  G  F  D#  D  @V12  G#  G
+    F  R  @V10  G#  G  F  A#  L64
+    R  @I2  A#  @V12  O6  L4..  C  L32
+    C  @I0  @V11  O5  L16  D#  L32  C
+    R  @I2  O2  L8  C  O3  D#  @I0
+    O4  L32  F  G  G#  A#  O5  L16
+    C  O4  L32  G#  O5  C  O4  D
+    D#  F  D#  L16  D  O3  L32  A#
+    O4  D  F  D  A#  F  @I2  O5
+    L8  C  L32  C  R  @I0  D  D#
+    L16  D  @I2  L16.  C  L32  R  @I0
+    O4  G  A#  @I2  O5  L16.  C  @I0
+    L32  D  D#  F  G  F  D#  D
+    @I2  L8  C  @I0  O4  L32  G  A#
+    O5  L16  D#  L32  C  R  @I2  O2
+    L8  C  O3  D#  @I0  O4  L32  F
+    G  G#  A#  O5  L16  C  O4  L32
+    G#  O5  C  O4  D  D#  F  D#
+    L16  D  O3  L32  A#  O4  D  F
+    D  A#  F  @I2  O5  L8  C  L32
+    C  R  @I0  D  D#  L16  D  @I2
+    L16.  C  L32  R  @I0  O4  G  A#
+    @I2  O5  L16.  C  @I0  L32  D  D#
+    F  G  F  D#  D  @I2  L8  C
+    @I0  O4  L32  G  A#  @I1  @V12  O5
+    L4  C  L16  R  @I0  @V9  L32  C
+    L16  R  @V7  L32  C  L16  R  @V12
+    L32  D#  C  R  @V9  D#  C  @V8
+    D#  C  R  @V12  D#  C  R  @V9
+    D#  C  @V8  D#  C  R  @V12  G
+    F  D#  R  @V10  G  F  D#  D
+    @V12  G#  G  F  R  @V10  G#  G
+    F  A#  L64  R  @I2  A#  @V12  O6
+    L4..  C  L32  C  @I0  @V11  O5  L16
+    D#  L32  C  R  @I2  O2  L8  C
+    O3  D#  @I0  O4  L32  F  G  G#
+    @I3  L64  A#
+    @RESTART(LOOP_A)
+
+CH_B:
+    @T75  @V13  @I0
+LOOP_B:
+    @I2  O3  L2  C  O2  L4  G#  A#
+    O3  L2  C  L4  D#  O2  A#  O3
+    L2  C  O2  L4  G#  A#  O3  L2
+    C  L4  D#  O2  A#  O3  L2  C
+    O2  L4  G#  A#  O3  L2  C  L4
+    D#  O2  A#  O3  L2  C  O2  L4
+    G#  A#  O3  L2  C  L4  D#  O2
+    A#  O3  L2  C  O2  L4  G#  A#
+    O3  L2  C  L4  D#  O2  A#  O3
+    L2  C  O2  L4  G#  A#  O3  L2
+    C  L4  D#  O2  A#  O3  L2  C
+    @RESTART(LOOP_B)
+
+// CH_C: silent — skipped

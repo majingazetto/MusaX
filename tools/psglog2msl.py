@@ -214,22 +214,31 @@ def extract_note_data(frames: list[list[int]], ch: int,
     return vols, pers
 
 
-def analyze_note(vols: list[int], periods: list[int]) -> dict:
-    """Estimate ATT/DEC/SUS/REL and LFO parameters from PSG data."""
+def analyze_note(vols: list[int], periods: list[int], note_frames: int = None) -> dict:
+    """Estimate ATT/DEC/SUS/REL and LFO parameters from PSG data.
+
+    vols/periods may include trailing rest frames; note_frames limits ADSR
+    analysis to the actual note duration, preventing rest silence from being
+    misclassified as a decay/pluck envelope.
+    """
     if not vols:
-        return {'ATT': 255, 'DEC': 0, 'SUS': 255, 'REL': 0, 
+        return {'ATT': 255, 'DEC': 0, 'SUS': 255, 'REL': 0,
                 'LFO_DEST': 0, 'LFO_WAVE': 0, 'LFO_SPEED': 0, 'LFO_AMP': 0, 'PEAK_VOL': 0}
 
-    peak_i  = max(range(len(vols)), key=lambda i: vols[i])
-    peak    = vols[peak_i]
+    if note_frames is None:
+        note_frames = len(vols)
+    note_vols = vols[:note_frames] if note_frames < len(vols) else vols
+
+    peak_i  = max(range(len(note_vols)), key=lambda i: note_vols[i])
+    peak    = note_vols[peak_i]
 
     # Attack: frames from 0 to peak
     attack_fr = peak_i + 1
     ATT = min(255, round(255 / attack_fr)) if attack_fr > 0 else 255
 
-    # Pure decay detection
-    tail_after_peak = vols[peak_i:]
-    if vols[-1] == 0:
+    # Pure decay detection (check note-only frames, not trailing rest)
+    tail_after_peak = note_vols[peak_i:]
+    if note_vols[-1] == 0:
         decay_frames = next((i for i, v in enumerate(tail_after_peak) if v == 0),
                             len(tail_after_peak))
         decay_frames = max(1, decay_frames)
@@ -237,27 +246,31 @@ def analyze_note(vols: list[int], periods: list[int]) -> dict:
         SUS, REL = 0, 0
     else:
         # Plateau sustain
-        n = len(vols)
+        n = len(note_vols)
         mid_start = peak_i + max(1, n // 8)
         mid_end   = max(mid_start + 1, n * 3 // 4)
-        plateau   = vols[mid_start:mid_end]
+        plateau   = note_vols[mid_start:mid_end]
         SUS_raw   = round(sum(plateau) / len(plateau)) if plateau else peak
-        SUS       = round(SUS_raw / 15 * 255)
+        # Scale so MusaX cur_vol = ch_vol * SUS/255 ≈ SUS_raw when ch_vol = peak.
+        # Old formula (SUS_raw/15*255) gave cur_vol = peak*SUS_raw/15 ≠ SUS_raw.
+        SUS = min(255, round(SUS_raw * 255 / peak)) if peak > 0 else 255
 
-        decay_drop = peak - SUS_raw
-        DEC = min(255, round((decay_drop / 15 * 255) / max(1, mid_start - peak_i))) if decay_drop > 0 else 0
+        # DEC: rate to drain adsr_acc from 255 → SUS over the observed decay window
+        decay_frames = max(1, mid_start - peak_i)
+        DEC = min(255, round((255 - SUS) / decay_frames)) if SUS < 255 else 0
 
-        tail = vols[mid_end:]
+        tail = note_vols[mid_end:]
         if tail and tail[0] > 0:
             first_zero = next((i for i, v in enumerate(tail) if v == 0), len(tail))
-            REL = min(255, round((SUS_raw / 15 * 255) / first_zero)) if first_zero > 0 else 255
+            # REL: rate to drain adsr_acc from SUS → 0 over first_zero frames
+            REL = min(255, round(SUS / first_zero)) if first_zero > 0 else 255
         else:
             REL = 0
 
     # LFO (Vibrato) detection
     # Look for oscillations in periods during the sustain/stable part
     lfo_dest, lfo_wave, lfo_speed, lfo_amp = 0, 0, 0, 0
-    
+
     if len(periods) >= 8:
         # Use only the stable part of the note (skip initial attack)
         stable_pers = periods[max(1, peak_i):len(periods)-1]
@@ -694,7 +707,7 @@ def psg_to_msl(frames: list[list[int]], fps: float, clock: float,
                 continue
             rest_d = events[j+1][2] if j+1 < len(events) and events[j+1][0] is None else 0
             vols, pers = extract_note_data(frames, ch, s, d, min(rest_d, 10))
-            data_list.append(analyze_note(vols, pers))
+            data_list.append(analyze_note(vols, pers, note_frames=d))
         ch_note_data[ch] = data_list
 
     # ---- Instrument Clustering (Multi-Instrument + LFO) ----
@@ -758,6 +771,26 @@ def psg_to_msl(frames: list[list[int]], fps: float, clock: float,
             if d < min_d:
                 min_d = d; best_id = i
         return best_id
+
+    # ---- ATT clamping: attack must complete within half the shortest note ----
+    # Find minimum note duration (frames) per instrument across all channels.
+    inst_min_dur = [float('inf')] * len(instruments)
+    for ch in range(3):
+        for j, (note, s, d) in enumerate(ch_events[ch]):
+            if note is None or note == 'N' or ch_note_data[ch][j] is None:
+                continue
+            iid = find_inst_id(ch_note_data[ch][j])
+            if d < inst_min_dur[iid]:
+                inst_min_dur[iid] = d
+
+    for inst, min_dur in zip(instruments, inst_min_dur):
+        if min_dur < float('inf') and min_dur >= 1:
+            # Attack must finish in at most half the shortest note using this instrument.
+            # ATT rate must be >= ceil(255 / (min_dur / 2)) to complete in time.
+            half_dur = max(1, min_dur // 2)
+            min_att = math.ceil(255 / half_dur)
+            if inst['ATT'] < min_att:
+                inst['ATT'] = min(255, min_att)
 
     # ---- Header ----
     out_lines: list[str] = []
