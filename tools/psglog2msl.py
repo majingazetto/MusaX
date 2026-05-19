@@ -216,7 +216,18 @@ def analyze_envelope(vols: list[int]) -> dict:
     attack_fr = peak_i + 1
     ATT = min(255, round(255 / attack_fr)) if attack_fr > 0 else 255
 
-    # Find sustain level: stable plateau after peak (middle third of note)
+    # Pure decay detection: does the envelope reach 0 by the end?
+    tail_after_peak = vols[peak_i:]
+    if vols[-1] == 0:
+        # Find how many frames from peak to first zero
+        decay_frames = next((i for i, v in enumerate(tail_after_peak) if v == 0),
+                            len(tail_after_peak))
+        decay_frames = max(1, decay_frames)
+        # DEC rate: 255 / frames_to_silence
+        DEC = min(255, round(255 / decay_frames))
+        return {'ATT': ATT, 'DEC': DEC, 'SUS': 0, 'REL': 0}
+
+    # Plateau sustain: envelope ends above 0
     n = len(vols)
     mid_start = peak_i + max(1, n // 8)
     mid_end   = max(mid_start + 1, n * 3 // 4)
@@ -517,31 +528,44 @@ def psg_to_msl(frames: list[list[int]], fps: float, clock: float,
         print(f'  BPM={bpm}  fps={fps}  frames/quarter={fpq:.2f}  ticks/frame={tpf:.2f}',
               file=sys.stderr)
 
-    # ---- ADSR instrument analysis ----
-    inst_suggestions: dict[int, dict] = {}
-    if adsr_mode:
-        all_adsr: list[dict] = []
-        for ch in range(3):
-            if str(ch) not in ''.join(str(ord(c) - ord('A')) for c in channels):
-                pass
-            events = extract_events(frames, ch, clock)
-            for j, (note, s, d) in enumerate(events):
-                if note is None or note == 'N':
-                    continue
-                rest_d = events[j+1][2] if j+1 < len(events) and events[j+1][0] is None else 0
-                vols = extract_vol_envelope(frames, ch, s, d, min(rest_d, 20))
-                adsr = analyze_envelope(vols)
-                all_adsr.append(adsr)
-        if all_adsr:
-            avg_att = round(sum(a['ATT'] for a in all_adsr) / len(all_adsr))
-            avg_dec = round(sum(a['DEC'] for a in all_adsr) / len(all_adsr))
-            avg_sus = round(sum(a['SUS'] for a in all_adsr) / len(all_adsr))
-            avg_rel = round(sum(a['REL'] for a in all_adsr) / len(all_adsr))
-            inst_suggestions[0] = {'ATT': avg_att, 'DEC': avg_dec,
-                                   'SUS': avg_sus, 'REL': avg_rel}
-            if verbose:
-                print(f'  ADSR suggestion: ATT={avg_att} DEC={avg_dec} '
-                      f'SUS={avg_sus} REL={avg_rel}', file=sys.stderr)
+    # ---- ADSR instrument analysis (always run) ----
+    all_adsr: list[dict] = []
+    for ch in range(3):
+        events = extract_events(frames, ch, clock)
+        for j, (note, s, d) in enumerate(events):
+            if note is None or note == 'N':
+                continue
+            rest_d = events[j+1][2] if j+1 < len(events) and events[j+1][0] is None else 0
+            vols = extract_vol_envelope(frames, ch, s, d, min(rest_d, 10))
+            if vols:
+                all_adsr.append(analyze_envelope(vols))
+
+    if all_adsr:
+        avg_att = round(sum(a['ATT'] for a in all_adsr) / len(all_adsr))
+        avg_dec = round(sum(a['DEC'] for a in all_adsr) / len(all_adsr))
+        avg_sus = round(sum(a['SUS'] for a in all_adsr) / len(all_adsr))
+        avg_rel = round(sum(a['REL'] for a in all_adsr) / len(all_adsr))
+        # If most notes are pure-decay (SUS=0), the average is pulled up by outliers.
+        # Force SUS=0 when the majority of notes returned it.
+        pure_decay_count = sum(1 for a in all_adsr if a['SUS'] == 0)
+        if pure_decay_count > len(all_adsr) // 2:
+            avg_sus = 0
+            avg_rel = 0
+        auto_adsr = {'ATT': avg_att, 'DEC': avg_dec, 'SUS': avg_sus, 'REL': avg_rel}
+    else:
+        auto_adsr = {'ATT': 255, 'DEC': 10, 'SUS': 200, 'REL': 20}
+
+    if verbose or adsr_mode:
+        ad = auto_adsr
+        print(f'  ADSR (auto): ATT={ad["ATT"]} DEC={ad["DEC"]} '
+              f'SUS={ad["SUS"]} REL={ad["REL"]}', file=sys.stderr)
+
+    # Per-channel peak volume from actual PSG data
+    ar_regs = [8, 9, 10]
+    ch_peak_vols = [
+        max((f[ar_regs[ch]] & 0x0F for f in frames), default=9)
+        for ch in range(3)
+    ]
 
     # ---- Header ----
     out_lines: list[str] = []
@@ -552,31 +576,15 @@ def psg_to_msl(frames: list[list[int]], fps: float, clock: float,
     if title or author or desc:
         out_lines.append('')
 
-    if adsr_mode and inst_suggestions:
-        ad = inst_suggestions[0]
-        out_lines += [
-            f'@INST(0, "Lead") {{',
-            f'    ADSR: {ad["ATT"]}, {ad["DEC"]}, {ad["SUS"]}, {ad["REL"]}',
-            f'    LFO:  0, 0, 0, 0, 0',
-            f'    FLAGS: 0',
-            f'}}',
-            '',
-        ]
-    else:
-        out_lines += [
-            '@INST(0, "Lead") {',
-            '    ADSR: 255, 10, 200, 20',
-            '    LFO:  0, 0, 0, 0, 0',
-            '    FLAGS: 0',
-            '}',
-            '',
-            '@INST(1, "Staccato") {',
-            '    ADSR: 255, 20, 0, 30',
-            '    LFO:  0, 0, 0, 0, 0',
-            '    FLAGS: 0',
-            '}',
-            '',
-        ]
+    ad = auto_adsr
+    out_lines += [
+        f'@INST(0, "Lead") {{',
+        f'    ADSR: {ad["ATT"]}, {ad["DEC"]}, {ad["SUS"]}, {ad["REL"]}',
+        f'    LFO:  0, 0, 0, 0, 0',
+        f'    FLAGS: 0',
+        f'}}',
+        '',
+    ]
 
     # ---- Channels ----
     ch_names = {'A': 0, 'B': 1, 'C': 2}
@@ -588,7 +596,7 @@ def psg_to_msl(frames: list[list[int]], fps: float, clock: float,
         if ch_char not in ch_names:
             continue
         ch = ch_names[ch_char]
-        vol = 14 - ch * 2          # 14 / 12 / 10 default volumes
+        vol = max(1, ch_peak_vols[ch])
         events = extract_events(frames, ch, clock)
 
         noise_cmts = noise_summary(frames, ch, 0)
@@ -987,8 +995,8 @@ Examples:
 
     ap.add_argument('--bpm',      type=float, default=None,
                     help='Force BPM (default: auto-detect)')
-    ap.add_argument('--fps',      type=float, default=60.0,
-                    help='Frame rate: 50 or 60 (default: 60)')
+    ap.add_argument('--fps',      type=float, default=None,
+                    help='Frame rate: 50 or 60 (default: read from file header, else 60)')
     ap.add_argument('--clock',    type=float, default=1789772.5,
                     help='PSG clock Hz (default: 1789772.5 NTSC)')
     ap.add_argument('--channels', default='ABC',
@@ -1031,7 +1039,12 @@ Examples:
     except ValueError as e:
         print(f'Error: {e}', file=sys.stderr); sys.exit(1)
 
-    fps = fps_hint if fps_hint and not args.fps else args.fps
+    if fps_hint:
+        fps = fps_hint
+    elif args.fps:
+        fps = args.fps
+    else:
+        fps = 60.0
     if args.verbose:
         print(f'Loaded {len(frames)} frames from {args.input}', file=sys.stderr)
 
@@ -1071,6 +1084,7 @@ Examples:
     # BPM
     trim_frames = frames[args.start:args.end]
     ev_all = [extract_events(trim_frames, ch, args.clock) for ch in range(3)]
+
     bpm = detect_bpm(ev_all, fps, args.bpm)
     if args.verbose:
         print(f'BPM: {bpm}', file=sys.stderr)
