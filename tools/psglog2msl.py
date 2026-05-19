@@ -58,6 +58,12 @@ BPM_CANDIDATES = [
 # Quantization tolerance: fractions of a note value that we can round away
 QUANT_TOLERANCE_TICKS = 40  # ~L64/1.2 — rounding within this is silent
 
+# Leading rest suppression threshold: PSG register writes happen sequentially
+# within a single ISR frame, so CH_B/C can appear to start 1-2 frames after
+# CH_A as a write-order artifact (not real musical offset).  Any leading rest
+# whose tick count is at most this value is silently dropped.  96 ticks = L32.
+LEAD_REST_SUPPRESS_TICKS = 96
+
 # AY-3-8910 PSG hardware envelope shapes (R13)
 ENVELOPE_SHAPES = {
     0x00: 'decay once (\\)',  0x04: 'decay once (\\)',
@@ -326,10 +332,12 @@ def quantize_abs(start_fr: int, end_fr: int, tpf: float) -> list[str]:
     Deriving ticks from absolute positions (round(end*tpf) - round(start*tpf))
     instead of round(duration*tpf) prevents rounding errors from accumulating
     across successive events, keeping all channels in sync over the whole song.
+    On distance ties prefer the smaller note value so the positive remainder
+    is more likely to be expressible as a second token.
     """
     ticks = max(1, round(end_fr * tpf) - round(start_fr * tpf))
 
-    t1, n1 = min(NOTE_TABLE, key=lambda x: abs(x[0] - ticks))
+    t1, n1 = min(NOTE_TABLE, key=lambda x: (abs(x[0] - ticks), x[0]))
     remainder = ticks - t1
 
     if abs(remainder) <= QUANT_TOLERANCE_TICKS:
@@ -340,6 +348,41 @@ def quantize_abs(start_fr: int, end_fr: int, tpf: float) -> list[str]:
         return [n1, n2]
 
     return [n1]
+
+
+def _ticks_to_tokens(ticks: int) -> list[str]:
+    """Convert a raw tick count to 1-2 MSL note-value tokens."""
+    if ticks <= 0:
+        return ['L64']
+    t1, n1 = min(NOTE_TABLE, key=lambda x: (abs(x[0] - ticks), x[0]))
+    remainder = ticks - t1
+    if abs(remainder) <= QUANT_TOLERANCE_TICKS:
+        return [n1]
+    t2, n2 = min(NOTE_TABLE, key=lambda x: abs(x[0] - remainder))
+    if abs(remainder - t2) <= QUANT_TOLERANCE_TICKS and t2 < t1:
+        return [n1, n2]
+    return [n1]
+
+
+def _intro_ticks(events: list[tuple], loop_rel: int, tpf: float) -> int:
+    """Count ticks the event loop will emit in the intro (before loop_rel).
+
+    Mirrors leading-rest suppression and straddle-clipping so the result
+    matches what psg_to_msl will actually write, allowing exact padding.
+    """
+    total = 0
+    leading = True
+    for note, s, d in events:
+        if s >= loop_rel:
+            break
+        if leading and note is None:
+            if (round((s + d) * tpf) - round(s * tpf)) <= LEAD_REST_SUPPRESS_TICKS:
+                continue
+        leading = False
+        end = min(s + d, loop_rel)
+        for tok in quantize_abs(s, end, tpf):
+            total += NOTE_TICKS[tok]
+    return total
 
 
 # ---------------------------------------------------------------------------
@@ -657,6 +700,33 @@ def psg_to_msl(frames: list[list[int]], fps: float, clock: float,
     # ---- Channels ----
     ch_names = {'A': 0, 'B': 1, 'C': 2}
 
+    # Compute the loop split point once, outside the per-channel loop.
+    # Reject intros shorter than one quarter note: detect_loop can return a
+    # frame just a handful of frames from start_frame (e.g. underwater.psg
+    # returns loop_frame=78 which is only 8 frames from the first active frame).
+    # That is a quantisation artifact, not a real musical intro.
+    effective_loop_rel: int | None = None
+    if not fx_mode and loop_frame is not None:
+        lr = loop_frame - start_frame
+        if lr >= fpq:
+            effective_loop_rel = lr
+
+    # Pre-pass: measure how many intro ticks each channel will emit so that
+    # we can append padding rests before LOOP_X: and keep all channels in sync
+    # even when a note or rest straddles the loop boundary.
+    ch_intro_ticks: dict[str, int] = {}
+    max_intro: int = 0
+    if effective_loop_rel is not None:
+        for _cc in channels.upper():
+            if _cc not in ch_names:
+                continue
+            _ev = extract_events(frames, ch_names[_cc], clock)
+            if all(e[0] is None for e in _ev):
+                continue
+            ch_intro_ticks[_cc] = _intro_ticks(_ev, effective_loop_rel, tpf)
+        if ch_intro_ticks:
+            max_intro = max(ch_intro_ticks.values())
+
     if fx_mode:
         out_lines.append(f'@FX({fx_name}) {{')
 
@@ -686,15 +756,8 @@ def psg_to_msl(frames: list[list[int]], fps: float, clock: float,
             out_lines.append(f'    @T{round(bpm)}  @V{vol}  @I0')
             note_indent = 4
 
-        # Loop split point relative to trimmed frames (None = whole song is loop)
-        loop_rel: int | None = None
-        if not fx_mode and loop_frame is not None:
-            lr = loop_frame - start_frame
-            if lr > 0:
-                loop_rel = lr
-
         # No intro: emit LOOP_X: immediately after the header
-        if not fx_mode and loop_rel is None:
+        if not fx_mode and effective_loop_rel is None:
             out_lines.append(f'LOOP_{ch_char}:')
 
         # Noise comments
@@ -707,25 +770,47 @@ def psg_to_msl(frames: list[list[int]], fps: float, clock: float,
         writer = MslWriter()
         cur_gate: int | None = None
         leading = True          # suppress tiny leading rests until first real event
-        loop_label_done = (loop_rel is None)   # True once LOOP_X: has been emitted
+        loop_label_done = (effective_loop_rel is None)  # True once LOOP_X: has been emitted
 
         i = 0
         while i < len(events):
             note, s, d = events[i]
 
             # Inject LOOP_X: when we reach or pass the loop boundary
-            if not loop_label_done and s >= loop_rel:
-                out_lines.extend(writer.render(indent=note_indent))
-                writer = MslWriter()
-                out_lines.append(f'LOOP_{ch_char}:')
-                loop_label_done = True
+            if not loop_label_done:
+                if s >= effective_loop_rel:
+                    out_lines.extend(writer.render(indent=note_indent))
+                    writer = MslWriter()
+                    _pad = max_intro - ch_intro_ticks.get(ch_char, 0)
+                    if _pad > 0:
+                        _pw = MslWriter()
+                        _pw.note_or_rest(None, _ticks_to_tokens(_pad))
+                        out_lines.extend(_pw.render(indent=note_indent))
+                    out_lines.append(f'LOOP_{ch_char}:')
+                    loop_label_done = True
+                    leading = False
+                elif s < effective_loop_rel < s + d:
+                    # Event straddles the loop boundary — emit the intro
+                    # portion, inject label + padding, then emit loop portion.
+                    writer.note_or_rest(note, quantize_abs(s, effective_loop_rel, tpf))
+                    out_lines.extend(writer.render(indent=note_indent))
+                    writer = MslWriter()
+                    _pad = max_intro - ch_intro_ticks.get(ch_char, 0)
+                    if _pad > 0:
+                        _pw = MslWriter()
+                        _pw.note_or_rest(None, _ticks_to_tokens(_pad))
+                        out_lines.extend(_pw.render(indent=note_indent))
+                    out_lines.append(f'LOOP_{ch_char}:')
+                    loop_label_done = True
+                    leading = False
+                    writer.note_or_rest(note, quantize_abs(effective_loop_rel, s + d, tpf))
+                    i += 1
+                    continue
 
-            # Suppress tiny leading rests: PSG register writes happen
-            # sequentially within one interrupt frame, so a channel may appear
-            # to start 1-2 frames after another purely as a write-order artifact.
-            # Any leading rest that quantizes to ≤ L64 (48 ticks) is dropped.
+            # Suppress tiny leading rests (ISR write-order artefacts — CH_B/C
+            # may appear to start a frame or two after CH_A).
             if leading and note is None:
-                if (round((s + d) * tpf) - round(s * tpf)) <= 48:
+                if (round((s + d) * tpf) - round(s * tpf)) <= LEAD_REST_SUPPRESS_TICKS:
                     i += 1
                     continue
             leading = False
