@@ -168,32 +168,62 @@ def extract_events(frames: list[list[int]], ch: int, clock: float,
         None → silent / rest
         'N'  → noise-only (tone off, noise on)
     """
-    raw = []
+    raw_midi = []
+    raw_vol  = []
     for regs in frames:
         d = decode_frame(regs)
         cd = d[ch]
+        v  = cd['vol']
         if cd['noise_on'] and not cd['tone_on']:
-            raw.append('N')
+            raw_midi.append('N')
         elif cd['active']:
             freq = period_to_freq(cd['period'], clock)
-            raw.append(freq_to_midi(freq))
+            raw_midi.append(freq_to_midi(freq))
         else:
-            raw.append(None)
+            raw_midi.append(None)
+            v = 0
+        raw_vol.append(v)
 
     # Suppress short vibrato/glitch artifacts (≤ artifact_window frames)
-    merged = raw[:]
+    # Only applies to pitch changes, not volume.
+    merged_midi = raw_midi[:]
     for _ in range(artifact_window):
-        for i in range(1, len(merged) - 1):
-            if merged[i] != merged[i - 1] and merged[i] != merged[i + 1]:
-                merged[i] = merged[i - 1]
+        for i in range(1, len(merged_midi) - 1):
+            if merged_midi[i] != merged_midi[i - 1] and merged_midi[i] != merged_midi[i + 1]:
+                merged_midi[i] = merged_midi[i - 1]
 
     events: list[tuple] = []
-    cur = merged[0]; start = 0
-    for i in range(1, len(merged)):
-        if merged[i] != cur:
-            events.append((cur, start, i - start))
-            cur = merged[i]; start = i
-    events.append((cur, start, len(merged) - start))
+    if not merged_midi:
+        return []
+
+    cur_midi = merged_midi[0]
+    cur_vol  = raw_vol[0]
+    start    = 0
+
+    # Threshold for volume-based note split.
+    # PSG volume is 0-15. A jump of +3 is a significant attack.
+    VOL_JUMP_THRESHOLD = 3
+
+    for i in range(1, len(merged_midi)):
+        midi = merged_midi[i]
+        vol  = raw_vol[i]
+
+        # Split if pitch changes OR if there's a significant volume jump (attack)
+        # after a period of lower volume or silence.
+        split = (midi != cur_midi)
+        if not split and midi is not None:
+            # Same pitch/mode, check for volume attack
+            if vol >= cur_vol + VOL_JUMP_THRESHOLD:
+                split = True
+
+        if split:
+            events.append((cur_midi, start, i - start))
+            cur_midi = midi
+            start = i
+
+        cur_vol = vol
+
+    events.append((cur_midi, start, len(merged_midi) - start))
     return events
 
 

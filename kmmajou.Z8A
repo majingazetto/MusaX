@@ -33,11 +33,11 @@ INST_TABLE_KMMAJOU DEFW    INST_KMMAJOU_0
                 DEFW    0
                 DEFW    0
 
-INST_KMMAJOU_0  DEFB    #FF, #2F, #D1, #66, #00, #00, #00, #00
+INST_KMMAJOU_0  DEFB    #FF, #24, #DA, #62, #00, #00, #00, #00
                 DEFB    #00, #00, #00, #00, #00, #00, #00, #00
 INST_KMMAJOU_1  DEFB    #0B, #00, #FF, #00, #00, #00, #00, #00
                 DEFB    #00, #00, #00, #00, #00, #00, #00, #00
-INST_KMMAJOU_2  DEFB    #FF, #08, #C8, #0D, #00, #00, #00, #00
+INST_KMMAJOU_2  DEFB    #FF, #04, #F3, #04, #00, #00, #00, #00
                 DEFB    #00, #00, #00, #00, #00, #00, #00, #00
 INST_KMMAJOU_3  DEFB    #FF, #17, #E8, #E8, #00, #00, #00, #00
                 DEFB    #00, #00, #00, #00, #00, #00, #00, #00
@@ -54,12 +54,20 @@ LOOP_A          DEFB    Eb5
                 DEFW    LEN_T
                 DEFB    REST
                 DEFW    LEN_T
-                DEFB    CMD_INST, #02
                 DEFB    C2
-                DEFW    LEN_E
+                DEFW    LEN_T
+                DEFB    C2
+                DEFW    LEN_T
+                DEFB    C2
+                DEFW    LEN_T
+                DEFB    C2
+                DEFW    LEN_T
                 DEFB    Eb3
-                DEFW    LEN_E
-                DEFB    CMD_INST, #00
+                DEFW    LEN_S
+                DEFB    Eb3
+                DEFW    LEN_T
+                DEFB    Eb3
+                DEFW    LEN_T
                 DEFB    F4
                 DEFW    LEN_T
                 DEFB    G4
@@ -110,20 +118,16 @@ LOOP_A          DEFB    Eb5
                 DEFW    LEN_T
                 DEFB    D5
                 DEFW    LEN_S
-                DEFB    CMD_INST, #02
                 DEFB    C5
                 DEFW    #0120
                 DEFB    REST
                 DEFW    LEN_T
-                DEFB    CMD_INST, #00
                 DEFB    G4
                 DEFW    LEN_T
                 DEFB    Bb4
                 DEFW    LEN_T
-                DEFB    CMD_INST, #02
                 DEFB    C5
                 DEFW    #0120
-                DEFB    CMD_INST, #00
                 DEFB    D5
                 DEFW    LEN_T
                 DEFB    Eb5
@@ -152,12 +156,20 @@ LOOP_A          DEFB    Eb5
                 DEFW    LEN_T
                 DEFB    REST
                 DEFW    LEN_T
-                DEFB    CMD_INST, #02
                 DEFB    C2
-                DEFW    LEN_E
+                DEFW    LEN_T
+                DEFB    C2
+                DEFW    LEN_T
+                DEFB    C2
+                DEFW    LEN_T
+                DEFB    C2
+                DEFW    LEN_T
                 DEFB    Eb3
-                DEFW    LEN_E
-                DEFB    CMD_INST, #00
+                DEFW    LEN_S
+                DEFB    Eb3
+                DEFW    LEN_T
+                DEFB    Eb3
+                DEFW    LEN_T
                 DEFB    F4
                 DEFW    LEN_T
                 DEFB    G4
@@ -208,20 +220,16 @@ LOOP_A          DEFB    Eb5
                 DEFW    LEN_T
                 DEFB    D5
                 DEFW    LEN_S
-                DEFB    CMD_INST, #02
                 DEFB    C5
                 DEFW    #0120
                 DEFB    REST
                 DEFW    LEN_T
-                DEFB    CMD_INST, #00
                 DEFB    G4
                 DEFW    LEN_T
                 DEFB    Bb4
                 DEFW    LEN_T
-                DEFB    CMD_INST, #02
                 DEFB    C5
                 DEFW    #0120
-                DEFB    CMD_INST, #00
                 DEFB    D5
                 DEFW    LEN_T
                 DEFB    Eb5
@@ -353,12 +361,20 @@ LOOP_A          DEFB    Eb5
                 DEFW    LEN_T
                 DEFB    REST
                 DEFW    LEN_T
-                DEFB    CMD_INST, #02
                 DEFB    C2
-                DEFW    LEN_E
+                DEFW    LEN_T
+                DEFB    C2
+                DEFW    LEN_T
+                DEFB    C2
+                DEFW    LEN_T
+                DEFB    C2
+                DEFW    LEN_T
                 DEFB    Eb3
-                DEFW    LEN_E
-                DEFB    CMD_INST, #00
+                DEFW    LEN_S
+                DEFB    Eb3
+                DEFW    LEN_T
+                DEFB    Eb3
+                DEFW    LEN_T
                 DEFB    F4
                 DEFW    LEN_T
                 DEFB    G4
@@ -409,20 +425,16 @@ LOOP_A          DEFB    Eb5
                 DEFW    LEN_T
                 DEFB    D5
                 DEFW    LEN_S
-                DEFB    CMD_INST, #02
                 DEFB    C5
                 DEFW    #0120
                 DEFB    REST
                 DEFW    LEN_T
-                DEFB    CMD_INST, #00
                 DEFB    G4
                 DEFW    LEN_T
                 DEFB    Bb4
                 DEFW    LEN_T
-                DEFB    CMD_INST, #02
                 DEFB    C5
                 DEFW    #0120
-                DEFB    CMD_INST, #00
                 DEFB    D5
                 DEFW    LEN_T
                 DEFB    Eb5
@@ -451,12 +463,20 @@ LOOP_A          DEFB    Eb5
                 DEFW    LEN_T
                 DEFB    REST
                 DEFW    LEN_T
-                DEFB    CMD_INST, #02
                 DEFB    C2
-                DEFW    LEN_E
+                DEFW    LEN_T
+                DEFB    C2
+                DEFW    LEN_T
+                DEFB    C2
+                DEFW    LEN_T
+                DEFB    C2
+                DEFW    LEN_T
                 DEFB    Eb3
-                DEFW    LEN_E
-                DEFB    CMD_INST, #00
+                DEFW    LEN_S
+                DEFB    Eb3
+                DEFW    LEN_T
+                DEFB    Eb3
+                DEFW    LEN_T
                 DEFB    F4
                 DEFW    LEN_T
                 DEFB    G4
@@ -507,20 +527,16 @@ LOOP_A          DEFB    Eb5
                 DEFW    LEN_T
                 DEFB    D5
                 DEFW    LEN_S
-                DEFB    CMD_INST, #02
                 DEFB    C5
                 DEFW    #0120
                 DEFB    REST
                 DEFW    LEN_T
-                DEFB    CMD_INST, #00
                 DEFB    G4
                 DEFW    LEN_T
                 DEFB    Bb4
                 DEFW    LEN_T
-                DEFB    CMD_INST, #02
                 DEFB    C5
                 DEFW    #0120
-                DEFB    CMD_INST, #00
                 DEFB    D5
                 DEFW    LEN_T
                 DEFB    Eb5
@@ -652,12 +668,20 @@ LOOP_A          DEFB    Eb5
                 DEFW    LEN_T
                 DEFB    REST
                 DEFW    LEN_T
-                DEFB    CMD_INST, #02
                 DEFB    C2
-                DEFW    LEN_E
+                DEFW    LEN_T
+                DEFB    C2
+                DEFW    LEN_T
+                DEFB    C2
+                DEFW    LEN_T
+                DEFB    C2
+                DEFW    LEN_T
                 DEFB    Eb3
-                DEFW    LEN_E
-                DEFB    CMD_INST, #00
+                DEFW    LEN_S
+                DEFB    Eb3
+                DEFW    LEN_T
+                DEFB    Eb3
+                DEFW    LEN_T
                 DEFB    F4
                 DEFW    LEN_T
                 DEFB    G4
@@ -673,7 +697,106 @@ CH_B            DEFB    CMD_TEMPO
                 DEFW    #1000
                 DEFB    CMD_VOLUME, #0D
                 DEFB    CMD_INST, #00
-LOOP_B          DEFB    CMD_INST, #02
+LOOP_B          DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    Ab2
+                DEFW    LEN_S
+                DEFB    Ab2
+                DEFW    LEN_T
+                DEFB    Ab2
+                DEFW    LEN_T
+                DEFB    Ab2
+                DEFW    LEN_S
+                DEFB    Ab2
+                DEFW    LEN_T
+                DEFB    Ab2
+                DEFW    LEN_T
+                DEFB    CMD_INST, #02
+                DEFB    CMD_INST, #00
+                DEFB    Bb2
+                DEFW    LEN_S
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    Bb2
+                DEFW    LEN_S
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    Eb3
+                DEFW    LEN_S
+                DEFB    Eb3
+                DEFW    LEN_T
+                DEFB    Eb3
+                DEFW    LEN_T
+                DEFB    Eb3
+                DEFW    LEN_S
+                DEFB    Eb3
+                DEFW    LEN_T
+                DEFB    Eb3
+                DEFW    LEN_T
+                DEFB    CMD_INST, #02
+                DEFB    CMD_INST, #00
+                DEFB    Bb2
+                DEFW    LEN_S
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    Bb2
+                DEFW    LEN_S
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    Bb2
+                DEFW    LEN_T
                 DEFB    C3
                 DEFW    LEN_S
                 DEFB    C3
@@ -699,76 +822,497 @@ LOOP_B          DEFB    CMD_INST, #02
                 DEFB    C3
                 DEFW    LEN_T
                 DEFB    Ab2
-                DEFW    LEN_Q
-                DEFB    Bb2
-                DEFW    LEN_Q
-                DEFB    C3
-                DEFW    LEN_H
-                DEFB    Eb3
-                DEFW    LEN_Q
-                DEFB    Bb2
-                DEFW    LEN_Q
-                DEFB    C3
-                DEFW    LEN_H
+                DEFW    LEN_S
                 DEFB    Ab2
-                DEFW    LEN_Q
-                DEFB    Bb2
-                DEFW    LEN_Q
-                DEFB    C3
-                DEFW    LEN_H
-                DEFB    Eb3
-                DEFW    LEN_Q
-                DEFB    Bb2
-                DEFW    LEN_Q
-                DEFB    C3
-                DEFW    LEN_H
+                DEFW    LEN_T
                 DEFB    Ab2
-                DEFW    LEN_Q
-                DEFB    Bb2
-                DEFW    LEN_Q
-                DEFB    C3
-                DEFW    LEN_H
-                DEFB    Eb3
-                DEFW    LEN_Q
-                DEFB    Bb2
-                DEFW    LEN_Q
-                DEFB    C3
-                DEFW    LEN_H
+                DEFW    LEN_T
                 DEFB    Ab2
-                DEFW    LEN_Q
-                DEFB    Bb2
-                DEFW    LEN_Q
-                DEFB    C3
-                DEFW    LEN_H
-                DEFB    Eb3
-                DEFW    LEN_Q
-                DEFB    Bb2
-                DEFW    LEN_Q
-                DEFB    C3
-                DEFW    LEN_H
+                DEFW    LEN_S
                 DEFB    Ab2
-                DEFW    LEN_Q
-                DEFB    Bb2
-                DEFW    LEN_Q
-                DEFB    C3
-                DEFW    LEN_H
-                DEFB    Eb3
-                DEFW    LEN_Q
-                DEFB    Bb2
-                DEFW    LEN_Q
-                DEFB    C3
-                DEFW    LEN_H
+                DEFW    LEN_T
                 DEFB    Ab2
-                DEFW    LEN_Q
+                DEFW    LEN_T
+                DEFB    CMD_INST, #02
+                DEFB    CMD_INST, #00
                 DEFB    Bb2
-                DEFW    LEN_Q
+                DEFW    LEN_S
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    Bb2
+                DEFW    LEN_S
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    Bb2
+                DEFW    LEN_T
                 DEFB    C3
-                DEFW    LEN_H
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
                 DEFB    Eb3
-                DEFW    LEN_Q
+                DEFW    LEN_S
+                DEFB    Eb3
+                DEFW    LEN_T
+                DEFB    Eb3
+                DEFW    LEN_T
+                DEFB    Eb3
+                DEFW    LEN_S
+                DEFB    Eb3
+                DEFW    LEN_T
+                DEFB    Eb3
+                DEFW    LEN_T
+                DEFB    CMD_INST, #02
+                DEFB    CMD_INST, #00
                 DEFB    Bb2
-                DEFW    LEN_Q
+                DEFW    LEN_S
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    Bb2
+                DEFW    LEN_S
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    Bb2
+                DEFW    LEN_T
                 DEFB    C3
-                DEFW    LEN_H
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    Ab2
+                DEFW    LEN_S
+                DEFB    Ab2
+                DEFW    LEN_T
+                DEFB    Ab2
+                DEFW    LEN_T
+                DEFB    Ab2
+                DEFW    LEN_S
+                DEFB    Ab2
+                DEFW    LEN_T
+                DEFB    Ab2
+                DEFW    LEN_T
+                DEFB    Bb2
+                DEFW    LEN_S
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    Bb2
+                DEFW    LEN_S
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    Eb3
+                DEFW    LEN_S
+                DEFB    Eb3
+                DEFW    LEN_T
+                DEFB    Eb3
+                DEFW    LEN_T
+                DEFB    Eb3
+                DEFW    LEN_S
+                DEFB    Eb3
+                DEFW    LEN_T
+                DEFB    Eb3
+                DEFW    LEN_T
+                DEFB    Bb2
+                DEFW    LEN_S
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    Bb2
+                DEFW    LEN_S
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    Ab2
+                DEFW    LEN_S
+                DEFB    Ab2
+                DEFW    LEN_T
+                DEFB    Ab2
+                DEFW    LEN_T
+                DEFB    Ab2
+                DEFW    LEN_S
+                DEFB    Ab2
+                DEFW    LEN_T
+                DEFB    Ab2
+                DEFW    LEN_T
+                DEFB    CMD_INST, #02
+                DEFB    CMD_INST, #00
+                DEFB    Bb2
+                DEFW    LEN_S
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    Bb2
+                DEFW    LEN_S
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    Eb3
+                DEFW    LEN_S
+                DEFB    Eb3
+                DEFW    LEN_T
+                DEFB    Eb3
+                DEFW    LEN_T
+                DEFB    Eb3
+                DEFW    LEN_S
+                DEFB    Eb3
+                DEFW    LEN_T
+                DEFB    Eb3
+                DEFW    LEN_T
+                DEFB    CMD_INST, #02
+                DEFB    CMD_INST, #00
+                DEFB    Bb2
+                DEFW    LEN_S
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    Bb2
+                DEFW    LEN_S
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    Ab2
+                DEFW    LEN_S
+                DEFB    Ab2
+                DEFW    LEN_T
+                DEFB    Ab2
+                DEFW    LEN_T
+                DEFB    Ab2
+                DEFW    LEN_S
+                DEFB    Ab2
+                DEFW    LEN_T
+                DEFB    Ab2
+                DEFW    LEN_T
+                DEFB    CMD_INST, #02
+                DEFB    CMD_INST, #00
+                DEFB    Bb2
+                DEFW    LEN_S
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    Bb2
+                DEFW    LEN_S
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    Eb3
+                DEFW    LEN_S
+                DEFB    Eb3
+                DEFW    LEN_T
+                DEFB    Eb3
+                DEFW    LEN_T
+                DEFB    Eb3
+                DEFW    LEN_S
+                DEFB    Eb3
+                DEFW    LEN_T
+                DEFB    Eb3
+                DEFW    LEN_T
+                DEFB    CMD_INST, #02
+                DEFB    CMD_INST, #00
+                DEFB    Bb2
+                DEFW    LEN_S
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    Bb2
+                DEFW    LEN_S
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    Ab2
+                DEFW    LEN_S
+                DEFB    Ab2
+                DEFW    LEN_T
+                DEFB    Ab2
+                DEFW    LEN_T
+                DEFB    Ab2
+                DEFW    LEN_S
+                DEFB    Ab2
+                DEFW    LEN_T
+                DEFB    Ab2
+                DEFW    LEN_T
+                DEFB    Bb2
+                DEFW    LEN_S
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    Bb2
+                DEFW    LEN_S
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    Eb3
+                DEFW    LEN_S
+                DEFB    Eb3
+                DEFW    LEN_T
+                DEFB    Eb3
+                DEFW    LEN_T
+                DEFB    Eb3
+                DEFW    LEN_S
+                DEFB    Eb3
+                DEFW    LEN_T
+                DEFB    Eb3
+                DEFW    LEN_T
+                DEFB    Bb2
+                DEFW    LEN_S
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    Bb2
+                DEFW    LEN_S
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    Bb2
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    CMD_INST, #03
+                DEFB    C3
+                DEFW    C4
                 DEFB    CMD_RESTART
                 DEFW    LOOP_B
