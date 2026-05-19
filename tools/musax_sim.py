@@ -48,9 +48,15 @@ MAX_STREAMS = 6  # 3 Music + 3 FX
 SAMPLE_RATE = 44100
 INTERRUPT_FREQ = 60
 SAMPLES_PER_INT = SAMPLE_RATE // INTERRUPT_FREQ
-# Max int16 headroom split evenly across all channels at vol=15.
-# 32767 // (3 * 15) = 728. No clipping possible regardless of ADSR state.
-CH_AMP = 32767 // (MAX_CHANNELS * 15)
+# Headroom per channel at full amplitude (vol=15 on AY curve = 1.0).
+CH_AMP_MAX = 32767 // MAX_CHANNELS
+
+# AY-3-8910 empirical volume curve (index 0-15 → normalized amplitude 0..1).
+# Each step is ~2× louder than the previous, matching the chip's resistor ladder.
+_AY_VOL = [
+    0.000, 0.010, 0.015, 0.022, 0.031, 0.046, 0.064, 0.096,
+    0.136, 0.202, 0.287, 0.393, 0.501, 0.656, 0.827, 1.000,
+]
 
 
 class MusaXSim:
@@ -744,14 +750,18 @@ class MusaXSim:
                     ch["lfo_phase"] = (ch["lfo_phase"] + lfo_speed) % 256.0
                     p = ch["lfo_phase"]
                     wave_type = inst[5]
-                    if wave_type == 0:   # Triangle: 0..127..0..-127..0
-                        if p < 64:        wave = p * 2                  # 0   -> 127
-                        elif p < 192:     wave = 254 - (p * 2)          # 127 -> -127
-                        else:             wave = (p - 256) * 2          # -127 -> 0
+                    if wave_type == 0:   # Triangle: 0 -> +127 -> 0 -> -127 -> 0
+                        if p < 128:
+                            wave = p * 2 if p < 64 else 255 - p * 2
+                        else:
+                            q = p - 128
+                            wave = -(q * 2 if q < 64 else 255 - q * 2)
                     elif wave_type == 1: # Saw: ramps -127 -> +127
                         wave = p - 128
-                    else:                # Square: -127 / +127
+                    elif wave_type == 2: # Square: -127 / +127
                         wave = -127 if p < 128 else 127
+                    else:                # Sine
+                        wave = int(127 * math.sin(2 * math.pi * p / 256))
                     lfo_val = (wave * lfo_amp) / 15.0
 
             # --- 3. APPLY MODULATIONS ---
@@ -1045,14 +1055,14 @@ class MusaXSim:
                 src = fx_ch if fx_ch["active"] else music_ch
                 
                 if src["active"] and src["note_val"] != 255 and src["freq"] > 0:
-                    amp = src["cur_vol"] * CH_AMP
-                    
+                    amp = int(_AY_VOL[min(15, src["cur_vol"])] * CH_AMP_MAX)
+
                     # Apply GATE silencing (Trigger Release)
                     if src["gate"] < 255 and src["total_wait"] > 0:
                         played_ticks = src["total_wait"] - src["wait"]
                         if played_ticks * 256 >= src["total_wait"] * src["gate"]:
                             if not src.get("gated_logged", False):
-                                if self.log_file: 
+                                if self.log_file:
                                     self.log_file.write(f"T:{self.total_ticks} | CH:{i} | GATED (gate:{src['gate']}) -> RELEASE\n")
                                     self.log_file.flush()
                                 src["gated_logged"] = True
@@ -1066,7 +1076,7 @@ class MusaXSim:
                     p_ch = self.physical_channels[i]
                     p_ch["sample_idx"] += 1
                     mixed += amp if (p_ch["sample_idx"] % period) < (period / 2) else -amp
-                
+
                 # Dynamic mask update for dashboard
                 if fx_ch["active"]: self.sfx_mask |= (1 << i)
                 else: self.sfx_mask &= ~(1 << i)
@@ -1090,14 +1100,14 @@ class MusaXSim:
                 src = fx_ch if fx_ch["active"] else music_ch
                 
                 if src["active"] and src["note_val"] != 255 and src["freq"] > 0:
-                    amp = src["cur_vol"] * CH_AMP
-                    
+                    amp = int(_AY_VOL[min(15, src["cur_vol"])] * CH_AMP_MAX)
+
                     # Apply GATE silencing (Trigger Release)
                     if src["gate"] < 255 and src["total_wait"] > 0:
                         played_ticks = src["total_wait"] - src["wait"]
                         if played_ticks * 256 >= src["total_wait"] * src["gate"]:
                             if not src.get("gated_logged", False):
-                                if self.log_file: 
+                                if self.log_file:
                                     self.log_file.write(f"T:{self.total_ticks} | CH:{i} | GATED (gate:{src['gate']}) -> RELEASE\n")
                                     self.log_file.flush()
                                 src["gated_logged"] = True

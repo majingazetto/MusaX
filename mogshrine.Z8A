@@ -33,14 +33,14 @@ INST_TABLE_MOGSHRINE DEFW    INST_MOGSHRINE_0
                 DEFW    0
                 DEFW    0
 
-INST_MOGSHRINE_0 DEFB    #C3, #06, #AF, #22, #00, #00, #00, #00
-                DEFB    #00, #00, #00, #00, #00, #00, #00, #00
+INST_MOGSHRINE_0 DEFB    #FF, #0A, #C8, #14, #01, #03, #20, #02
+                DEFB    #0E, #00, #00, #00, #00, #00, #00, #00
 
 ; --- Bytecode Streams ---
 
 CH_A            DEFB    CMD_TEMPO
                 DEFW    #1000
-                DEFB    CMD_VOLUME, #0C
+                DEFB    CMD_VOLUME, #09
                 DEFB    CMD_INST, #00
 LOOP_A          DEFB    B7
                 DEFW    LEN_S

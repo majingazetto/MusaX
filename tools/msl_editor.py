@@ -173,9 +173,23 @@ class Z8ALexer(Lexer):
 # ---------------------------------------------------------------------------
 
 _LFO_DEST_NAMES = ['Off', 'Pitch', 'Vol']
-_LFO_WAVE_NAMES = ['TRI', 'SAW', 'SQR']   # 3 waves only — sim has no wave 3
+_LFO_WAVE_NAMES = ['TRI', 'SAW', 'SQR', 'SIN']
 _LFO_DEST_MAX   = len(_LFO_DEST_NAMES) - 1
 _LFO_WAVE_MAX   = len(_LFO_WAVE_NAMES) - 1
+
+_FIELD_RANGE_HINT = {
+    0:  'str, max 24 chars',
+    1:  '0–255  (255 = instant attack)',
+    2:  '0–255  (0 = no decay)',
+    3:  '0–255  (sustain level)',
+    4:  '0–255  (0 = no release)',
+    5:  '0=Off  1=Pitch  2=Vol',
+    6:  '0=TRI  1=SAW  2=SQR  3=SIN',
+    7:  '0–255  (cycle = 256/speed frames)',
+    8:  '0–15   (≈8.5 cents/step for pitch)',
+    9:  '0–255  (frames before LFO starts)',
+    10: '0–255  (reserved)',
+}
 
 _INST_FORM_FIELD_COUNT = 11   # Name + 4 ADSR + 5 LFO + FLAGS
 
@@ -220,6 +234,8 @@ def _inst_set_field(inst: InstrumentData, idx: int, raw_val: str) -> bool:
                 inst.lfo[0] = max(0, min(_LFO_DEST_MAX, int(raw_val)))
             elif idx == 6:
                 inst.lfo[1] = max(0, min(_LFO_WAVE_MAX, int(raw_val)))
+            elif idx == 8:  # amp: 0–15
+                inst.lfo[3] = max(0, min(15, int(raw_val)))
             else:
                 inst.lfo[idx - 5] = max(0, min(255, int(raw_val)))
         else:
@@ -238,6 +254,8 @@ def _inst_cycle_field(inst: InstrumentData, idx: int, delta: int):
         inst.lfo[1] = (inst.lfo[1] + delta) % (len(_LFO_WAVE_NAMES))
     elif 1 <= idx <= 4:
         inst.adsr[idx - 1] = max(0, min(255, inst.adsr[idx - 1] + delta))
+    elif idx == 8:  # amp: 0–15
+        inst.lfo[3] = max(0, min(15, inst.lfo[3] + delta))
     elif 7 <= idx <= 9:
         inst.lfo[idx - 5] = max(0, min(255, inst.lfo[idx - 5] + delta))
     else:
@@ -808,7 +826,10 @@ def _inst_form_text(state: EditorState) -> StyleAndTextTuples:
     field_row(10, 'FLAGS', f'{inst.flags}')
 
     src_label = 'SONG' if inst.source == 'song' else 'BANK'
-    result.append(('class:comment', f'\n  [{src_label}]  ←→/±=change  Ret=name\n'))
+    hint = _FIELD_RANGE_HINT.get(sel, '')
+    result.append(('class:comment', f'\n  [{src_label}]  ←→/±=change  Ret=edit\n'))
+    if hint:
+        result.append(('class:comment', f'  {hint}\n'))
     return result
 
 
