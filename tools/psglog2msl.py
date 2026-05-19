@@ -320,18 +320,43 @@ def quantize_frames(dur_frames: int, tpf: float) -> list[str]:
     return [n1]   # just round — small error
 
 
+def quantize_abs(start_fr: int, end_fr: int, tpf: float) -> list[str]:
+    """Quantize a frame-range event using absolute timeline positions.
+
+    Deriving ticks from absolute positions (round(end*tpf) - round(start*tpf))
+    instead of round(duration*tpf) prevents rounding errors from accumulating
+    across successive events, keeping all channels in sync over the whole song.
+    """
+    ticks = max(1, round(end_fr * tpf) - round(start_fr * tpf))
+
+    t1, n1 = min(NOTE_TABLE, key=lambda x: abs(x[0] - ticks))
+    remainder = ticks - t1
+
+    if abs(remainder) <= QUANT_TOLERANCE_TICKS:
+        return [n1]
+
+    t2, n2 = min(NOTE_TABLE, key=lambda x: abs(x[0] - remainder))
+    if abs(remainder - t2) <= QUANT_TOLERANCE_TICKS and t2 < t1:
+        return [n1, n2]
+
+    return [n1]
+
+
 # ---------------------------------------------------------------------------
 # Gate detection
 # ---------------------------------------------------------------------------
 
-def try_gate(note_dur: int, rest_dur: int, tpf: float) -> tuple[str, int] | None:
+def try_gate(note_start: int, note_dur: int, rest_dur: int,
+             tpf: float) -> tuple[str, int] | None:
     """If note+rest total quantizes to a clean value, return (len_token, gate_val).
 
     gate_val is 0-255 (MusaX @GATE parameter).
+    Uses absolute positions to match quantize_abs accuracy.
     Returns None if not a clear staccato pattern.
     """
-    total_ticks = round((note_dur + rest_dur) * tpf)
-    note_ticks  = round(note_dur * tpf)
+    note_end    = note_start + note_dur
+    total_end   = note_end + rest_dur
+    total_ticks = round(total_end * tpf) - round(note_start * tpf)
 
     t_total, n_total = min(NOTE_TABLE, key=lambda x: abs(x[0] - total_ticks))
     if abs(total_ticks - t_total) > QUANT_TOLERANCE_TICKS:
@@ -453,28 +478,71 @@ def noise_summary(frames: list[list[int]], ch: int,
 # Loop point detection
 # ---------------------------------------------------------------------------
 
-def detect_loop(frames: list[list[int]], min_len: int = 30,
+def detect_loop(frames: list[list[int]], min_len: int = 40,
                 search_end: int | None = None) -> int | None:
-    """Find the frame where the song loops back to (register state repeat).
+    """Find the absolute frame index where the song loops back.
 
-    Compares register state of last `min_len` frames against earlier positions.
-    Returns the start frame of the loop, or None.
+    Uses tone-enable + period fingerprints (ignores volume/envelope) so that
+    sustain notes and ADSR tails don't prevent a match.  Samples windows from
+    the musically active region (up to the last note) and finds the EARLIEST
+    earlier occurrence — that earliest position is the loop start.
+    Returns None if no musical loop is found (e.g. song plays once and fades).
     """
     if search_end is None:
         search_end = len(frames)
-
-    tail_len = min(min_len, search_end // 4)
-    if tail_len < 5:
+    if search_end < min_len * 4:
         return None
 
-    tail = [tuple(f[:13]) for f in frames[search_end - tail_len:search_end]]
+    def _fp(regs: list[int]) -> tuple:
+        mx = regs[7]
+        return (
+            tuple(not bool(mx & (1 << c)) for c in range(3)),
+            ((regs[1] & 0xF) << 8) | regs[0],
+            ((regs[3] & 0xF) << 8) | regs[2],
+            ((regs[5] & 0xF) << 8) | regs[4],
+        )
 
-    for anchor in range(search_end // 2, search_end - tail_len * 2):
-        candidate = [tuple(frames[anchor + j][:13]) for j in range(tail_len)]
-        if candidate == tail:
-            return anchor
+    def _audible(regs: list[int]) -> bool:
+        """True if any channel is tone-enabled AND has positive volume."""
+        mx = regs[7]
+        return any(
+            not bool(mx & (1 << c)) and (regs[8 + c] & 0xF) > 0
+            for c in range(3)
+        )
 
-    return None
+    fp  = [_fp(f) for f in frames[:search_end]]
+    aud = [_audible(f) for f in frames[:search_end]]
+
+    # Find last audible frame — restrict search to this region so we
+    # never match silence/idle register state against silence.
+    last_active = 0
+    for i in range(search_end - 1, -1, -1):
+        if aud[i]:
+            last_active = i
+            break
+    if last_active < min_len * 2:
+        return None   # too little musical content
+
+    W = min_len
+    active_end = last_active + 1   # exclusive
+    last_quarter = active_end * 3 // 4
+    step = max(1, W // 2)
+    best: int | None = None
+
+    for tail_pos in range(last_quarter, active_end - W, step):
+        window = tuple(fp[tail_pos:tail_pos + W])
+        # Only use tail windows that contain actual audible activity
+        if not any(aud[tail_pos + j] for j in range(W)):
+            continue
+        for anchor in range(0, tail_pos - W):
+            if not aud[anchor]:
+                continue   # skip silent anchor start frames
+            if tuple(fp[anchor:anchor + W]) == window:
+                if best is None or anchor < best:
+                    best = anchor
+                break
+
+    return best
 
 
 # ---------------------------------------------------------------------------
@@ -616,12 +684,18 @@ def psg_to_msl(frames: list[list[int]], fps: float, clock: float,
         else:
             out_lines.append(f'CH_{ch_char}:')
             out_lines.append(f'    @T{round(bpm)}  @V{vol}  @I0')
-            if loop_frame is not None:
-                lf_rel = loop_frame - start_frame
-                out_lines.append(f'LOOP_{ch_char}:   // loop detected at frame {lf_rel}')
-            else:
-                out_lines.append(f'LOOP_{ch_char}:')
             note_indent = 4
+
+        # Loop split point relative to trimmed frames (None = whole song is loop)
+        loop_rel: int | None = None
+        if not fx_mode and loop_frame is not None:
+            lr = loop_frame - start_frame
+            if lr > 0:
+                loop_rel = lr
+
+        # No intro: emit LOOP_X: immediately after the header
+        if not fx_mode and loop_rel is None:
+            out_lines.append(f'LOOP_{ch_char}:')
 
         # Noise comments
         pad = ' ' * note_indent
@@ -632,16 +706,35 @@ def psg_to_msl(frames: list[list[int]], fps: float, clock: float,
 
         writer = MslWriter()
         cur_gate: int | None = None
+        leading = True          # suppress tiny leading rests until first real event
+        loop_label_done = (loop_rel is None)   # True once LOOP_X: has been emitted
 
         i = 0
         while i < len(events):
             note, s, d = events[i]
 
+            # Inject LOOP_X: when we reach or pass the loop boundary
+            if not loop_label_done and s >= loop_rel:
+                out_lines.extend(writer.render(indent=note_indent))
+                writer = MslWriter()
+                out_lines.append(f'LOOP_{ch_char}:')
+                loop_label_done = True
+
+            # Suppress tiny leading rests: PSG register writes happen
+            # sequentially within one interrupt frame, so a channel may appear
+            # to start 1-2 frames after another purely as a write-order artifact.
+            # Any leading rest that quantizes to ≤ L64 (48 ticks) is dropped.
+            if leading and note is None:
+                if (round((s + d) * tpf) - round(s * tpf)) <= 48:
+                    i += 1
+                    continue
+            leading = False
+
             # Noise — emit as comment only
             if note == 'N':
                 np = frames[s][6] & 0x1F if s < len(frames) else 0
                 vl = frames[s][9 + ch] & 0x0F if s < len(frames) else 0
-                dur_toks = quantize_frames(d, tpf)
+                dur_toks = quantize_abs(s, s + d, tpf)
                 writer.cmd(f'// [NOISE period={np} vol={vl}]')
                 writer.note_or_rest(None, dur_toks)
                 i += 1
@@ -651,7 +744,7 @@ def psg_to_msl(frames: list[list[int]], fps: float, clock: float,
             if gate_mode and note is not None and i + 1 < len(events):
                 next_note, _, next_dur = events[i + 1]
                 if next_note is None:
-                    g = try_gate(d, next_dur, tpf)
+                    g = try_gate(s, d, next_dur, tpf)
                     if g is not None:
                         tok, gate_val = g
                         if gate_val != cur_gate:
@@ -662,7 +755,7 @@ def psg_to_msl(frames: list[list[int]], fps: float, clock: float,
                         continue
 
             # Normal note or rest
-            dur_toks = quantize_frames(d, tpf)
+            dur_toks = quantize_abs(s, s + d, tpf)
             if note is None:
                 if gate_mode and cur_gate is not None and cur_gate != 255:
                     writer.cmd('@GATE 255')
@@ -670,8 +763,11 @@ def psg_to_msl(frames: list[list[int]], fps: float, clock: float,
             writer.note_or_rest(note, dur_toks)
             i += 1
 
-        rendered = writer.render(indent=note_indent)
-        out_lines.extend(rendered)
+        out_lines.extend(writer.render(indent=note_indent))
+
+        # Safety: if loop_rel was set but never reached (e.g. detected beyond song end)
+        if not loop_label_done:
+            out_lines.append(f'LOOP_{ch_char}:')
 
         if fx_mode:
             out_lines.append(f'{pad}R0')
@@ -755,6 +851,17 @@ def print_info(frames: list[list[int]], fps: float, clock: float):
         print(f'  HW envelope: {env_frames} frames  shapes: {", ".join(descs)}')
     else:
         print('  HW envelope: not used')
+
+    # Loop detection
+    print()
+    loop_fr = detect_loop(frames)
+    if loop_fr is not None:
+        intro_sec = loop_fr / fps
+        body_sec  = (len(frames) - loop_fr) / fps
+        print(f'  Loop point   : frame {loop_fr}  ({intro_sec:.2f}s intro + {body_sec:.2f}s loop body)')
+        print(f'                 use --loop to embed LOOP_X: label at this position')
+    else:
+        print('  Loop point   : not detected')
 
     # Auto-detection hint
     print()
