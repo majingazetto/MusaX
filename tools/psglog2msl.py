@@ -18,7 +18,14 @@ from pathlib import Path
 # Constants
 # ---------------------------------------------------------------------------
 
-TPQN = 768  # MusaX ticks per quarter note
+TPQN        = 768    # MusaX ticks per quarter note
+SAMPLE_RATE = 44100  # audio output sample rate
+
+# AY-3-8910 empirical volume curve (index 0-15 → normalized amplitude 0..1)
+_AY_VOL = [
+    0.000, 0.013, 0.019, 0.027, 0.038, 0.054, 0.076, 0.107,
+    0.152, 0.214, 0.303, 0.428, 0.605, 0.856, 1.000, 1.000,
+]
 
 # (ticks, name) — MusaX standard note values
 NOTE_TABLE = [
@@ -748,6 +755,107 @@ def print_info(frames: list[list[int]], fps: float, clock: float):
 
 
 # ---------------------------------------------------------------------------
+# PSG audio synthesis + playback
+# ---------------------------------------------------------------------------
+
+def synthesize_psg(frames: list[list[int]], fps: float, clock: float) -> list[int]:
+    """Render PSG register snapshots to 16-bit mono PCM samples.
+
+    Uses square-wave tone generators, a 17-bit LFSR noise generator, and
+    the empirical AY-3-8910 volume curve.  Produces SAMPLE_RATE samples/sec.
+    """
+    ch_amp = int(32767 / 3)           # max amplitude per channel (3 mixed)
+    spf    = SAMPLE_RATE / fps        # samples per PSG frame
+
+    phase = [0.0, 0.0, 0.0]          # tone oscillator phases (in samples)
+    lfsr  = 0x1FFFF                   # 17-bit noise LFSR state
+    noise_phase = 0.0
+
+    all_samples: list[int] = []
+    for regs in frames:
+        mixer  = regs[7]
+        periods = [
+            ((regs[1] & 0x0F) << 8) | regs[0],
+            ((regs[3] & 0x0F) << 8) | regs[2],
+            ((regs[5] & 0x0F) << 8) | regs[4],
+        ]
+        noise_period = max(1, regs[6] & 0x1F)
+        vols         = [regs[8] & 0x0F, regs[9] & 0x0F, regs[10] & 0x0F]
+        tone_en  = [not bool(mixer & (1 << c))       for c in range(3)]
+        noise_en = [not bool(mixer & (1 << (c + 3))) for c in range(3)]
+
+        # f_noise = clock / (16 * noise_period)  →  period in samples
+        noise_spd = SAMPLE_RATE * 16 * noise_period / clock
+
+        for _ in range(round(spf)):
+            # Advance LFSR (taps 0 and 3)
+            noise_phase += 1.0
+            if noise_phase >= noise_spd:
+                noise_phase -= noise_spd
+                bit  = ((lfsr >> 0) ^ (lfsr >> 3)) & 1
+                lfsr = ((lfsr >> 1) | (bit << 16)) & 0x1FFFF
+            noise_out = lfsr & 1
+
+            sample = 0
+            for c in range(3):
+                amp = int(_AY_VOL[vols[c]] * ch_amp)
+                p   = periods[c]
+                if amp == 0 or (p == 0 and not noise_en[c]):
+                    if p > 0:
+                        phase[c] = (phase[c] + 1.0) % (SAMPLE_RATE * 16 * p / clock)
+                    continue
+
+                if p > 0:
+                    period_s = SAMPLE_RATE * 16 * p / clock
+                    phase[c] += 1.0
+                    if phase[c] >= period_s:
+                        phase[c] -= period_s
+                    tone_out = 1 if phase[c] < period_s / 2 else 0
+                else:
+                    tone_out = 0
+
+                out = (tone_en[c] and bool(tone_out)) or (noise_en[c] and bool(noise_out))
+                sample += amp if out else -amp
+
+            all_samples.append(max(-32768, min(32767, sample)))
+
+    return all_samples
+
+
+def play_audio(samples: list[int]) -> None:
+    """Play 16-bit mono PCM.  Uses pyaudio if available, falls back to aplay/afplay."""
+    import struct
+    import wave as _wave
+    import tempfile
+    import os
+    import subprocess as sp
+
+    data = struct.pack(f'<{len(samples)}h', *samples)
+
+    try:
+        import pyaudio  # type: ignore
+        pa = pyaudio.PyAudio()
+        st = pa.open(format=pyaudio.paInt16, channels=1, rate=SAMPLE_RATE, output=True)
+        st.write(data)
+        st.stop_stream(); st.close(); pa.terminate()
+        return
+    except ImportError:
+        pass
+
+    with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
+        tmp_name = tmp.name
+    try:
+        with _wave.open(tmp_name, 'wb') as w:
+            w.setnchannels(1); w.setsampwidth(2); w.setframerate(SAMPLE_RATE)
+            w.writeframesraw(data)
+        cmd = (['afplay', tmp_name] if sys.platform == 'darwin'
+               else ['aplay', '-q', '-c', '1', '-r', str(SAMPLE_RATE), '-f', 'S16_LE', tmp_name])
+        sp.run(cmd)
+    finally:
+        os.unlink(tmp_name)
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -788,6 +896,8 @@ Examples:
                     help='Try to detect loop point for @RESTART placement')
     ap.add_argument('--info',     action='store_true',
                     help='Print analysis only, do not generate MSL')
+    ap.add_argument('--play',     action='store_true',
+                    help='Play the PSG log as audio (pyaudio or aplay/afplay)')
     ap.add_argument('--fx',       action='store_true',
                     help='Output as @FX block (sound effect mode, ends with R0)')
     ap.add_argument('--name',     default='',
@@ -814,12 +924,7 @@ Examples:
     if args.verbose:
         print(f'Loaded {len(frames)} frames from {args.input}', file=sys.stderr)
 
-    # Info mode
-    if args.info:
-        print_info(frames, fps, args.clock)
-        return
-
-    # Auto-detect start frame
+    # Auto-detect start frame (needed for --play and MSL generation)
     if args.start is None:
         for i, regs in enumerate(frames):
             d = decode_frame(regs)
@@ -832,6 +937,23 @@ Examples:
 
     if args.verbose:
         print(f'Range: frames {args.start}–{args.end}', file=sys.stderr)
+
+    # Info mode
+    if args.info:
+        print_info(frames, fps, args.clock)
+        if args.play:
+            dur = (args.end - args.start) / fps
+            print(f'\nPlaying {args.input}  ({dur:.1f}s) ...', file=sys.stderr)
+            play_audio(synthesize_psg(frames[args.start:args.end], fps, args.clock))
+        return
+
+    # Play mode
+    if args.play:
+        dur = (args.end - args.start) / fps
+        print(f'Playing {args.input}  ({dur:.1f}s) ...', file=sys.stderr)
+        play_audio(synthesize_psg(frames[args.start:args.end], fps, args.clock))
+        if not args.output:
+            return
 
     # BPM
     trim_frames = frames[args.start:args.end]
