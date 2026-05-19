@@ -57,15 +57,12 @@ class MSLCompiler:
         # ADSR (4 bytes)
         for i in range(4):
             record[i] = inst.adsr[i]
-        # LFO (5 bytes: dest, wave, speed_amp, delay)
-        # Note: spec says speed and amp are combined into one byte.
-        # Let's assume speed is high nibble, amp is low nibble for now.
-        record[4] = inst.lfo[0] # Dest
-        record[5] = inst.lfo[1] # Wave
-        record[6] = (inst.lfo[2] << 4) | (inst.lfo[3] & 0x0F) # Speed/Amp
-        record[7] = inst.lfo[4] # Delay
-        # Flags (1 byte)
-        record[8] = inst.flags
+        record[4] = inst.lfo[0]        # LFO Dest
+        record[5] = inst.lfo[1]        # LFO Wave
+        record[6] = inst.lfo[2] & 0xFF # LFO Speed (0-255)
+        record[7] = inst.lfo[3] & 0x0F # LFO Amp   (0-15)
+        record[8] = inst.lfo[4]        # LFO Delay
+        record[9] = inst.flags
         return record
 
     def compile(self, events: List[MMLEvent], base_addr: int = 0) -> Dict[str, Union[List[int], Dict[int, List[int]], Dict[str, int], Dict[str, Dict], Dict[str, str]]]:

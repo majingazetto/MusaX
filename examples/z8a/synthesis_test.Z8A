@@ -36,23 +36,22 @@ INST_TBL:
     DEFW    INS_VIB_SQR     ; ID 2
 
 ; --- Instrument records (16 bytes each) ---
-; Layout: Att, Dec, Sus, Rel | LFODest, LFOWave, LFOPars, LFODelay | Flags, Reserved x7
-; LFOPars: Speed is hi-nibble, Amp is lo-nibble.
+; Layout: Att, Dec, Sus, Rel | LFODest, LFOWave, LFOSpeed, LFOAmp, LFODelay | Flags, Reserved x6
 
 INS_VIB_TRI:                ; Soft attack, full sustain, TRIANGLE vibrato after delay
     DEFB    #0A, #05, #FF, #0A
-    DEFB    LFODEST_PITCH, LFOWAVE_TRI, #2C, #14  ; LFO: Dest=Pitch, Wave=TRI, Speed=2, Amp=12, Delay=20
-    DEFB    #00, #00, #00, #00, #00, #00, #00, #00
+    DEFB    LFODEST_PITCH, LFOWAVE_TRI, #02, #0C, #14  ; Speed=2, Amp=12, Delay=20
+    DEFB    #00, #00, #00, #00, #00, #00, #00
 
 INS_VIB_SAW:                ; Soft attack, full sustain, SAWTOOTH vibrato after delay
     DEFB    #0A, #05, #FF, #0A
-    DEFB    LFODEST_PITCH, LFOWAVE_SAW, #2C, #14  ; LFO: Dest=Pitch, Wave=SAW, Speed=2, Amp=12, Delay=20
-    DEFB    #00, #00, #00, #00, #00, #00, #00, #00
+    DEFB    LFODEST_PITCH, LFOWAVE_SAW, #02, #0C, #14  ; Speed=2, Amp=12, Delay=20
+    DEFB    #00, #00, #00, #00, #00, #00, #00
 
 INS_VIB_SQR:                ; Soft attack, full sustain, SQUARE vibrato after delay
     DEFB    #0A, #05, #FF, #0A
-    DEFB    LFODEST_PITCH, LFOWAVE_SQR, #2C, #14  ; LFO: Dest=Pitch, Wave=SQR, Speed=2, Amp=12, Delay=20
-    DEFB    #00, #00, #00, #00, #00, #00, #00, #00
+    DEFB    LFODEST_PITCH, LFOWAVE_SQR, #02, #0C, #14  ; Speed=2, Amp=12, Delay=20
+    DEFB    #00, #00, #00, #00, #00, #00, #00
 
 ; --- Streams ---
 

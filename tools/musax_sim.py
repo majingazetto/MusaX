@@ -114,17 +114,17 @@ class MusaXSim:
         # Default instrument table — used when source's PTR_INST == 0.
         # 16-byte record:
         #   [0:Att 1:Dec 2:Sus 3:Rel] ADSR
-        #   [4:LFODest 5:LFOWave 6:LFOPars 7:LFODelay] LFO
-        #   [8:Flags 9..15:Reserved]
-        # LFOPars: high nibble = speed, low nibble = amplitude.
+        #   [4:LFODest 5:LFOWave 6:LFOSpeed 7:LFOAmp 8:LFODelay] LFO
+        #   [9:Flags 10..15:Reserved]
+        # LFOSpeed: 0-255 (phase increment per frame; cycle = 256/speed frames).
         # LFODest: 0=off, 1=pitch (vibrato), 2=volume (tremolo).
         # LFOWave: 0=triangle, 1=saw, 2=square.
         self.default_instruments = [
-            [255,  16,   0,   1, 0, 0, 0x00,  0, 0, 0,0,0,0,0,0,0], # 0: Linear Decay (classic — 16 frames to silence)
-            [255,  10, 200,  20, 0, 0, 0x00,  0, 0, 0,0,0,0,0,0,0], # 1: Plucky
-            [ 10,   5, 255,  10, 1, 0, 0x84, 20, 0, 0,0,0,0,0,0,0], # 2: Smooth Lead w/ Vibrato
-            [255,   0, 255,   0, 0, 0, 0x00,  0, 0, 0,0,0,0,0,0,0], # 3: Full Sustain (Organ)
-            [  5,  10, 150,   5, 2, 0, 0x68,  0, 0, 0,0,0,0,0,0,0], # 4: Ambient Pad w/ Tremolo
+            [255, 16,   0,   1, 0, 0,  0,  0,  0, 0, 0,0,0,0,0,0], # 0: Linear Decay
+            [255, 10, 200,  20, 0, 0,  0,  0,  0, 0, 0,0,0,0,0,0], # 1: Plucky
+            [ 10,  5, 255,  10, 1, 0,  8,  4, 20, 0, 0,0,0,0,0,0], # 2: Smooth Lead w/ Vibrato (8=2Hz, 4=±34 cents, delay=20fr)
+            [255,  0, 255,   0, 0, 0,  0,  0,  0, 0, 0,0,0,0,0,0], # 3: Full Sustain (Organ)
+            [  5, 10, 150,   5, 2, 0,  6,  8,  0, 0, 0,0,0,0,0,0], # 4: Ambient Pad w/ Tremolo (6=1.4Hz, 8=±68 units)
         ]
         # Per-source instrument table pointers (0 = use defaults)
         self.music_inst_ptr = 0
@@ -679,7 +679,7 @@ class MusaXSim:
                     ch["adsr_acc"] = 0.0
                     
                     # Initialize LFO from cached instrument
-                    ch["lfo_delay_ctr"] = ch["inst_data"][7]
+                    ch["lfo_delay_ctr"] = ch["inst_data"][8]
                     ch["lfo_phase"] = 0.0
                 
                 # Reset timer for the new slide
@@ -738,9 +738,8 @@ class MusaXSim:
                 if ch["lfo_delay_ctr"] > 0:
                     ch["lfo_delay_ctr"] -= 1
                 else:
-                    lfo_pars = inst[6]
-                    lfo_speed = (lfo_pars >> 4) & 0x0F
-                    lfo_amp = lfo_pars & 0x0F
+                    lfo_speed = inst[6]
+                    lfo_amp   = inst[7]
 
                     ch["lfo_phase"] = (ch["lfo_phase"] + lfo_speed) % 256.0
                     p = ch["lfo_phase"]

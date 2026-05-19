@@ -128,10 +128,9 @@ class CodeGenerator:
             # ADSR
             code += f"    DEFB    {inst.adsr[0]}, {inst.adsr[1]}, {inst.adsr[2]}, {inst.adsr[3]}\n"
             # LFO
-            lfo_pars = (inst.lfo[2] << 4) | (inst.lfo[3] & 0x0F)
-            code += f"    DEFB    {inst.lfo[0]}, {inst.lfo[1]}, #{lfo_pars:02X}, {inst.lfo[4]}\n"
+            code += f"    DEFB    {inst.lfo[0]}, {inst.lfo[1]}, #{inst.lfo[2]:02X}, #{inst.lfo[3]:02X}, {inst.lfo[4]}\n"
             # FLAGS and reserved
-            code += f"    DEFB    {inst.flags}, 0, 0, 0, 0, 0, 0, 0\n"
+            code += f"    DEFB    {inst.flags}, 0, 0, 0, 0, 0, 0\n"
         
         return code
 

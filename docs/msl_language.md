@@ -414,11 +414,9 @@ Fast attack = high att value (255 = instant). Short decay = high dec value.
 |-------|-------|-------------|
 | `dest` | 0–2 | `0`=off, `1`=Pitch (vibrato), `2`=Volume (tremolo) |
 | `wave` | 0–2 | `0`=Triangle, `1`=Sawtooth, `2`=Square |
-| `speed` | 0–15 | LFO clock rate (phase advance per frame) |
-| `amp` | 0–15 | LFO depth (output scale) |
+| `speed` | 0–255 | Phase advance per frame. Cycle = 256/speed frames at 60 Hz. Speed=32 → 7.5 Hz, speed=64 → 15 Hz. |
+| `amp` | 0–15 | LFO depth. Pitch: peak offset = amp×127/15 cents (≈8.5 cents/step). |
 | `delay` | 0–255 | Frames before LFO begins after note-on |
-
-> **Note:** `speed` and `amp` are each limited to **0–15** (4 bits). They are packed by the compiler into a single `LFOPARS` byte: high nibble = speed, low nibble = amp.
 
 ### FLAGS
 

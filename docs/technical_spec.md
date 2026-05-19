@@ -122,12 +122,11 @@ Header.PTR_INST  ─►  INST_TBL[N*2]  ─►  16-byte instrument record
 | 3 | 1 | `REL` | 0–255 | Release rate — subtracted per frame after gate, until ≤ 0. |
 | 4 | 1 | `LFODEST` | 0–2 | LFO destination: `0`=off, `1`=pitch (vibrato), `2`=volume (tremolo). |
 | 5 | 1 | `LFOWAVE` | 0–2 | LFO waveform: `0`=triangle, `1`=sawtooth, `2`=square. |
-| 6 | 1 | `LFOPARS` | — | Packed byte: **high nibble = speed (0–15)**, **low nibble = amplitude (0–15)**. |
-| 7 | 1 | `LFODELAY` | 0–255 | Frames before LFO begins after note-on. |
-| 8 | 1 | `FLAGS` | 0 | Reserved for future flags. Always 0. |
-| 9–15 | 7 | `RES` | 0 | Reserved — zero-fill. |
-
-> **LFOPARS packing:** The MSL `@INST` block accepts `speed` and `amp` as separate integers (0–15 each). The compiler packs them into `LFOPARS` as `(speed << 4) | (amp & 0x0F)`. Values outside 0–15 will corrupt the adjacent nibble.
+| 6 | 1 | `LFOSPEED` | 0–255 | Phase increment per frame. Cycle = 256/speed frames. At 60 Hz: speed=32 → 7.5 Hz, speed=64 → 15 Hz. |
+| 7 | 1 | `LFOAMP` | 0–15 | LFO depth. Pitch: peak shift = amp×127/15 cents. Volume: peak shift = amp×127/15 units. |
+| 8 | 1 | `LFODELAY` | 0–255 | Frames before LFO begins after note-on. |
+| 9 | 1 | `FLAGS` | 0 | Reserved for future flags. Always 0. |
+| 10–15 | 6 | `RES` | 0 | Reserved — zero-fill. |
 
 ### ADSR State Machine
 | State | Code | Behavior |
@@ -171,9 +170,9 @@ Five built-in instruments are available when no custom table is defined:
 |----|------|-----|-----|-----|-----|-----|
 | 0 | Linear Decay | 255 | 16 | 0 | 1 | — |
 | 1 | Plucky | 255 | 10 | 200 | 20 | — |
-| 2 | Smooth Lead | 10 | 5 | 255 | 10 | Pitch, triangle, speed=8, amp=4, delay=20 |
+| 2 | Smooth Lead | 10 | 5 | 255 | 10 | Pitch, triangle, speed=8 (1.9 Hz), amp=4 (±34 cents), delay=20 fr |
 | 3 | Full Sustain (Organ) | 255 | 0 | 255 | 0 | — |
-| 4 | Ambient Pad | 5 | 10 | 150 | 5 | Volume, triangle, speed=6, amp=8 |
+| 4 | Ambient Pad | 5 | 10 | 150 | 5 | Volume, triangle, speed=6 (1.4 Hz), amp=8 |
 
 ## 6. High-Precision Simulator
 The Python simulator (`musax_sim.py`) implements a **sample-accurate** rendering engine.
