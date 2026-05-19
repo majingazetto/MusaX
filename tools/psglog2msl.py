@@ -881,8 +881,17 @@ def play_audio(frames: list[list[int]], fps: float, clock: float,
     # ---- pyaudio streaming ----
     try:
         import pyaudio  # type: ignore
-        pa = pyaudio.PyAudio()
-        st = pa.open(format=pyaudio.paInt16, channels=1, rate=SAMPLE_RATE, output=True)
+        # Suppress ALSA/JACK C-library chatter that PortAudio emits during device enumeration.
+        _devnull = os.open(os.devnull, os.O_WRONLY)
+        _saved_fd = os.dup(2)
+        os.dup2(_devnull, 2)
+        try:
+            pa = pyaudio.PyAudio()
+            st = pa.open(format=pyaudio.paInt16, channels=1, rate=SAMPLE_RATE, output=True)
+        finally:
+            os.dup2(_saved_fd, 2)
+            os.close(_devnull)
+            os.close(_saved_fd)
     except ImportError:
         pa = st = None
 
