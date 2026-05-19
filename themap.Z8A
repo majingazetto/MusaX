@@ -1,0 +1,318 @@
+; ************************************************************************
+; * themap.Z8A - Generated from themap.msl
+; * Title: themap
+; * MusaX-ML Compiler v1.1
+; ************************************************************************
+
+INCLUDE "musax_const.Z8A"
+
+; --- Song Header ---
+
+HDR_THEMAP      DEFB    TYPE_SONG
+                DEFW    #17E4, CH_A
+                DEFW    #17E4, CH_B
+                DEFW    #17E4, CH_C
+                DEFW    INST_TABLE_THEMAP
+
+; --- Instrument Table ---
+
+INST_TABLE_THEMAP DEFW    INST_THEMAP_0
+                DEFW    INST_THEMAP_1
+                DEFW    INST_THEMAP_2
+                DEFW    INST_THEMAP_3
+                DEFW    INST_THEMAP_4
+                DEFW    INST_THEMAP_5
+                DEFW    INST_THEMAP_6
+                DEFW    0
+                DEFW    0
+                DEFW    0
+                DEFW    0
+                DEFW    0
+                DEFW    0
+                DEFW    0
+                DEFW    0
+                DEFW    0
+
+INST_THEMAP_0   DEFB    #FA, #0C, #A2, #63, #00, #00, #00, #00
+                DEFB    #00, #00, #00, #00, #00, #00, #00, #00
+INST_THEMAP_1   DEFB    #FF, #68, #00, #00, #00, #00, #00, #00
+                DEFB    #00, #00, #00, #00, #00, #00, #00, #00
+INST_THEMAP_2   DEFB    #40, #11, #AA, #39, #01, #00, #40, #0F
+                DEFB    #00, #00, #00, #00, #00, #00, #00, #00
+INST_THEMAP_3   DEFB    #40, #00, #C5, #00, #00, #00, #00, #00
+                DEFB    #00, #00, #00, #00, #00, #00, #00, #00
+INST_THEMAP_4   DEFB    #FF, #11, #AA, #39, #01, #00, #4D, #0A
+                DEFB    #00, #00, #00, #00, #00, #00, #00, #00
+INST_THEMAP_5   DEFB    #40, #11, #BB, #3E, #01, #00, #40, #08
+                DEFB    #00, #00, #00, #00, #00, #00, #00, #00
+INST_THEMAP_6   DEFB    #FF, #00, #C9, #C9, #00, #00, #00, #00
+                DEFB    #00, #00, #00, #00, #00, #00, #00, #00
+
+; --- Bytecode Streams ---
+
+CH_A            DEFB    CMD_TEMPO
+                DEFW    #17E4
+                DEFB    CMD_VOLUME, #09
+                DEFB    CMD_INST, #00
+LOOP_A          DEFB    F7
+                DEFW    #0120
+                DEFB    F7
+                DEFW    C4
+                DEFB    C7
+                DEFW    LEN_E
+                DEFB    A7
+                DEFW    LEN_E
+                DEFB    C7
+                DEFW    LEN_E
+                DEFB    F7
+                DEFW    LEN_E
+                DEFB    C7
+                DEFW    LEN_S
+                DEFB    A7
+                DEFW    LEN_ED
+                DEFB    C7
+                DEFW    LEN_E
+                DEFB    CMD_INST, #03
+                DEFB    F7
+                DEFW    LEN_E
+                DEFB    CMD_INST, #00
+                DEFB    C7
+                DEFW    LEN_E
+                DEFB    A7
+                DEFW    LEN_E
+                DEFB    C7
+                DEFW    LEN_E
+                DEFB    F7
+                DEFW    LEN_E
+                DEFB    C7
+                DEFW    LEN_S
+                DEFB    A7
+                DEFW    LEN_ED
+                DEFB    C7
+                DEFW    LEN_E
+                DEFB    CMD_INST, #03
+                DEFB    F7
+                DEFW    LEN_E
+                DEFB    CMD_INST, #00
+                DEFB    C7
+                DEFW    LEN_E
+                DEFB    A7
+                DEFW    LEN_E
+                DEFB    C7
+                DEFW    LEN_E
+                DEFB    F7
+                DEFW    C4
+                DEFB    G7
+                DEFW    C4
+                DEFB    A7
+                DEFW    LEN_S
+                DEFB    A7
+                DEFW    C4
+                DEFB    CMD_VOLUME, #06
+                DEFB    Gb7
+                DEFW    LEN_T
+                DEFB    CMD_VOLUME, #09
+                DEFB    D7
+                DEFW    C4
+                DEFB    C7
+                DEFW    LEN_T
+                DEFB    C7
+                DEFW    C4
+                DEFB    F7
+                DEFW    C4
+                DEFB    G7
+                DEFW    C4
+                DEFB    A7
+                DEFW    C4
+                DEFB    B7
+                DEFW    C4
+                DEFB    LEN_T
+                DEFB    LEN_S
+                DEFB    C0
+                DEFW    #3057
+                DEFB    C0
+                DEFW    #3055
+                DEFB    C0
+                DEFW    #3053
+                DEFB    C0
+                DEFW    #01FA
+                DEFB    Ab6
+                DEFW    C4
+                DEFB    REST
+                DEFW    LEN_H
+                DEFB    REST
+                DEFW    LEN_ED
+                DEFB    CMD_RESTART
+                DEFW    LOOP_A
+CH_B            DEFB    CMD_TEMPO
+                DEFW    #17E4
+                DEFB    CMD_VOLUME, #09
+                DEFB    CMD_INST, #00
+LOOP_B          DEFB    REST
+                DEFW    LEN_S
+                DEFB    F7
+                DEFW    LEN_E
+                DEFB    C7
+                DEFW    LEN_E
+                DEFB    A7
+                DEFW    LEN_E
+                DEFB    C7
+                DEFW    LEN_E
+                DEFB    F7
+                DEFW    LEN_E
+                DEFB    C7
+                DEFW    LEN_S
+                DEFB    A7
+                DEFW    LEN_ED
+                DEFB    C7
+                DEFW    LEN_E
+                DEFB    F7
+                DEFW    LEN_E
+                DEFB    C7
+                DEFW    LEN_E
+                DEFB    A7
+                DEFW    LEN_E
+                DEFB    C7
+                DEFW    LEN_E
+                DEFB    F7
+                DEFW    LEN_E
+                DEFB    C7
+                DEFW    LEN_S
+                DEFB    A7
+                DEFW    #0120
+                DEFB    A7
+                DEFW    C4
+                DEFB    CMD_VOLUME, #0D
+                DEFB    C3
+                DEFW    LEN_S
+                DEFB    D3
+                DEFW    LEN_S
+                DEFB    CMD_INST, #01
+                DEFB    Eb3
+                DEFW    LEN_HD
+                DEFB    Eb3
+                DEFW    LEN_ED
+                DEFB    REST
+                DEFW    LEN_H
+                DEFB    REST
+                DEFW    LEN_E
+                DEFB    CMD_RESTART
+                DEFW    LOOP_B
+CH_C            DEFB    CMD_TEMPO
+                DEFW    #17E4
+                DEFB    CMD_VOLUME, #0B
+                DEFB    CMD_INST, #00
+LOOP_C          DEFB    REST
+                DEFW    LEN_W
+                DEFB    CMD_INST, #02
+                DEFB    Ab4
+                DEFW    #0120
+                DEFB    CMD_INST, #03
+                DEFB    F4
+                DEFW    LEN_T
+                DEFB    CMD_INST, #06
+                DEFB    CMD_VOLUME, #0A
+                DEFB    Ab4
+                DEFW    LEN_T
+                DEFB    CMD_INST, #03
+                DEFB    CMD_VOLUME, #0B
+                DEFB    F4
+                DEFW    LEN_T
+                DEFB    CMD_INST, #06
+                DEFB    CMD_VOLUME, #0A
+                DEFB    Ab4
+                DEFW    LEN_T
+                DEFB    CMD_INST, #00
+                DEFB    CMD_VOLUME, #08
+                DEFB    F4
+                DEFW    LEN_T
+                DEFB    CMD_INST, #04
+                DEFB    CMD_VOLUME, #0B
+                DEFB    C4
+                DEFW    LEN_S
+                DEFB    C4
+                DEFW    C4
+                DEFB    CMD_INST, #00
+                DEFB    CMD_VOLUME, #09
+                DEFB    B3
+                DEFW    C4
+                DEFB    CMD_VOLUME, #08
+                DEFB    Bb3
+                DEFW    LEN_T
+                DEFB    CMD_INST, #06
+                DEFB    CMD_VOLUME, #0B
+                DEFB    C4
+                DEFW    C4
+                DEFB    CMD_INST, #00
+                DEFB    CMD_VOLUME, #09
+                DEFB    B3
+                DEFW    C4
+                DEFB    CMD_VOLUME, #08
+                DEFB    Bb3
+                DEFW    LEN_T
+                DEFB    CMD_INST, #06
+                DEFB    CMD_VOLUME, #0B
+                DEFB    C4
+                DEFW    C4
+                DEFB    CMD_INST, #00
+                DEFB    CMD_VOLUME, #09
+                DEFB    B3
+                DEFW    C4
+                DEFB    CMD_INST, #03
+                DEFB    CMD_VOLUME, #0C
+                DEFB    Bb3
+                DEFW    LEN_T
+                DEFB    CMD_INST, #05
+                DEFB    Ab3
+                DEFW    #0120
+                DEFB    CMD_INST, #03
+                DEFB    G3
+                DEFW    LEN_T
+                DEFB    CMD_INST, #06
+                DEFB    CMD_VOLUME, #0B
+                DEFB    Ab3
+                DEFW    LEN_T
+                DEFB    CMD_INST, #03
+                DEFB    CMD_VOLUME, #0C
+                DEFB    G3
+                DEFW    LEN_T
+                DEFB    CMD_INST, #06
+                DEFB    CMD_VOLUME, #0B
+                DEFB    Ab3
+                DEFW    LEN_T
+                DEFB    CMD_INST, #03
+                DEFB    CMD_VOLUME, #0D
+                DEFB    G3
+                DEFW    LEN_T
+                DEFB    CMD_INST, #06
+                DEFB    CMD_VOLUME, #0C
+                DEFB    Db3
+                DEFW    LEN_T
+                DEFB    CMD_INST, #03
+                DEFB    CMD_VOLUME, #0D
+                DEFB    C3
+                DEFW    LEN_T
+                DEFB    CMD_INST, #06
+                DEFB    CMD_VOLUME, #0C
+                DEFB    Db3
+                DEFW    LEN_T
+                DEFB    CMD_VOLUME, #0A
+                DEFB    C3
+                DEFW    C4
+                DEFB    CMD_INST, #00
+                DEFB    CMD_VOLUME, #0D
+                DEFB    C2
+                DEFW    LEN_S
+                DEFB    D2
+                DEFW    LEN_S
+                DEFB    CMD_INST, #01
+                DEFB    Eb2
+                DEFW    LEN_HD
+                DEFB    Eb2
+                DEFW    LEN_ED
+                DEFB    REST
+                DEFW    LEN_H
+                DEFB    REST
+                DEFW    LEN_E
+                DEFB    CMD_RESTART
+                DEFW    LOOP_C

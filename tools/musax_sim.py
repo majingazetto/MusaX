@@ -52,10 +52,10 @@ SAMPLES_PER_INT = SAMPLE_RATE // INTERRUPT_FREQ
 CH_AMP_MAX = 32767 // MAX_CHANNELS
 
 # AY-3-8910 empirical volume curve (index 0-15 → normalized amplitude 0..1).
-# Each step is ~2× louder than the previous, matching the chip's resistor ladder.
+# Source: psglog2msl.py (May 2026)
 _AY_VOL = [
-    0.000, 0.010, 0.015, 0.022, 0.031, 0.046, 0.064, 0.096,
-    0.136, 0.202, 0.287, 0.393, 0.501, 0.656, 0.827, 1.000,
+    0.000, 0.013, 0.019, 0.027, 0.038, 0.054, 0.076, 0.107,
+    0.152, 0.214, 0.303, 0.428, 0.605, 0.856, 1.000, 1.000,
 ]
 
 
@@ -97,7 +97,9 @@ class MusaXSim:
 
         self.channel_labels = {}  # stream_name -> [(offset, label)]
 
-        self.physical_channels = [{"sample_idx": 0} for _ in range(MAX_CHANNELS)]
+        # Physical oscillators state
+        self.osc_phase = [0.0] * MAX_CHANNELS
+        
         self.channels = []
         for i in range(MAX_STREAMS):
             is_fx = i >= 3
@@ -106,7 +108,7 @@ class MusaXSim:
                 "vol": 15, "cur_vol": 0, "inst": 0,
                 "inst_data": [255, 16, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], # default #0: Linear Decay
                 "stream": [], "stream_base": 0, "stream_name": "",
-                "pc": 0, "wait": 0, "sample_idx": 0,
+                "pc": 0, "wait": 0,
                 "note_name": "---", "loop_count": 0, "loop_ticks": 0,
                 "loop_stack": [], "call_stack": [],
                 "bpm_step": 0x2400 if is_fx else 0x0600, # FX default to 168 BPM
@@ -1072,10 +1074,15 @@ class MusaXSim:
 
                     freq = src.get("cur_freq_mod", src["freq"])
                     if freq <= 0: continue
-                    period = SAMPLE_RATE / freq
-                    p_ch = self.physical_channels[i]
-                    p_ch["sample_idx"] += 1
-                    mixed += amp if (p_ch["sample_idx"] % period) < (period / 2) else -amp
+                    
+                    # High-fidelity synthesis using floating phase
+                    period_s = SAMPLE_RATE / freq
+                    self.osc_phase[i] += 1.0
+                    if self.osc_phase[i] >= period_s:
+                        self.osc_phase[i] -= period_s
+                    
+                    tone_out = 1 if self.osc_phase[i] < period_s / 2 else 0
+                    mixed += amp if tone_out else -amp
 
                 # Dynamic mask update for dashboard
                 if fx_ch["active"]: self.sfx_mask |= (1 << i)
@@ -1101,26 +1108,14 @@ class MusaXSim:
                 
                 if src["active"] and src["note_val"] != 255 and src["freq"] > 0:
                     amp = int(_AY_VOL[min(15, src["cur_vol"])] * CH_AMP_MAX)
-
-                    # Apply GATE silencing (Trigger Release)
-                    if src["gate"] < 255 and src["total_wait"] > 0:
-                        played_ticks = src["total_wait"] - src["wait"]
-                        if played_ticks * 256 >= src["total_wait"] * src["gate"]:
-                            if not src.get("gated_logged", False):
-                                if self.log_file:
-                                    self.log_file.write(f"T:{self.total_ticks} | CH:{i} | GATED (gate:{src['gate']}) -> RELEASE\n")
-                                    self.log_file.flush()
-                                src["gated_logged"] = True
-                            # Trigger Release phase
-                            if src["adsr_state"] != 4 and src["adsr_state"] != 0:
-                                src["adsr_state"] = 4
-
                     freq = src.get("cur_freq_mod", src["freq"])
                     if freq <= 0: continue
-                    period = SAMPLE_RATE / freq
-                    p_ch = self.physical_channels[i]
-                    p_ch["sample_idx"] += 1
-                    mixed += amp if (p_ch["sample_idx"] % period) < (period / 2) else -amp
+                    period_s = SAMPLE_RATE / freq
+                    self.osc_phase[i] += 1.0
+                    if self.osc_phase[i] >= period_s:
+                        self.osc_phase[i] -= period_s
+                    tone_out = 1 if self.osc_phase[i] < period_s / 2 else 0
+                    mixed += amp if tone_out else -amp
             samples.append(max(-32768, min(32767, int(mixed))))
         return samples
 
@@ -1136,7 +1131,7 @@ class MusaXSim:
             "finished_mask": self.finished_mask,
             "last_event_ch": self.last_event_ch,
             "channels": copy.deepcopy(self.channels),
-            "physical_channels": copy.deepcopy(self.physical_channels),
+            "osc_phase": copy.deepcopy(self.osc_phase),
             "start_time_offset": time.time() - getattr(self, "start_time", time.time())
         }
         return state
@@ -1151,7 +1146,7 @@ class MusaXSim:
         self.finished_mask = state["finished_mask"]
         self.last_event_ch = state["last_event_ch"]
         self.channels = state["channels"]
-        self.physical_channels = state["physical_channels"]
+        self.osc_phase = state["osc_phase"]
         self.start_time = time.time() - state["start_time_offset"]
 
     def push_history(self):

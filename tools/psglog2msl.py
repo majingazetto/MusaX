@@ -201,19 +201,24 @@ def extract_events(frames: list[list[int]], ch: int, clock: float,
 # Volume envelope extraction (for --adsr)
 # ---------------------------------------------------------------------------
 
-def extract_vol_envelope(frames: list[list[int]], ch: int,
-                         note_start: int, note_dur: int,
-                         rest_dur: int = 0) -> list[int]:
-    """Return per-frame volume (0-15) for the note + optional trailing rest."""
+def extract_note_data(frames: list[list[int]], ch: int,
+                      note_start: int, note_dur: int,
+                      rest_dur: int = 0) -> tuple[list[int], list[int]]:
+    """Return (volumes, periods) for the note + optional trailing rest."""
     ar = [8, 9, 10][ch]
+    pr_lo = [0, 2, 4][ch]
+    pr_hi = [1, 3, 5][ch]
     end = min(note_start + note_dur + rest_dur, len(frames))
-    return [frames[i][ar] & 0x0F for i in range(note_start, end)]
+    vols = [frames[i][ar] & 0x0F for i in range(note_start, end)]
+    pers = [((frames[i][pr_hi] & 0x0F) << 8) | frames[i][pr_lo] for i in range(note_start, end)]
+    return vols, pers
 
 
-def analyze_envelope(vols: list[int]) -> dict:
-    """Estimate ATT/DEC/SUS/REL from a PSG volume sequence."""
+def analyze_note(vols: list[int], periods: list[int]) -> dict:
+    """Estimate ATT/DEC/SUS/REL and LFO parameters from PSG data."""
     if not vols:
-        return {'ATT': 255, 'DEC': 0, 'SUS': 255, 'REL': 0}
+        return {'ATT': 255, 'DEC': 0, 'SUS': 255, 'REL': 0, 
+                'LFO_DEST': 0, 'LFO_WAVE': 0, 'LFO_SPEED': 0, 'LFO_AMP': 0, 'PEAK_VOL': 0}
 
     peak_i  = max(range(len(vols)), key=lambda i: vols[i])
     peak    = vols[peak_i]
@@ -222,45 +227,72 @@ def analyze_envelope(vols: list[int]) -> dict:
     attack_fr = peak_i + 1
     ATT = min(255, round(255 / attack_fr)) if attack_fr > 0 else 255
 
-    # Pure decay detection: does the envelope reach 0 by the end?
+    # Pure decay detection
     tail_after_peak = vols[peak_i:]
     if vols[-1] == 0:
-        # Find how many frames from peak to first zero
         decay_frames = next((i for i, v in enumerate(tail_after_peak) if v == 0),
                             len(tail_after_peak))
         decay_frames = max(1, decay_frames)
-        # DEC rate: 255 / frames_to_silence
         DEC = min(255, round(255 / decay_frames))
-        return {'ATT': ATT, 'DEC': DEC, 'SUS': 0, 'REL': 0}
-
-    # Plateau sustain: envelope ends above 0
-    n = len(vols)
-    mid_start = peak_i + max(1, n // 8)
-    mid_end   = max(mid_start + 1, n * 3 // 4)
-    plateau   = vols[mid_start:mid_end]
-    SUS_raw   = round(sum(plateau) / len(plateau)) if plateau else peak
-    SUS       = round(SUS_raw / 15 * 255)
-
-    # Decay: frames from peak to sustain
-    decay_drop = peak - SUS_raw
-    if decay_drop > 0:
-        decay_fr = mid_start - peak_i
-        DEC = min(255, round((decay_drop / 15 * 255) / max(1, decay_fr)))
+        SUS, REL = 0, 0
     else:
-        DEC = 0
+        # Plateau sustain
+        n = len(vols)
+        mid_start = peak_i + max(1, n // 8)
+        mid_end   = max(mid_start + 1, n * 3 // 4)
+        plateau   = vols[mid_start:mid_end]
+        SUS_raw   = round(sum(plateau) / len(plateau)) if plateau else peak
+        SUS       = round(SUS_raw / 15 * 255)
 
-    # Release: frames from sustain to 0 (tail of vols)
-    tail = vols[mid_end:]
-    if tail and tail[0] > 0:
-        first_zero = next((i for i, v in enumerate(tail) if v == 0), len(tail))
-        if first_zero > 0:
-            REL = min(255, round((SUS_raw / 15 * 255) / first_zero))
+        decay_drop = peak - SUS_raw
+        DEC = min(255, round((decay_drop / 15 * 255) / max(1, mid_start - peak_i))) if decay_drop > 0 else 0
+
+        tail = vols[mid_end:]
+        if tail and tail[0] > 0:
+            first_zero = next((i for i, v in enumerate(tail) if v == 0), len(tail))
+            REL = min(255, round((SUS_raw / 15 * 255) / first_zero)) if first_zero > 0 else 255
         else:
-            REL = 255
-    else:
-        REL = 0
+            REL = 0
 
-    return {'ATT': ATT, 'DEC': DEC, 'SUS': SUS, 'REL': REL}
+    # LFO (Vibrato) detection
+    # Look for oscillations in periods during the sustain/stable part
+    lfo_dest, lfo_wave, lfo_speed, lfo_amp = 0, 0, 0, 0
+    
+    if len(periods) >= 8:
+        # Use only the stable part of the note (skip initial attack)
+        stable_pers = periods[max(1, peak_i):len(periods)-1]
+        if len(stable_pers) >= 5:
+            avg_p = sum(stable_pers) / len(stable_pers)
+            # Find zero crossings (crossings of the average)
+            crossings = []
+            for i in range(1, len(stable_pers)):
+                if (stable_pers[i-1] - avg_p) * (stable_pers[i] - avg_p) < 0:
+                    crossings.append(i)
+            
+            if len(crossings) >= 2:
+                # Average distance between crossings * 2 = wavelength in frames
+                dists = [crossings[i] - crossings[i-1] for i in range(1, len(crossings))]
+                avg_wavelength = (sum(dists) / len(dists)) * 2
+                if 2 <= avg_wavelength <= 40:
+                    lfo_dest = 1 # Pitch
+                    lfo_wave = 0 # Triangle (approx)
+                    lfo_speed = min(255, round(256 / avg_wavelength))
+                    
+                    max_p = max(stable_pers)
+                    min_p = min(stable_pers)
+                    if min_p > 0 and max_p > min_p:
+                        cents_peak = abs(1200 * math.log2(max_p / min_p)) / 2
+                        # MusaX LFO amp 1-15: 15 is roughly 1 semitone (100 cents).
+                        # Be very sensitive: if peak is > 1.5 cents, give it at least amp 1.
+                        lfo_amp = min(15, max(1, round(cents_peak / 100 * 15)))
+                    else:
+                        lfo_dest = 0 # Not a real oscillation
+
+    return {
+        'ATT': ATT, 'DEC': DEC, 'SUS': SUS, 'REL': REL,
+        'LFO_DEST': lfo_dest, 'LFO_WAVE': lfo_wave, 'LFO_SPEED': lfo_speed, 'LFO_AMP': lfo_amp,
+        'PEAK_VOL': peak
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -300,116 +332,126 @@ def detect_bpm(events_per_ch: list[list[tuple]], fps: float,
 
 
 # ---------------------------------------------------------------------------
-# Duration quantizer — no L64 artifacts
+# Duration quantizer — Timeline-locked to prevent desync
 # ---------------------------------------------------------------------------
 
-def quantize_frames(dur_frames: int, tpf: float) -> list[str]:
-    """Convert frame count to 1-2 MSL note-value tokens.
-
-    Rounds aggressively — avoids L64 correction tokens for tiny errors.
-    """
-    ticks = round(dur_frames * tpf)
-    if ticks <= 0:
-        return ['L64']
-
-    t1, n1 = min(NOTE_TABLE, key=lambda x: abs(x[0] - ticks))
-    remainder = ticks - t1
-
-    if abs(remainder) <= QUANT_TOLERANCE_TICKS:
-        return [n1]
-
-    # Try to express remainder as a second token
-    t2, n2 = min(NOTE_TABLE, key=lambda x: abs(x[0] - remainder))
-    if abs(remainder - t2) <= QUANT_TOLERANCE_TICKS and t2 < t1:
-        return [n1, n2]
-
-    return [n1]   # just round — small error
-
-
-def quantize_abs(start_fr: int, end_fr: int, tpf: float) -> list[str]:
-    """Quantize a frame-range event using absolute timeline positions.
-
-    Deriving ticks from absolute positions (round(end*tpf) - round(start*tpf))
-    instead of round(duration*tpf) prevents rounding errors from accumulating
-    across successive events, keeping all channels in sync over the whole song.
-    On distance ties prefer the smaller note value so the positive remainder
-    is more likely to be expressible as a second token.
-    """
-    ticks = max(1, round(end_fr * tpf) - round(start_fr * tpf))
-
-    t1, n1 = min(NOTE_TABLE, key=lambda x: (abs(x[0] - ticks), x[0]))
-    remainder = ticks - t1
-
-    if abs(remainder) <= QUANT_TOLERANCE_TICKS:
-        return [n1]
-
-    t2, n2 = min(NOTE_TABLE, key=lambda x: abs(x[0] - remainder))
-    if abs(remainder - t2) <= QUANT_TOLERANCE_TICKS and t2 < t1:
-        return [n1, n2]
-
-    return [n1]
-
-
 def _ticks_to_tokens(ticks: int) -> list[str]:
-    """Convert a raw tick count to 1-2 MSL note-value tokens."""
-    if ticks <= 0:
-        return ['L64']
-    t1, n1 = min(NOTE_TABLE, key=lambda x: (abs(x[0] - ticks), x[0]))
-    remainder = ticks - t1
-    if abs(remainder) <= QUANT_TOLERANCE_TICKS:
-        return [n1]
-    t2, n2 = min(NOTE_TABLE, key=lambda x: abs(x[0] - remainder))
-    if abs(remainder - t2) <= QUANT_TOLERANCE_TICKS and t2 < t1:
-        return [n1, n2]
-    return [n1]
+    """Convert a raw tick count to 1-2 MSL note-value tokens.
+
+    Finds the combination of 1 or 2 notes that minimizes the absolute 
+    error relative to 'ticks'. This prevents large overshoots/undershoots
+    when a single note doesn't align well with the target.
+    """
+    res = []
+    rem = ticks
+
+    # For very long durations, peel off L1s first
+    while rem > (NOTE_TICKS['L1'] + 24):
+        res.append('L1')
+        rem -= NOTE_TICKS['L1']
+
+    if rem <= 24:
+        return res
+
+    best_err = rem
+    best_res = []
+
+    # O(N^2) search over the note table (N=13) to find the best 1-2 note fit
+    for t1, n1 in NOTE_TABLE:
+        # Try single note
+        err1 = abs(rem - t1)
+        if err1 < best_err:
+            best_err = err1
+            best_res = [n1]
+        
+        # Try double note combination
+        for t2, n2 in NOTE_TABLE:
+            err2 = abs(rem - (t1 + t2))
+            if err2 < best_err:
+                best_err = err2
+                best_res = [n1, n2]
+
+    return res + best_res
 
 
-def _intro_ticks(events: list[tuple], loop_rel: int, tpf: float) -> int:
+class Quantizer:
+    """Timeline-locked accumulator to prevent inter-channel desync.
+
+    Maintains a record of total_ticks already emitted as MSL notes,
+    and for each new event (from start_frame to end_frame), determines 
+    how many additional ticks are needed to reach the absolute target 
+    on the timeline.
+    """
+    def __init__(self, tpf: float, start_frame: int = 0):
+        self.tpf = tpf
+        self.start_frame = start_frame
+        self.elapsed_ticks = 0
+
+    def next_event(self, end_frame: int) -> list[str]:
+        target = round((end_frame - self.start_frame) * self.tpf)
+        needed = target - self.elapsed_ticks
+        toks = _ticks_to_tokens(needed)
+        for t in toks:
+            self.elapsed_ticks += NOTE_TICKS[t]
+        return toks
+
+    def skip_to(self, frame: int):
+        """Intentionally skip time (e.g. for leading rest suppression)."""
+        self.elapsed_ticks = round((frame - self.start_frame) * self.tpf)
+
+    def add_padding(self, ticks: int):
+        """Add exact ticks to the timeline (used for intro equalization)."""
+        self.elapsed_ticks += ticks
+
+
+def _intro_ticks(events: list[tuple], loop_rel: int, tpf: float, start_frame: int) -> int:
     """Count ticks the event loop will emit in the intro (before loop_rel).
 
     Mirrors leading-rest suppression and straddle-clipping so the result
     matches what psg_to_msl will actually write, allowing exact padding.
     """
-    total = 0
+    q = Quantizer(tpf, start_frame)
     leading = True
     for note, s, d in events:
         if s >= loop_rel:
             break
         if leading and note is None:
             if (round((s + d) * tpf) - round(s * tpf)) <= LEAD_REST_SUPPRESS_TICKS:
+                q.skip_to(s + d)
                 continue
         leading = False
         end = min(s + d, loop_rel)
-        for tok in quantize_abs(s, end, tpf):
-            total += NOTE_TICKS[tok]
-    return total
+        q.next_event(end)
+    return q.elapsed_ticks
 
 
 # ---------------------------------------------------------------------------
 # Gate detection
 # ---------------------------------------------------------------------------
 
-def try_gate(note_start: int, note_dur: int, rest_dur: int,
-             tpf: float) -> tuple[str, int] | None:
-    """If note+rest total quantizes to a clean value, return (len_token, gate_val).
+def try_gate(note_start: int, total_end: int,
+             tpf: float, start_frame: int,
+             current_ticks: int, note_dur: int, rest_dur: int) -> tuple[list[str], int] | None:
+    """If note+rest total quantizes to a clean value, return (len_tokens, gate_val).
 
     gate_val is 0-255 (MusaX @GATE parameter).
-    Uses absolute positions to match quantize_abs accuracy.
+    Uses absolute positions and the current accumulator to match MSL exactly.
     Returns None if not a clear staccato pattern.
     """
-    note_end    = note_start + note_dur
-    total_end   = note_end + rest_dur
-    total_ticks = round(total_end * tpf) - round(note_start * tpf)
+    target_ticks = round((total_end - start_frame) * tpf)
+    needed       = target_ticks - current_ticks
 
-    t_total, n_total = min(NOTE_TABLE, key=lambda x: abs(x[0] - total_ticks))
-    if abs(total_ticks - t_total) > QUANT_TOLERANCE_TICKS:
-        return None                          # total doesn't land on a note value
+    # For gating to be musical, the total should ideally be exactly 1 note token
+    # (e.g. L4). If it's a complex duration (e.g. L4+L16), gating is too messy.
+    toks = _ticks_to_tokens(needed)
+    if not toks or len(toks) > 1:
+        return None
 
     gate_ratio = note_dur / (note_dur + rest_dur)
     gate_val   = round(gate_ratio * 255)
 
     if 32 <= gate_val <= 223:               # meaningful gate (not just legato/mute)
-        return n_total, gate_val
+        return toks, gate_val
     return None
 
 
@@ -639,44 +681,83 @@ def psg_to_msl(frames: list[list[int]], fps: float, clock: float,
         print(f'  BPM={bpm}  fps={fps}  frames/quarter={fpq:.2f}  ticks/frame={tpf:.2f}',
               file=sys.stderr)
 
-    # ---- ADSR instrument analysis (always run) ----
-    all_adsr: list[dict] = []
+    # ---- Note Data Analysis ----
+    ch_events = {}
+    ch_note_data = {}
     for ch in range(3):
         events = extract_events(frames, ch, clock)
+        ch_events[ch] = events
+        data_list = []
         for j, (note, s, d) in enumerate(events):
             if note is None or note == 'N':
+                data_list.append(None)
                 continue
             rest_d = events[j+1][2] if j+1 < len(events) and events[j+1][0] is None else 0
-            vols = extract_vol_envelope(frames, ch, s, d, min(rest_d, 10))
-            if vols:
-                all_adsr.append(analyze_envelope(vols))
+            vols, pers = extract_note_data(frames, ch, s, d, min(rest_d, 10))
+            data_list.append(analyze_note(vols, pers))
+        ch_note_data[ch] = data_list
 
-    if all_adsr:
-        avg_att = round(sum(a['ATT'] for a in all_adsr) / len(all_adsr))
-        avg_dec = round(sum(a['DEC'] for a in all_adsr) / len(all_adsr))
-        avg_sus = round(sum(a['SUS'] for a in all_adsr) / len(all_adsr))
-        avg_rel = round(sum(a['REL'] for a in all_adsr) / len(all_adsr))
-        # If most notes are pure-decay (SUS=0), the average is pulled up by outliers.
-        # Force SUS=0 when the majority of notes returned it.
-        pure_decay_count = sum(1 for a in all_adsr if a['SUS'] == 0)
-        if pure_decay_count > len(all_adsr) // 2:
-            avg_sus = 0
-            avg_rel = 0
-        auto_adsr = {'ATT': avg_att, 'DEC': avg_dec, 'SUS': avg_sus, 'REL': avg_rel}
-    else:
-        auto_adsr = {'ATT': 255, 'DEC': 10, 'SUS': 200, 'REL': 20}
+    # ---- Instrument Clustering (Multi-Instrument + LFO) ----
+    # 1. Collect all valid note profiles
+    all_profiles = []
+    for ch in range(3):
+        for d in ch_note_data[ch]:
+            if d is not None:
+                all_profiles.append(d)
 
-    if verbose or adsr_mode:
-        ad = auto_adsr
-        print(f'  ADSR (auto): ATT={ad["ATT"]} DEC={ad["DEC"]} '
-              f'SUS={ad["SUS"]} REL={ad["REL"]}', file=sys.stderr)
+    instruments: list[dict] = []
+    
+    def adsr_lfo_dist(a, b):
+        # Strict rule: LFO vs No-LFO are different instruments
+        if a['LFO_DEST'] != b['LFO_DEST']: return 1000
+        
+        d = (abs(a['ATT'] - b['ATT']) + abs(a['DEC'] - b['DEC']) + 
+             abs(a['SUS'] - b['SUS']) + abs(a['REL'] - b['REL'])) / 2
+        
+        if a['LFO_DEST'] > 0:
+            d += abs(a['LFO_SPEED'] - b['LFO_SPEED'])
+            d += abs(a['LFO_AMP'] - b['LFO_AMP']) * 20
+        return d
 
-    # Per-channel peak volume from actual PSG data
-    ar_regs = [8, 9, 10]
-    ch_peak_vols = [
-        max((f[ar_regs[ch]] & 0x0F for f in frames), default=9)
-        for ch in range(3)
-    ]
+    # 2. Iterative clustering
+    # Threshold for creating a new instrument
+    CLUSTER_THRESHOLD = 80
+
+    for prof in all_profiles:
+        if not instruments:
+            instruments.append(prof.copy())
+            continue
+            
+        # Find best match
+        best_match_id = -1
+        min_d = 9999
+        for i, inst in enumerate(instruments):
+            d = adsr_lfo_dist(prof, inst)
+            if d < min_d:
+                min_d = d; best_match_id = i
+        
+        if min_d > CLUSTER_THRESHOLD:
+            if len(instruments) < 16:
+                instruments.append(prof.copy())
+        else:
+            # Refine instrument by moving it slightly towards this new note (moving average)
+            inst = instruments[best_match_id]
+            for k in ['ATT', 'DEC', 'SUS', 'REL', 'LFO_SPEED', 'LFO_AMP']:
+                inst[k] = round(inst[k] * 0.9 + prof[k] * 0.1)
+            # PEAK_VOL is tracked per note, so we don't average it here
+
+    if not instruments:
+        instruments.append({'ATT': 255, 'DEC': 10, 'SUS': 200, 'REL': 20, 
+                           'LFO_DEST': 0, 'LFO_WAVE': 0, 'LFO_SPEED': 0, 'LFO_AMP': 0})
+
+    def find_inst_id(note_data):
+        best_id = 0
+        min_d = adsr_lfo_dist(note_data, instruments[0])
+        for i in range(1, len(instruments)):
+            d = adsr_lfo_dist(note_data, instruments[i])
+            if d < min_d:
+                min_d = d; best_id = i
+        return best_id
 
     # ---- Header ----
     out_lines: list[str] = []
@@ -687,43 +768,36 @@ def psg_to_msl(frames: list[list[int]], fps: float, clock: float,
     if title or author or desc:
         out_lines.append('')
 
-    ad = auto_adsr
-    out_lines += [
-        f'@INST(0, "Lead") {{',
-        f'    ADSR: {ad["ATT"]}, {ad["DEC"]}, {ad["SUS"]}, {ad["REL"]}',
-        f'    LFO:  0, 0, 0, 0, 0',
-        f'    FLAGS: 0',
-        f'}}',
-        '',
-    ]
+    for i, inst in enumerate(instruments):
+        name = f"Inst{i}" if i > 0 else "Lead"
+        out_lines += [
+            f'@INST({i}, "{name}") {{',
+            f'    ADSR: {inst["ATT"]}, {inst["DEC"]}, {inst["SUS"]}, {inst["REL"]}',
+            f'    LFO:  {inst["LFO_DEST"]}, {inst["LFO_WAVE"]}, {inst["LFO_SPEED"]}, {inst["LFO_AMP"]}, 0',
+            f'    FLAGS: 0',
+            f'}}',
+            '',
+        ]
 
     # ---- Channels ----
     ch_names = {'A': 0, 'B': 1, 'C': 2}
 
-    # Compute the loop split point once, outside the per-channel loop.
-    # Reject intros shorter than one quarter note: detect_loop can return a
-    # frame just a handful of frames from start_frame (e.g. underwater.psg
-    # returns loop_frame=78 which is only 8 frames from the first active frame).
-    # That is a quantisation artifact, not a real musical intro.
     effective_loop_rel: int | None = None
     if not fx_mode and loop_frame is not None:
         lr = loop_frame - start_frame
         if lr >= fpq:
             effective_loop_rel = lr
 
-    # Pre-pass: measure how many intro ticks each channel will emit so that
-    # we can append padding rests before LOOP_X: and keep all channels in sync
-    # even when a note or rest straddles the loop boundary.
     ch_intro_ticks: dict[str, int] = {}
     max_intro: int = 0
     if effective_loop_rel is not None:
         for _cc in channels.upper():
             if _cc not in ch_names:
                 continue
-            _ev = extract_events(frames, ch_names[_cc], clock)
+            _ev = ch_events[ch_names[_cc]]
             if all(e[0] is None for e in _ev):
                 continue
-            ch_intro_ticks[_cc] = _intro_ticks(_ev, effective_loop_rel, tpf)
+            ch_intro_ticks[_cc] = _intro_ticks(_ev, effective_loop_rel, tpf, 0)
         if ch_intro_ticks:
             max_intro = max(ch_intro_ticks.values())
 
@@ -734,8 +808,8 @@ def psg_to_msl(frames: list[list[int]], fps: float, clock: float,
         if ch_char not in ch_names:
             continue
         ch = ch_names[ch_char]
-        vol = max(1, ch_peak_vols[ch])
-        events = extract_events(frames, ch, clock)
+        events = ch_events[ch]
+        data   = ch_note_data[ch]
 
         noise_cmts = noise_summary(frames, ch, 0)
 
@@ -747,100 +821,118 @@ def psg_to_msl(frames: list[list[int]], fps: float, clock: float,
                 out_lines.append(f'// CH_{ch_char}: silent — skipped')
             continue
 
+        # Initial peak volume tracking
+        first_note_idx = next((j for j, e in enumerate(events) if e[0] is not None), 0)
+        initial_vol = data[first_note_idx]['PEAK_VOL'] if data[first_note_idx] else 11
+
         if fx_mode:
             out_lines.append(f'    CH_{ch_char}:')
-            out_lines.append(f'        @T{round(bpm)}  @V{vol}  @I0')
+            out_lines.append(f'        @T{round(bpm)}  @V{initial_vol}  @I0')
             note_indent = 8
         else:
             out_lines.append(f'CH_{ch_char}:')
-            out_lines.append(f'    @T{round(bpm)}  @V{vol}  @I0')
+            out_lines.append(f'    @T{round(bpm)}  @V{initial_vol}  @I0')
             note_indent = 4
 
-        # No intro: emit LOOP_X: immediately after the header
         if not fx_mode and effective_loop_rel is None:
             out_lines.append(f'LOOP_{ch_char}:')
 
-        # Noise comments
         pad = ' ' * note_indent
         for nc in noise_cmts:
             out_lines.append(pad + nc)
         if noise_cmts:
             out_lines.append('')
 
+        quantizer = Quantizer(tpf, 0)
         writer = MslWriter()
         cur_gate: int | None = None
-        leading = True          # suppress tiny leading rests until first real event
-        loop_label_done = (effective_loop_rel is None)  # True once LOOP_X: has been emitted
+        cur_inst: int | None = 0
+        cur_vol: int = initial_vol
+        leading = True
+        loop_label_done = (effective_loop_rel is None)
 
         i = 0
         while i < len(events):
             note, s, d = events[i]
+            note_info = data[i]
 
-            # Inject LOOP_X: when we reach or pass the loop boundary
+            # Loop label injection
             if not loop_label_done:
-                if s >= effective_loop_rel:
+                if s >= effective_loop_rel or (s < effective_loop_rel < s + d):
                     out_lines.extend(writer.render(indent=note_indent))
                     writer = MslWriter()
-                    _pad = max_intro - ch_intro_ticks.get(ch_char, 0)
-                    if _pad > 0:
-                        _pw = MslWriter()
-                        _pw.note_or_rest(None, _ticks_to_tokens(_pad))
-                        out_lines.extend(_pw.render(indent=note_indent))
-                    out_lines.append(f'LOOP_{ch_char}:')
-                    loop_label_done = True
-                    leading = False
-                elif s < effective_loop_rel < s + d:
-                    # Event straddles the loop boundary — emit the intro
-                    # portion, inject label + padding, then emit loop portion.
-                    writer.note_or_rest(note, quantize_abs(s, effective_loop_rel, tpf))
-                    out_lines.extend(writer.render(indent=note_indent))
-                    writer = MslWriter()
-                    _pad = max_intro - ch_intro_ticks.get(ch_char, 0)
-                    if _pad > 0:
-                        _pw = MslWriter()
-                        _pw.note_or_rest(None, _ticks_to_tokens(_pad))
-                        out_lines.extend(_pw.render(indent=note_indent))
-                    out_lines.append(f'LOOP_{ch_char}:')
-                    loop_label_done = True
-                    leading = False
-                    writer.note_or_rest(note, quantize_abs(effective_loop_rel, s + d, tpf))
-                    i += 1
-                    continue
+                    
+                    if s < effective_loop_rel < s + d:
+                        writer.note_or_rest(note, quantizer.next_event(effective_loop_rel))
+                        out_lines.extend(writer.render(indent=note_indent))
+                        writer = MslWriter()
 
-            # Suppress tiny leading rests (ISR write-order artefacts — CH_B/C
-            # may appear to start a frame or two after CH_A).
+                    _pad_ticks = max_intro - quantizer.elapsed_ticks
+                    if _pad_ticks > 24:
+                        _toks = _ticks_to_tokens(_pad_ticks)
+                        _pw = MslWriter()
+                        _pw.note_or_rest(None, _toks)
+                        out_lines.extend(_pw.render(indent=note_indent))
+                        for _t in _toks: quantizer.add_padding(NOTE_TICKS[_t])
+                    
+                    out_lines.append(f'LOOP_{ch_char}:')
+                    loop_label_done = True
+                    leading = False
+                    
+                    if s < effective_loop_rel < s + d:
+                        writer.note_or_rest(note, quantizer.next_event(s + d))
+                        i += 1
+                        continue
+
+            # Artifact suppression
             if leading and note is None:
                 if (round((s + d) * tpf) - round(s * tpf)) <= LEAD_REST_SUPPRESS_TICKS:
+                    quantizer.skip_to(s + d)
                     i += 1
                     continue
             leading = False
 
-            # Noise — emit as comment only
+            # Noise
             if note == 'N':
                 np = frames[s][6] & 0x1F if s < len(frames) else 0
                 vl = frames[s][9 + ch] & 0x0F if s < len(frames) else 0
-                dur_toks = quantize_abs(s, s + d, tpf)
+                dur_toks = quantizer.next_event(s + d)
                 writer.cmd(f'// [NOISE period={np} vol={vl}]')
                 writer.note_or_rest(None, dur_toks)
                 i += 1
                 continue
 
-            # Check for gate pattern: note followed by rest
+            # Instrument and Dynamic Volume Tracking
+            if note is not None and note_info:
+                inst_id = find_inst_id(note_info)
+                if inst_id != cur_inst:
+                    writer.cmd(f'@I{inst_id}')
+                    cur_inst = inst_id
+                
+                v = note_info['PEAK_VOL']
+                if v != cur_vol:
+                    writer.cmd(f'@V{v}')
+                    cur_vol = v
+
+            # Gating
             if gate_mode and note is not None and i + 1 < len(events):
                 next_note, _, next_dur = events[i + 1]
                 if next_note is None:
-                    g = try_gate(s, d, next_dur, tpf)
+                    g = try_gate(s, s + d + next_dur, tpf, 0,
+                                 quantizer.elapsed_ticks, d, next_dur)
                     if g is not None:
-                        tok, gate_val = g
+                        toks, gate_val = g
                         if gate_val != cur_gate:
                             writer.cmd(f'@GATE {gate_val}')
                             cur_gate = gate_val
-                        writer.note_or_rest(note, [tok])
+                        writer.note_or_rest(note, toks)
+                        for t in toks:
+                            quantizer.add_padding(NOTE_TICKS[t])
                         i += 2
                         continue
 
-            # Normal note or rest
-            dur_toks = quantize_abs(s, s + d, tpf)
+            # Standard Note/Rest
+            dur_toks = quantizer.next_event(s + d)
             if note is None:
                 if gate_mode and cur_gate is not None and cur_gate != 255:
                     writer.cmd('@GATE 255')
@@ -850,7 +942,6 @@ def psg_to_msl(frames: list[list[int]], fps: float, clock: float,
 
         out_lines.extend(writer.render(indent=note_indent))
 
-        # Safety: if loop_rel was set but never reached (e.g. detected beyond song end)
         if not loop_label_done:
             out_lines.append(f'LOOP_{ch_char}:')
 

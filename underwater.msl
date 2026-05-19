@@ -1,0 +1,182 @@
+@INST(0, "Lead") {
+    ADSR: 255, 25, 142, 27
+    LFO:  0, 0, 0, 0, 0
+    FLAGS: 0
+}
+
+@INST(1, "Inst1") {
+    ADSR: 255, 12, 158, 19
+    LFO:  0, 0, 0, 0, 0
+    FLAGS: 0
+}
+
+@INST(2, "Inst2") {
+    ADSR: 255, 19, 0, 0
+    LFO:  0, 0, 0, 0, 0
+    FLAGS: 0
+}
+
+CH_A:
+    @T80  @V12  @I0
+LOOP_A:
+    O6  L8  C  O5  L8.  A#  @I1  L4.
+    G  L32  G  @I0  L8  G#  L64  G#
+    L8.  G  @I1  L4.  D#  L32  D#  @I0
+    L8  G#  L64  G#  L8.  G  @I1  L8..
+    D#  L64  D#  @I0  @V11  L8.  F  @V12
+    D  @V11  F  @V12  G  @V11  L16.  A
+    L64  A  L16  B  @V12  O6  L8.  C
+    @V11  L8  D  L32  D#  L64  D#  @V12
+    L4  C  L16  D  @V11  C  @V12  O5
+    L4.  A#  L8.  B  @V11  O6  L16.  C
+    L64  C  L16  D  @V12  L8.  C  @V11
+    L8  D  L32  D#  L64  D#  @V12  L4
+    C  L16  D  @V11  D#  @V12  L4.  D
+    O5  L4  B  L16.  B  @I2  L16  D
+    L64  D  L8  R  @V11  L32  D#  L64
+    D#  L8  R  @V12  O6  L16  D  R
+    D#  R  O5  D  L8  R  @V11  L32
+    D#  L64  D#  L8  R  @I0  @V12  O6
+    D#  @I2  L16  D  R  @I0  L8  C
+    O5  L8.  A#  @I1  L4.  G  L32  G
+    @I0  L8  G#  L8.  G  L64  G  @I1
+    L4.  D#  L32  D#  @I0  L8  G#  L8.
+    G  @I1  L4  D#  @I0  @V11  L8.  F
+    @V12  D  @V11  L8  F  L32  F  @V12
+    L8.  G  L64  G  @V11  L8  A  L32
+    B  L64  B  @V12  O6  L8.  C  L64
+    C  @V11  L16.  D  L64  D  L16  D#
+    @V12  L4  C  L16  D  @V11  L32  C
+    L64  C  @V12  O5  L4.  A#  L8.  B
+    @V11  O6  L8  C  L32  D  L64  D
+    @V12  L8.  C  @V11  L8  D  L16  D#
+    @V12  L8..  C  L64  C  L16  D  L64
+    D  @V11  L32  D#  L64  D#  @V12  L4.
+    D  O5  B  @I2  L32  D  L64  D
+    L8  R  @V11  L16  D#  L8  R  @V12
+    O6  L16  D  L32  R  L64  R  L16
+    D#  L64  D#  L32  R  L64  R  O5
+    L16  D  L64  D  L16.  R  L64  R
+    @V11  L16  D#  L8  R  @I0  @V12  O6
+    D#  @I2  L16  D  L32  R  L64  R
+    @I0  L8  C  O5  L8.  A#
+    @RESTART(LOOP_A)
+
+CH_B:
+    @T80  @V11  @I0
+LOOP_B:
+    O3  L16  C  @V10  F  @V11  G  @V10
+    L32  A#  L64  A#  @V11  L16  G  L64
+    G  @V10  L32  A#  L64  A#  @V11  L16
+    C  @V10  F  @V11  G  @V10  A#  @V11
+    G  @V10  A#  @V11  C#  @V10  F  @V11
+    G#  @V10  O4  L32  C#  L64  C#  @V11
+    O3  L16  G#  @V10  O4  C#  @V11  O3
+    C#  @V10  F  @V11  G#  @V10  O4  C#
+    @V11  O3  G#  @V10  O4  C#  @V11  O3
+    F  @V10  G#  @V11  O4  C  @V10  L32
+    D#  L64  D#  @V11  L16  C  @V10  O3
+    G#  @V11  F  @V10  G#  @V11  O4  C
+    @V10  D  @V11  C  @V10  O3  G#  @V11
+    G  @V10  O4  L32  C  L64  C  @V11
+    L16  D  L64  D  @V10  L32  G  L64
+    G  @V11  L16  D  @V10  C  @V11  O3
+    G  @V10  O4  C  @V11  D  @V10  G
+    @V11  D  @V10  C  @V11  O3  C  @V10
+    G  @V11  L32  A#  L64  A#  @V10  L16
+    D#  @V11  G  @V10  A#  @V11  C  @V10
+    G  @V11  A#  @V10  D#  @V11  G  @V10
+    A#  @V11  G  @V10  O4  L32  D  L64
+    D  @V11  L16  F  @V10  O3  A#  @V11
+    O4  D  @V10  F  @V11  O3  G  @V10
+    O4  G  @V11  O3  G  @V10  L8  A
+    L16  B  @V11  L16.  C  L64  C  L16
+    G  @I1  L8  C  @I0  @V10  L16  G
+    @V11  L8  G#  O4  L16  D#  @I1  O3
+    L8  G#  @I0  @V10  O4  L16  D#  @V11
+    O3  L16.  G  L64  G  O4  L16  D
+    @I1  O3  L8  G  @I0  @V10  O4  L16
+    D  @V11  O3  L8  G  O4  L16  D
+    @I1  O3  L8  G  @I0  @V10  O4  L32
+    D  L64  D  @V11  O3  L4.  C  L4
+    F  L4.  C  L8..  F  L64  F  L16
+    C  @V10  F  @V11  L32  G  L64  G
+    @V10  L16  A#  @V11  G  @V10  A#  @V11
+    C  @V10  F  @V11  G  @V10  L32  A#
+    L64  A#  @V11  L16  G  L64  G  @V10
+    L16  A#  @V11  C#  @V10  L32  F  L64
+    F  @V11  L16  G#  @V10  O4  C#  @V11
+    O3  G#  @V10  O4  C#  @V11  O3  C#
+    @V10  F  @V11  G#  @V10  O4  L32  C#
+    L64  C#  @V11  O3  L16  G#  L64  G#
+    @V10  O4  L16  C#  @V11  O3  L32  F
+    L64  F  @V10  L16  G#  @V11  O4  C
+    @V10  D#  @V11  C  @V10  O3  G#  @V11
+    F  @V10  G#  @V11  O4  C  @V10  L32
+    D  L64  D  @V11  L16  C  L64  C
+    @V10  O3  L16  G#  @V11  L32  G  L64
+    G  @V10  O4  L16  C  @V11  D  @V10
+    G  @V11  D  @V10  C  @V11  O3  G
+    @V10  O4  C  @V11  D  @V10  L32  G
+    L64  G  @V11  L16  D  L64  D  @V10
+    L32  C  L64  C  @V11  O3  L16  C
+    @V10  G  @V11  A#  @V10  D#  @V11  G
+    @V10  A#  @V11  C  @V10  L32  G  L64
+    G  @V11  L16  A#  L64  A#  @V10  L16
+    D#  @V11  L32  G  L64  G  @V10  L16
+    A#  @V11  G  @V10  O4  D  @V11  F
+    @V10  O3  A#  @V11  O4  D  @V10  F
+    @V11  O3  G  @V10  O4  G  @V11  O3
+    G  @V10  L16.  A  L64  A  L16  B
+    @V11  L8  C  L16  G  @I1  L8  C
+    @I0  @V10  L16  G  @V11  L16.  G#  L64
+    G#  O4  L16  D#  @I1  O3  L8  G#
+    @I0  @V10  O4  L16  D#  @V11  O3  L8
+    G  O4  L16  D  @I1  O3  L8  G
+    @I0  @V10  O4  L16  D  @V11  O3  L8
+    G  O4  L32  D  L64  D  @I1  O3
+    L8  G  @I0  @V10  O4  L16  D  @V11
+    O3  L4.  C  L8..  F  L64  F  L4.
+    C  L8..  F  L64  F  L16  C  @V10
+    F  @V11  G  @V10  A#  @V11  L32  G
+    L64  G
+    @RESTART(LOOP_B)
+
+CH_C:
+    @T80  @V11  @I0
+LOOP_C:
+    O5  L8  D#  @I2  L8..  D  L64  D
+    L8  R  @I0  L16  C  @V10  D  @V11
+    D#  @I1  L8.  C  @I0  O4  A#  L8..
+    G#  L64  G#  @V10  L16  A#  @V11  O5
+    C  @V10  O4  G#  @V11  O5  L8  C
+    O4  L8.  A#  L8..  G#  L64  G#  O5
+    L2.  C  L8  D  L32  D  L8.  D#
+    L8  F  L16  G  L4  D#  L16  F
+    D#  L2  D  L32  D  L8  D#  L64
+    D#  L16  F  L8.  D#  L16.  F  L64
+    F  L16  G  L4  D#  L16  F  G
+    L4.  F  L4  D  L16.  D  @I2  O4
+    L16  A  L8  R  L16  A  L8  R
+    O5  L16  A  R  A  R  O4  A
+    L16.  R  L64  R  L16  A  L8  R
+    @I0  O5  F  @I2  L16  G  R  @I0
+    L8  D#  @I2  L8..  D  L64  D  L8
+    R  @I0  L16  C  @V10  D  @V11  D#
+    @I1  L8.  C  @I0  O4  A#  L8..  G#
+    L64  G#  @V10  L16  A#  @V11  O5  C
+    @V10  O4  G#  @V11  O5  L16.  C  L64
+    C  O4  L8.  A#  L4  G#  O5  L2
+    C  L8..  C  L8.  D  D#  L8  F
+    L16  G  L4  D#  L32  F  L64  F
+    L16  D#  L2  D  L16  D  L16.  D#
+    L64  D#  L16  F  L8.  D#  L8  F
+    L16  G  L8..  D#  L64  D#  L16  F
+    G  L4.  F  D  @I2  O4  L32  A
+    L64  A  L8  R  L16  A  L8  R
+    O5  L16  A  L32  R  L64  R  L16
+    A  R  O4  A  L8  R  L16  A
+    L8  R  @I0  O5  F  @I2  L32  G
+    L64  G  L16  R  @I0  L8  D#  D
+    L32  D
+    @RESTART(LOOP_C)
