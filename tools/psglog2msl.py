@@ -711,6 +711,7 @@ def psg_to_msl(frames: list[list[int]], fps: float, clock: float,
                loop_frame: int | None,
                title: str, author: str, desc: str,
                fx_mode: bool = False, fx_name: str = 'FX',
+               no_inst: bool = False,
                verbose: bool = False) -> str:
     """Convert decoded PSG frames to MSL text."""
 
@@ -741,86 +742,86 @@ def psg_to_msl(frames: list[list[int]], fps: float, clock: float,
         ch_note_data[ch] = data_list
 
     # ---- Instrument Clustering (Multi-Instrument + LFO) ----
-    # 1. Collect all valid note profiles
-    all_profiles = []
-    for ch in range(3):
-        for d in ch_note_data[ch]:
-            if d is not None:
-                all_profiles.append(d)
-
     instruments: list[dict] = []
-    
-    def adsr_lfo_dist(a, b):
-        # Strict rule: LFO vs No-LFO are different instruments
-        if a['LFO_DEST'] != b['LFO_DEST']: return 1000
-        
-        d = (abs(a['ATT'] - b['ATT']) + abs(a['DEC'] - b['DEC']) + 
-             abs(a['SUS'] - b['SUS']) + abs(a['REL'] - b['REL'])) / 2
-        
-        if a['LFO_DEST'] > 0:
-            d += abs(a['LFO_SPEED'] - b['LFO_SPEED'])
-            d += abs(a['LFO_AMP'] - b['LFO_AMP']) * 20
-        return d
+    if not no_inst:
+        # 1. Collect all valid note profiles
+        all_profiles = []
+        for ch in range(3):
+            for d in ch_note_data[ch]:
+                if d is not None:
+                    all_profiles.append(d)
 
-    # 2. Iterative clustering
-    # Threshold for creating a new instrument
-    CLUSTER_THRESHOLD = 80
-
-    for prof in all_profiles:
-        if not instruments:
-            instruments.append(prof.copy())
-            continue
+        def adsr_lfo_dist(a, b):
+            # Strict rule: LFO vs No-LFO are different instruments
+            if a['LFO_DEST'] != b['LFO_DEST']: return 1000
             
-        # Find best match
-        best_match_id = -1
-        min_d = 9999
-        for i, inst in enumerate(instruments):
-            d = adsr_lfo_dist(prof, inst)
-            if d < min_d:
-                min_d = d; best_match_id = i
-        
-        if min_d > CLUSTER_THRESHOLD:
-            if len(instruments) < 16:
+            d = (abs(a['ATT'] - b['ATT']) + abs(a['DEC'] - b['DEC']) + 
+                 abs(a['SUS'] - b['SUS']) + abs(a['REL'] - b['REL'])) / 2
+            
+            if a['LFO_DEST'] > 0:
+                d += abs(a['LFO_SPEED'] - b['LFO_SPEED'])
+                d += abs(a['LFO_AMP'] - b['LFO_AMP']) * 20
+            return d
+
+        # 2. Iterative clustering
+        # Threshold for creating a new instrument
+        CLUSTER_THRESHOLD = 80
+
+        for prof in all_profiles:
+            if not instruments:
                 instruments.append(prof.copy())
-        else:
-            # Refine instrument by moving it slightly towards this new note (moving average)
-            inst = instruments[best_match_id]
-            for k in ['ATT', 'DEC', 'SUS', 'REL', 'LFO_SPEED', 'LFO_AMP']:
-                inst[k] = round(inst[k] * 0.9 + prof[k] * 0.1)
-            # PEAK_VOL is tracked per note, so we don't average it here
-
-    if not instruments:
-        instruments.append({'ATT': 255, 'DEC': 10, 'SUS': 200, 'REL': 20, 
-                           'LFO_DEST': 0, 'LFO_WAVE': 0, 'LFO_SPEED': 0, 'LFO_AMP': 0})
-
-    def find_inst_id(note_data):
-        best_id = 0
-        min_d = adsr_lfo_dist(note_data, instruments[0])
-        for i in range(1, len(instruments)):
-            d = adsr_lfo_dist(note_data, instruments[i])
-            if d < min_d:
-                min_d = d; best_id = i
-        return best_id
-
-    # ---- ATT clamping: attack must complete within half the shortest note ----
-    # Find minimum note duration (frames) per instrument across all channels.
-    inst_min_dur = [float('inf')] * len(instruments)
-    for ch in range(3):
-        for j, (note, s, d) in enumerate(ch_events[ch]):
-            if note is None or note == 'N' or ch_note_data[ch][j] is None:
                 continue
-            iid = find_inst_id(ch_note_data[ch][j])
-            if d < inst_min_dur[iid]:
-                inst_min_dur[iid] = d
+                
+            # Find best match
+            best_match_id = -1
+            min_d = 9999
+            for i, inst in enumerate(instruments):
+                d = adsr_lfo_dist(prof, inst)
+                if d < min_d:
+                    min_d = d; best_match_id = i
+            
+            if min_d > CLUSTER_THRESHOLD:
+                if len(instruments) < 16:
+                    instruments.append(prof.copy())
+            else:
+                # Refine instrument by moving it slightly towards this new note (moving average)
+                inst = instruments[best_match_id]
+                for k in ['ATT', 'DEC', 'SUS', 'REL', 'LFO_SPEED', 'LFO_AMP']:
+                    inst[k] = round(inst[k] * 0.9 + prof[k] * 0.1)
+                # PEAK_VOL is tracked per note, so we don't average it here
 
-    for inst, min_dur in zip(instruments, inst_min_dur):
-        if min_dur < float('inf') and min_dur >= 1:
-            # Attack must finish in at most half the shortest note using this instrument.
-            # ATT rate must be >= ceil(255 / (min_dur / 2)) to complete in time.
-            half_dur = max(1, min_dur // 2)
-            min_att = math.ceil(255 / half_dur)
-            if inst['ATT'] < min_att:
-                inst['ATT'] = min(255, min_att)
+        if not instruments:
+            instruments.append({'ATT': 255, 'DEC': 10, 'SUS': 200, 'REL': 20, 
+                            'LFO_DEST': 0, 'LFO_WAVE': 0, 'LFO_SPEED': 0, 'LFO_AMP': 0})
+
+        def find_inst_id(note_data):
+            best_id = 0
+            min_d = adsr_lfo_dist(note_data, instruments[0])
+            for i in range(1, len(instruments)):
+                d = adsr_lfo_dist(note_data, instruments[i])
+                if d < min_d:
+                    min_d = d; best_id = i
+            return best_id
+
+        # ---- ATT clamping: attack must complete within half the shortest note ----
+        # Find minimum note duration (frames) per instrument across all channels.
+        inst_min_dur = [float('inf')] * len(instruments)
+        for ch in range(3):
+            for j, (note, s, d) in enumerate(ch_events[ch]):
+                if note is None or note == 'N' or ch_note_data[ch][j] is None:
+                    continue
+                iid = find_inst_id(ch_note_data[ch][j])
+                if d < inst_min_dur[iid]:
+                    inst_min_dur[iid] = d
+
+        for inst, min_dur in zip(instruments, inst_min_dur):
+            if min_dur < float('inf') and min_dur >= 1:
+                # Attack must finish in at most half the shortest note using this instrument.
+                # ATT rate must be >= ceil(255 / (min_dur / 2)) to complete in time.
+                half_dur = max(1, min_dur // 2)
+                min_att = math.ceil(255 / half_dur)
+                if inst['ATT'] < min_att:
+                    inst['ATT'] = min(255, min_att)
 
     # ---- Header ----
     out_lines: list[str] = []
@@ -831,16 +832,18 @@ def psg_to_msl(frames: list[list[int]], fps: float, clock: float,
     if title or author or desc:
         out_lines.append('')
 
-    for i, inst in enumerate(instruments):
-        name = f"Inst{i}" if i > 0 else "Lead"
-        out_lines += [
-            f'@INST({i}, "{name}") {{',
-            f'    ADSR: {inst["ATT"]}, {inst["DEC"]}, {inst["SUS"]}, {inst["REL"]}',
-            f'    LFO:  {inst["LFO_DEST"]}, {inst["LFO_WAVE"]}, {inst["LFO_SPEED"]}, {inst["LFO_AMP"]}, 0',
-            f'    FLAGS: 0',
-            f'}}',
-            '',
-        ]
+    # Global instruments (only if NOT in FX mode)
+    if not no_inst and not fx_mode:
+        for i, inst in enumerate(instruments):
+            name = f"Inst{i}" if i > 0 else "Lead"
+            out_lines += [
+                f'@INST({i}, "{name}") {{',
+                f'    ADSR: {inst["ATT"]}, {inst["DEC"]}, {inst["SUS"]}, {inst["REL"]}',
+                f'    LFO:  {inst["LFO_DEST"]}, {inst["LFO_WAVE"]}, {inst["LFO_SPEED"]}, {inst["LFO_AMP"]}, 0',
+                f'    FLAGS: 0',
+                f'}}',
+                '',
+            ]
 
     # ---- Channels ----
     ch_names = {'A': 0, 'B': 1, 'C': 2}
@@ -866,6 +869,17 @@ def psg_to_msl(frames: list[list[int]], fps: float, clock: float,
 
     if fx_mode:
         out_lines.append(f'@FX({fx_name}) {{')
+        if not no_inst:
+            for i, inst in enumerate(instruments):
+                name = f"Inst{i}" if i > 0 else "Lead"
+                out_lines += [
+                    f'    @INST({i}, "{name}") {{',
+                    f'        ADSR: {inst["ATT"]}, {inst["DEC"]}, {inst["SUS"]}, {inst["REL"]}',
+                    f'        LFO:  {inst["LFO_DEST"]}, {inst["LFO_WAVE"]}, {inst["LFO_SPEED"]}, {inst["LFO_AMP"]}, 0',
+                    f'        FLAGS: 0',
+                    f'    }}',
+                    '',
+                ]
 
     for ch_char in channels.upper():
         if ch_char not in ch_names:
@@ -890,11 +904,11 @@ def psg_to_msl(frames: list[list[int]], fps: float, clock: float,
 
         if fx_mode:
             out_lines.append(f'    CH_{ch_char}:')
-            out_lines.append(f'        @T{round(bpm)}  @V{initial_vol}  @I0')
+            out_lines.append(f'        @T{round(bpm)}  @V{initial_vol}' + ('  @I0' if not no_inst else ''))
             note_indent = 8
         else:
             out_lines.append(f'CH_{ch_char}:')
-            out_lines.append(f'    @T{round(bpm)}  @V{initial_vol}  @I0')
+            out_lines.append(f'    @T{round(bpm)}  @V{initial_vol}' + ('  @I0' if not no_inst else ''))
             note_indent = 4
 
         if not fx_mode and effective_loop_rel is None:
@@ -967,10 +981,11 @@ def psg_to_msl(frames: list[list[int]], fps: float, clock: float,
 
             # Instrument and Dynamic Volume Tracking
             if note is not None and note_info:
-                inst_id = find_inst_id(note_info)
-                if inst_id != cur_inst:
-                    writer.cmd(f'@I{inst_id}')
-                    cur_inst = inst_id
+                if not no_inst:
+                    inst_id = find_inst_id(note_info)
+                    if inst_id != cur_inst:
+                        writer.cmd(f'@I{inst_id}')
+                        cur_inst = inst_id
                 
                 v = note_info['PEAK_VOL']
                 if v != cur_vol:
@@ -1018,6 +1033,7 @@ def psg_to_msl(frames: list[list[int]], fps: float, clock: float,
         out_lines.append('}')
 
     return '\n'.join(out_lines)
+
 
 
 # ---------------------------------------------------------------------------
@@ -1395,6 +1411,8 @@ Examples:
                     help='Show live PSG register values during --play')
     ap.add_argument('--fx',       action='store_true',
                     help='Output as @FX block (sound effect mode, ends with R0)')
+    ap.add_argument('--no-inst',  action='store_true',
+                    help='Force no instruments for FX, use only volume/rest commands')
     ap.add_argument('--name',     default='',
                     help='FX name for @FX(NAME) block (default: stem of input filename)')
     ap.add_argument('--title',    default='',   help='@TITLE metadata')
@@ -1491,6 +1509,7 @@ Examples:
         desc       = args.desc,
         fx_mode    = args.fx,
         fx_name    = fx_name,
+        no_inst    = args.no_inst,
         verbose    = args.verbose,
     )
 
