@@ -1,0 +1,280 @@
+;                                       ****************************************
+;                                       * MUSAX ENGINE                         *
+;                                       ****************************************
+
+#INCLUDE "CONST.Z8A"
+#INCLUDE "VARS.Z8A"
+
+
+; --- MAIN ENTRY POINTS                 ----------------------------------------
+
+; - MUSINIT ----------------------------
+; - INITIALIZE ENGINE
+; - 
+
+MUSINIT         PUSH    AF
+                PUSH    BC
+                PUSH    DE
+                PUSH    HL
+
+                ; CLEAR ALL ENGINE VARIABLES (LDIR)
+                
+                LD      HL,MUSVARS
+                LD      DE,MUSVARS + 1
+                LD      BC,MUSEVARS - MUSVARS - 1
+                LD      (HL),0
+                LDIR
+
+                ; DEFAULT VOLUME
+
+                LD      A,15
+                LD      (MUSVOL),A
+
+                POP     HL
+                POP     DE
+                POP     BC
+                POP     AF
+                RET
+
+
+; - MUSPLAY ----------------------------
+; - START A SONG
+; - IN: HL = SONG HEADER
+; -
+
+MUSPLAY         DI
+                PUSH    AF
+                PUSH    BC
+                PUSH    DE
+                PUSH    HL
+
+                ; STORE SONG PTR
+
+                LD      (SONGPTR),HL
+
+                ; SET PLAYING STATUS
+
+                LD      A,1
+                LD      (MUSSTAT),A
+
+                ; INITIALIZE CHANNELS A, B, C (MUSIC)
+                ; HEADER: [TYPE_SONG, (BPM, PTR)x3, PTR_INST]
+
+                INC     HL              ; SKIP TYPE_SONG
+                
+                LD      IX,CHANNELS     ; CH A
+                CALL    .INITCH
+                
+                LD      IX,CHANNELS + CHSIZE ; CH B
+                CALL    .INITCH
+
+                LD      IX,CHANNELS + CHSIZE * 2 ; CH C
+                CALL    .INITCH
+
+                ; INSTRUMENT TABLE
+                
+                LD      A,(HL)
+                LD      (INSTTBL),A
+                INC     HL
+                LD      A,(HL)
+                LD      (INSTTBL + 1),A
+
+                POP     HL
+                POP     DE
+                POP     BC
+                POP     AF
+                EI
+                RET
+
+.INITCH         LD      A,(HL)          ; BPM LOW
+                LD      (IX + CHBPM),A
+                INC     HL
+                LD      A,(HL)          ; BPM HIGH
+                LD      (IX + CHBPM + 1),A
+                INC     HL
+                LD      A,(HL)          ; PTR LOW
+                LD      (IX + CHPC),A
+                INC     HL
+                LD      A,(HL)          ; PTR HIGH
+                LD      (IX + CHPC + 1),A
+                INC     HL
+                
+                XOR     A
+                LD      (IX + CHWAIT),A
+                LD      (IX + CHWAIT + 1),A
+                LD      (IX + CHFRAC),A
+                RET
+
+
+; - MUSSTOP ----------------------------
+; - STOP ALL SOUND
+; -
+
+MUSSTOP         DI
+                PUSH    AF
+                
+                XOR     A
+                LD      (MUSSTAT),A
+                
+                ; SILENCE PSG
+
+                CALL    MUSMUT
+                CALL    MUSCOMM
+
+                POP     AF
+                EI
+                RET
+
+
+; - MUSUPDAT ---------------------------
+; - ENGINE FRAME UPDATE
+; - CALL EVERY VBLANK
+; -
+
+MUSUPDAT        PUSH    AF
+                PUSH    BC
+                PUSH    DE
+                PUSH    HL
+                PUSH    IX
+                PUSH    IY
+
+                LD      A,(MUSSTAT)
+                AND     1
+                JP      Z,.EXIT
+
+                ; UPDATE 6 STREAMS
+                
+                LD      IX,CHANNELS
+                LD      B,6
+.LOOP           PUSH    BC
+                CALL    UPSTREAM
+                LD      DE,CHSIZE
+                ADD     IX,DE
+                POP     BC
+                DJNZ    .LOOP
+
+                ; COMMIT PSG
+
+                CALL    MUSCOMM
+
+.EXIT           POP     IY
+                POP     IX
+                POP     HL
+                POP     DE
+                POP     BC
+                POP     AF
+                RET
+
+
+; --- INTERNAL ROUTINES                 ----------------------------------------
+
+; - UPSTREAM ---------------------------
+; - UPDATE SINGLE STREAM
+; - IN: IX = CHANNEL STATE
+; -
+
+UPSTREAM        ; --- TRANSPORT ---
+                
+                LD      A,(IX + CHWAIT)
+                OR      (IX + CHWAIT + 1)
+                OR      (IX + CHFRAC)
+                JR      Z,.PROCESS      ; IF ALREADY ZERO, PROCESS NEXT EVENT
+
+                ; SUBTRACT BPM STEP (8.8 FIXED POINT)
+                ; CHWAIT (16) . CHFRAC (8)
+                
+                LD      A,(IX + CHFRAC)
+                SUB     (IX + CHBPM)    ; LOW BYTE (FRACTION)
+                LD      (IX + CHFRAC),A
+                
+                LD      L,(IX + CHWAIT)
+                LD      H,(IX + CHWAIT + 1)
+                LD      E,(IX + CHBPM + 1) ; HIGH BYTE (INTEGER)
+                LD      D,0
+                SBC     HL,DE
+                
+                ; CHECK IF EXPIRED
+                JR      C,.EXPIRED
+                JR      Z,.EXPIRED
+                
+                LD      (IX + CHWAIT),L
+                LD      (IX + CHWAIT + 1),H
+                JR      .MODULAT        ; STILL WAITING
+                
+.EXPIRED        XOR     A
+                LD      (IX + CHWAIT),A
+                LD      (IX + CHWAIT + 1),A
+                LD      (IX + CHFRAC),A
+                
+.PROCESS        CALL    PROCEVT         ; PROCESS BYTECODE EVENTS
+                
+.MODULAT        CALL    UPDADSR         ; UPDATE ADSR (STUB)
+                CALL    UPDLFO          ; UPDATE LFO (STUB)
+                RET
+
+
+; - PROCEVT ----------------------------
+; - PROCESS BYTECODE EVENTS
+; - IN: IX = CHANNEL STATE
+; -
+
+PROCEVT         LD      L,(IX + CHPC)
+                LD      H,(IX + CHPC + 1)
+                
+.FETCH          LD      A,(HL)
+                INC     HL
+                
+                CP      #F0             ; COMMAND RANGE?
+                JR      NC,.COMMAND
+                
+                ; NOTE EVENT: [NOTEID], [DURATION (DEFW)]
+                
+                ; (IMPLEMENTATION PENDING)
+                JR      .EXIT
+
+.COMMAND        ; (IMPLEMENTATION PENDING)
+
+.EXIT           LD      (IX + CHPC),L
+                LD      (IX + CHPC + 1),H
+                RET
+
+
+; - MUSMUT -----------------------------
+; - SILENCE PSG SHADOW REGS
+; -
+
+MUSMUT          PUSH    HL
+                PUSH    BC
+                LD      HL,PSGMUS
+                LD      BC,14
+                XOR     A
+.LOOP           LD      (HL),A
+                INC     HL
+                DEC     BC
+                LD      A,B
+                OR      C
+                JR      NZ,.LOOP
+                
+                LD      HL,PSGSFX
+                LD      BC,14
+                XOR     A
+.LOOP2          LD      (HL),A
+                INC     HL
+                DEC     BC
+                LD      A,B
+                OR      C
+                JR      NZ,.LOOP2
+                POP     BC
+                POP     HL
+                RET
+
+
+; - MUSCOMM ----------------------------
+; - COMMIT SHADOW REGS TO PSG
+; -
+
+MUSCOMM         ; (STUB: WRITE TO PORT #A0, #A1)
+                RET
+
+UPDADSR         RET                     ; STUB
+UPDLFO          RET                     ; STUB

@@ -1,0 +1,228 @@
+;                                       ****************************************
+;                                       * MUSAX CONSTANTS                      *
+;                                       ****************************************
+
+
+; --- NOTE INDEXES (SCIENTIFIC)         ----------------------------------------
+
+C0      EQU     0
+CS0     EQU     1
+DB0     EQU     1
+D0      EQU     2
+DS0     EQU     3
+EB0     EQU     3
+E0      EQU     4
+F0      EQU     5
+FS0     EQU     6
+GB0     EQU     6
+G0      EQU     7
+GS0     EQU     8
+AB0     EQU     8
+A0      EQU     9
+AS0     EQU     10
+BB0     EQU     10
+B0      EQU     11
+
+C1      EQU     12
+CS1     EQU     13
+DB1     EQU     13
+D1      EQU     14
+DS1     EQU     15
+EB1     EQU     15
+E1      EQU     16
+F1      EQU     17
+FS1     EQU     18
+GB1     EQU     18
+G1      EQU     19
+GS1     EQU     20
+AB1     EQU     20
+A1      EQU     21
+AS1     EQU     22
+BB1     EQU     22
+B1      EQU     23
+
+C2      EQU     24
+CS2     EQU     25
+DB2     EQU     25
+D2      EQU     26
+DS2     EQU     27
+EB2     EQU     27
+E2      EQU     28
+F2      EQU     29
+FS2     EQU     30
+GB2     EQU     30
+G2      EQU     31
+GS2     EQU     32
+AB2     EQU     32
+A2      EQU     33
+AS2     EQU     34
+BB2     EQU     34
+B2      EQU     35
+
+C3      EQU     36
+CS3     EQU     37
+DB3     EQU     37
+D3      EQU     38
+DS3     EQU     39
+EB3     EQU     39
+E3      EQU     40
+F3      EQU     41
+FS3     EQU     42
+GB3     EQU     42
+G3      EQU     43
+GS3     EQU     44
+AB3     EQU     44
+A3      EQU     45
+AS3     EQU     46
+BB3     EQU     46
+B3      EQU     47
+
+C4      EQU     48
+CS4     EQU     49
+DB4     EQU     49
+D4      EQU     50
+DS4     EQU     51
+EB4     EQU     51
+E4      EQU     52
+F4      EQU     53
+FS4     EQU     54
+GB4     EQU     54
+G4      EQU     55
+GS4     EQU     56
+AB4     EQU     56
+A4      EQU     57
+AS4     EQU     58
+BB4     EQU     58
+B4      EQU     59
+
+C5      EQU     60
+CS5     EQU     61
+DB5     EQU     61
+D5      EQU     62
+DS5     EQU     63
+EB5     EQU     63
+E5      EQU     64
+F5      EQU     65
+FS5     EQU     66
+GB5     EQU     66
+G5      EQU     67
+GS5     EQU     68
+AB5     EQU     68
+A5      EQU     69
+AS5     EQU     70
+BB5     EQU     70
+B5      EQU     71
+
+C6      EQU     72
+CS6     EQU     73
+DB6     EQU     73
+D6      EQU     74
+DS6     EQU     75
+EB6     EQU     75
+E6      EQU     76
+F6      EQU     77
+FS6     EQU     78
+GB6     EQU     78
+G6      EQU     79
+GS6     EQU     80
+AB6     EQU     80
+A6      EQU     81
+AS6     EQU     82
+BB6     EQU     82
+B6      EQU     83
+
+C7      EQU     84
+CS7     EQU     85
+DB7     EQU     85
+D7      EQU     86
+DS7     EQU     87
+EB7     EQU     87
+E7      EQU     88
+F7      EQU     89
+FS7     EQU     90
+GB7     EQU     90
+G7      EQU     91
+GS7     EQU     92
+AB7     EQU     92
+A7      EQU     93
+AS7     EQU     94
+BB7     EQU     94
+B7      EQU     95
+
+
+; --- BYTECODE COMMANDS                 ----------------------------------------
+
+TYPESONG        EQU     #80
+TYPEFX          EQU     #81
+
+REST            EQU     255
+CRESTART        EQU     #FE
+CTEMPO          EQU     #FD
+CVOLUME         EQU     #FC
+CGATE           EQU     #FB
+CINST           EQU     #FA
+CLOOPS          EQU     #F9
+CLOOPE          EQU     #F8
+CGOTO           EQU     #F7
+CPHASE          EQU     #F6
+CDETUNE         EQU     #F5
+CCHORUS         EQU     #F4
+CFADE           EQU     #F3
+CPORTA          EQU     #F2
+CCALL           EQU     #F1
+CRET            EQU     #F0
+
+
+; --- DURATIONS (768 TICKS BASE)        ----------------------------------------
+
+BASETIC         EQU     768
+LENQ            EQU     BASETIC
+LENH            EQU     BASETIC * 2
+LENW            EQU     BASETIC * 4
+LENE            EQU     BASETIC / 2
+LENS            EQU     BASETIC / 4
+LENT            EQU     BASETIC / 8
+LENET           EQU     BASETIC / 3
+LENST           EQU     BASETIC / 6
+LENQT           EQU     (BASETIC * 2) / 3
+LENHT           EQU     (BASETIC * 4) / 3
+LENQD           EQU     BASETIC + (BASETIC / 2)
+LENED           EQU     (BASETIC / 2) + (BASETIC / 4)
+LENHD           EQU     (BASETIC * 2) + BASETIC
+LENWD           EQU     (BASETIC * 4) + (BASETIC * 2)
+LENQDD          EQU     BASETIC + (BASETIC / 2) + (BASETIC / 4)
+LENEDD          EQU     (BASETIC / 2) + (BASETIC / 4) + (BASETIC / 8)
+
+
+; --- CHANNEL STATE OFFSETS             ----------------------------------------
+
+CHPC            EQU     0               ; PROGRAM COUNTER (DEFW)
+CHWAIT          EQU     2               ; WAIT TICKS INTEGER (DEFW)
+CHFRAC          EQU     4               ; WAIT TICKS FRACTION (DEFB)
+CHBPM           EQU     5               ; BPM STEP 8.8 (DEFW)
+CHVOL           EQU     7               ; CURRENT VOLUME (DEFB)
+CHGATE          EQU     8               ; GATE TIME (DEFB)
+CHINST          EQU     9               ; INST PTR (DEFW)
+CHLCOUNT        EQU     11              ; LOOP COUNTER (DEFB)
+CHLADDR         EQU     12              ; LOOP ADDRESS (DEFW)
+CHADSRS         EQU     14              ; ADSR STATE (DEFB)
+CHADSRA         EQU     15              ; ADSR ACC (DEFB)
+CHLFOP          EQU     16              ; LFO PHASE (DEFB)
+CHLFOD          EQU     17              ; LFO DELAY (DEFB)
+CHFLAGS         EQU     18              ; FLAGS (DEFB)
+
+CHSIZE          EQU     20              ; TOTAL SIZE PER CHANNEL (ROUNDED)
+
+
+; --- INSTRUMENT RECORD OFFSETS         ----------------------------------------
+
+INSATT          EQU     0
+INSDEC          EQU     1
+INSUS           EQU     2
+INSREL          EQU     3
+INSLDEST        EQU     4
+INSLWAVE        EQU     5
+INSLSPEE        EQU     6
+INSLAMP         EQU     7
+INSLDELA        EQU     8
+INSFLAGS        EQU     9

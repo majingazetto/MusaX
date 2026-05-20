@@ -1,0 +1,37 @@
+;                                       ****************************************
+;                                       * MUSAX VARIABLES                      *
+;                                       ****************************************
+
+
+; --- ENGINE VARIABLES START            ----------------------------------------
+
+MUSVARS
+
+; --- CHANNEL STATES                    ----------------------------------------
+
+CHANNELS        DEFS    CHSIZE * 6
+
+
+; --- PSG SHADOW REGS                   ----------------------------------------
+
+PSGMUS          DEFS    14              ; MUSIC PSG REGISTERS
+PSGSFX          DEFS    14              ; FX PSG REGISTERS
+SFXMSK          DEFB    0               ; FX OWNERSHIP MASK (BITS 0-2)
+
+
+; --- TRANSPORT                         ----------------------------------------
+
+SONGPTR         DEFW    0               ; CURRENT SONG HEADER
+FXPTR           DEFW    0               ; CURRENT FX TABLE
+INSTTBL         DEFW    0               ; CURRENT INSTRUMENT TABLE
+
+
+; --- GLOBAL STATE                      ----------------------------------------
+
+MUSSTAT         DEFB    0               ; BIT 0: PLAYING, BIT 1: FADING...
+MUSVOL          DEFB    15              ; GLOBAL MASTER VOLUME
+
+
+; --- ENGINE VARIABLES END              ----------------------------------------
+
+MUSEVARS
