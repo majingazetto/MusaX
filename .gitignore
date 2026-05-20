@@ -2,3 +2,7 @@
 *.psg
 .venv/
 __pycache__/
+/*.DSK
+/*.dsk
+/*.Z8A
+examples/msl/*.Z8A
