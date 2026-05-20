@@ -1,3 +1,4 @@
 *.wav
 *.psg
+.venv/
 __pycache__/
