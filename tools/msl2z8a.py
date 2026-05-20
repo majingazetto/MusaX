@@ -182,6 +182,14 @@ def msl2z8a(input_file, output_file=None, song_name=None):
             f.write('\n')
 
             for name, defn in fx_defs.items():
+                fx_instruments = defn.get("instruments", {})
+                if fx_instruments:
+                    fx_itbl = f'INST_TABLE_{name}'
+                elif instruments:
+                    fx_itbl = _g(itbl_label, use_module)
+                else:
+                    fx_itbl = '0'
+
                 f.write(f"; --- FX: {name}\n\n")
                 block_labels = defn["labels"]
                 ptr_a = next((l for l in block_labels if "CH_A" in l.upper() or "CHA" in l.upper()), "0")
@@ -189,8 +197,27 @@ def msl2z8a(input_file, output_file=None, song_name=None):
                 ptr_c = next((l for l in block_labels if "CH_C" in l.upper() or "CHC" in l.upper()), "0")
                 f.write(_aline(f'HDR_{name}', 'DEFB', _g('TYPE_FX', use_module)))
                 f.write(_line('DEFW', f'{ptr_a}, {ptr_b}, {ptr_c}'))
-                f.write(_line('DEFW', itbl_label if instruments else '0'))
+                f.write(_line('DEFW', fx_itbl))
                 f.write('\n')
+
+                if fx_instruments:
+                    f.write(f"; --- Instrument Table: {name}\n\n")
+                    first = True
+                    for i in range(16):
+                        lbl = f'INST_TABLE_{name}' if first else ''
+                        first = False
+                        ref = f'INST_{name}_{i}' if i in fx_instruments else '0'
+                        f.write(_aline(lbl, 'DEFW', ref))
+                    f.write('\n')
+                    for i, data in sorted(fx_instruments.items()):
+                        first_chunk = True
+                        for chunk_start in range(0, len(data), 8):
+                            chunk = data[chunk_start:chunk_start + 8]
+                            hex_vals = ', '.join(f'#{b:02X}' for b in chunk)
+                            lbl = f'INST_{name}_{i}' if first_chunk else ''
+                            first_chunk = False
+                            f.write(_aline(lbl, 'DEFB', hex_vals))
+                    f.write('\n')
 
         # --- Song Header ---
         song_labels  = [l for l in labels if l.upper() in ["CH_A", "CHA", "CH_B", "CHB", "CH_C", "CHC"]]

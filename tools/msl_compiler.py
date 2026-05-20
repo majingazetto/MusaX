@@ -152,10 +152,14 @@ class MSLCompiler:
             elif isinstance(event, Call):
                 temp_offset += 3 # CMD_CALL (1b) + Addr (2b)
             elif isinstance(event, Instrument):
-                self.instruments[event.id] = self._compile_instrument(event)
+                compiled = self._compile_instrument(event)
+                if current_fx_name:
+                    self.fx_definitions[current_fx_name]["instruments"][event.id] = compiled
+                else:
+                    self.instruments[event.id] = compiled
             elif isinstance(event, FXBlockStart):
                 current_fx_name = event.name
-                self.fx_definitions[current_fx_name] = {"start_addr": base_addr + temp_offset, "labels": []}
+                self.fx_definitions[current_fx_name] = {"start_addr": base_addr + temp_offset, "labels": [], "instruments": {}}
             elif isinstance(event, FXBlockEnd):
                 current_fx_name = None
             elif isinstance(event, PhraseStart):
