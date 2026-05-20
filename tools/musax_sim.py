@@ -336,14 +336,25 @@ class MusaXSim:
             max_addr = max(self.flat_memory.keys()) if self.flat_memory else 0
             master_stream = [self.flat_memory.get(i, 0) for i in range(max_addr + 1)]
 
-            # Find Music Header — primary: TYPE_SONG byte; fallback: label name heuristic
+            # Find Music Header — primary: TYPE_SONG byte + label name; fallback: label name only
+            # The byte-only check is unreliable: instrument ADSR/data bytes can accidentally
+            # equal 0x80 (TYPE_SONG), causing false header matches and garbage note playback.
             type_song = self.symbols.get("TYPE_SONG", 0x80)
-            music_hdr_name = next((k for k in self.all_streams if self.all_streams[k] and self.all_streams[k][0] == type_song), None)
+
+            def _is_music_hdr_label(k):
+                u = k.upper()
+                return ("HDR" in u or u.endswith("HEADER")) and "FX" not in u
+
+            music_hdr_name = next(
+                (k for k in self.all_streams
+                 if self.all_streams[k] and self.all_streams[k][0] == type_song
+                 and _is_music_hdr_label(k)),
+                None
+            )
             if not music_hdr_name:
                 # Matches HDR_xxx (standalone) and HEADER / MODULE.HEADER (module mode)
                 music_hdr_name = next(
-                    (k for k in self.all_streams
-                     if ("HDR" in k.upper() or k.upper().endswith("HEADER")) and "FX" not in k.upper()),
+                    (k for k in self.all_streams if _is_music_hdr_label(k)),
                     None
                 )
             
@@ -987,6 +998,8 @@ class MusaXSim:
 
         self.total_ticks = 0
         self._reset_channels()
+        if self.active_mask == 0 and self.fx_library:
+            self.musax_req_fx(0)
         self.silent = True # Don't draw while rendering
         self.start_time = time.time()
 
@@ -1194,6 +1207,9 @@ class MusaXSim:
             return
 
         self._reset_channels()
+        # FX-only file: no music channels active but FX library present → auto-trigger slot 0
+        if self.active_mask == 0 and self.fx_library:
+            self.musax_req_fx(0)
         os.system('clear')
         self.start_time = time.time()
         frames = 0
