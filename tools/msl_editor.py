@@ -321,6 +321,133 @@ def _remove_text_inst(text: str, inst_id: int) -> str:
 
 
 # ---------------------------------------------------------------------------
+# FX-context instrument helpers
+# ---------------------------------------------------------------------------
+
+def _find_fx_block_bounds(text: str, fx_name: str):
+    """Return (block_start, block_end) for @FX(NAME) { ... }, or None.
+    block_start is the '@' of @FX; block_end is the position after the closing '}'."""
+    pat = re.compile(r'@FX\s*\(\s*' + re.escape(fx_name) + r'\s*\)\s*\{', re.IGNORECASE)
+    m = pat.search(text)
+    if not m:
+        return None
+    depth = 0
+    for i in range(m.end() - 1, len(text)):
+        if text[i] == '{':
+            depth += 1
+        elif text[i] == '}':
+            depth -= 1
+            if depth == 0:
+                return (m.start(), i + 1)
+    return None
+
+
+def _fx_all_spans(text: str) -> list:
+    """Return [(start, end), ...] for every @FX block in text (brace-matched)."""
+    pat = re.compile(r'@FX\s*\(\s*(\w+)\s*\)\s*\{', re.IGNORECASE)
+    spans = []
+    for m in pat.finditer(text):
+        depth = 0
+        for i in range(m.end() - 1, len(text)):
+            if text[i] == '{':
+                depth += 1
+            elif text[i] == '}':
+                depth -= 1
+                if depth == 0:
+                    spans.append((m.start(), i + 1))
+                    break
+    return spans
+
+
+def _parse_inst_blocks_toplevel(text: str, source: str = 'song') -> dict:
+    """Like _parse_inst_blocks but skips @INST blocks nested inside any @FX block."""
+    fx_spans = _fx_all_spans(text)
+    result = {}
+    for m in _RE_INST_BLOCK.finditer(text):
+        pos = m.start()
+        if any(fs <= pos < fe for fs, fe in fx_spans):
+            continue
+        inst_id   = int(m.group(1))
+        inst_name = m.group(2)
+        body      = m.group(3)
+        adsr, lfo, flags = [0, 0, 0, 0], [0, 0, 0, 0, 0], 0
+        am = re.search(r'ADSR:\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)', body, re.I)
+        if am:
+            adsr = [int(v) for v in am.groups()]
+        lm = re.search(r'LFO:\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)', body, re.I)
+        if lm:
+            lfo = [int(v) for v in lm.groups()]
+        fm = re.search(r'FLAGS:\s*(\d+)', body, re.I)
+        if fm:
+            flags = int(fm.group(1))
+        result[inst_id] = InstrumentData(inst_id, inst_name, adsr, lfo, flags, source)
+    return result
+
+
+def _parse_fx_inst_sets(text: str) -> dict:
+    """Return {fx_name: {id: InstrumentData}} for @INST blocks embedded in each @FX block."""
+    result = {}
+    pat = re.compile(r'@FX\s*\(\s*(\w+)\s*\)\s*\{', re.IGNORECASE)
+    for m in pat.finditer(text):
+        fx_name = m.group(1).upper()
+        bounds = _find_fx_block_bounds(text, fx_name)
+        if not bounds:
+            continue
+        body = text[bounds[0]:bounds[1]]
+        result[fx_name] = _parse_inst_blocks(body, 'fx')
+    return result
+
+
+def _active_ctx(state: 'EditorState') -> str:
+    """Return the active instrument context name ('SONG' or an FX name)."""
+    ctxs = getattr(state, 'instr_contexts', ['SONG'])
+    idx  = getattr(state, 'instr_ctx_idx', 0)
+    if ctxs and 0 <= idx < len(ctxs):
+        return ctxs[idx]
+    return 'SONG'
+
+
+def _update_text_inst_in_fx(text: str, fx_name: str, inst: 'InstrumentData') -> str:
+    """Update or insert an @INST block inside a specific @FX block."""
+    bounds = _find_fx_block_bounds(text, fx_name)
+    if not bounds:
+        return text
+    blk_start, blk_end = bounds
+    brace_pos  = text.index('{', blk_start)
+    body_start = brace_pos + 1
+    body       = text[body_start : blk_end - 1]
+
+    pattern = re.compile(
+        r'@INST\s*\(\s*' + str(inst.id) + r'\s*,\s*"[^"]*"\s*\)\s*\{[^}]*\}',
+        re.IGNORECASE | re.DOTALL,
+    )
+    block = _format_inst_block(inst)
+    if pattern.search(body):
+        new_body = pattern.sub(block, body, count=1)
+    else:
+        new_body = '\n    ' + block + '\n' + body
+    return text[:body_start] + new_body + text[blk_end - 1:]
+
+
+def _remove_text_inst_in_fx(text: str, fx_name: str, inst_id: int) -> str:
+    """Remove an @INST block from inside a specific @FX block."""
+    bounds = _find_fx_block_bounds(text, fx_name)
+    if not bounds:
+        return text
+    blk_start, blk_end = bounds
+    brace_pos  = text.index('{', blk_start)
+    body_start = brace_pos + 1
+    body       = text[body_start : blk_end - 1]
+
+    pattern = re.compile(
+        r'\n?\s*@INST\s*\(\s*' + str(inst_id) + r'\s*,\s*"[^"]*"\s*\)\s*\{[^}]*\}\n?',
+        re.IGNORECASE | re.DOTALL,
+    )
+    new_body = pattern.sub('\n', body)
+    return text[:body_start] + new_body + text[blk_end - 1:]
+
+
+# ---------------------------------------------------------------------------
 # Colour Schemes
 # ---------------------------------------------------------------------------
 
@@ -425,6 +552,9 @@ class EditorState:
         # Instrument editor
         self.instr_bank:     dict        = {}   # {id: InstrumentData}
         self.instr_song:     dict        = {}   # {id: InstrumentData}
+        self.instr_fx_sets:  dict        = {}   # {fx_name: {id: InstrumentData}}
+        self.instr_contexts: list        = ['SONG']  # ['SONG', 'FXFALL', ...]
+        self.instr_ctx_idx:  int         = 0
         self.instr_list_sel: int         = 0
         self.instr_form_sel: int         = 0
         self.instr_focus:    str         = 'list'  # 'list' | 'form'
@@ -559,7 +689,7 @@ def _fkey_bar(state: EditorState) -> StyleAndTextTuples:
         return _row_var([('↑↓', 'Navigate'), ('Enter', 'Jump'), ('Esc', 'Cancel')])
     if state.mode == 'instr':
         row1 = [('F2', 'Save'), ('F4', 'ToBank'), ('F5', 'ToSong'), ('Del', 'Delete'), ('F6', 'Try!')]
-        return _row_fixed(row1) + _row_fixed([('Tab', 'Focus'), ('↑↓', 'Move'), ('←→', '±value'), ('Ret', 'Name'), ('Esc', 'Back')])
+        return _row_fixed(row1) + _row_fixed([('Tab', 'Focus'), ('↑↓', 'Move'), ('←→', '±value'), ('[/]', 'Ctx'), ('Ret', 'Name'), ('Esc', 'Back')])
     if state.mode == 'z8a':
         return _row_var([('F2/^S', 'Save Z8A'), ('Esc', 'Back'), ('F4', 'Back')])
 
@@ -726,8 +856,18 @@ def _sections_text(state: EditorState) -> StyleAndTextTuples:
 # ---------------------------------------------------------------------------
 
 def _instr_load_edit(state: EditorState):
-    i = state.instr_list_sel
-    if i in state.instr_song:
+    i   = state.instr_list_sel
+    ctx = _active_ctx(state)
+    if ctx != 'SONG':
+        fx_instr = state.instr_fx_sets.get(ctx, {})
+        if i in fx_instr:
+            state.instr_edit = fx_instr[i].copy()
+            state.instr_edit.source = 'fx'
+        else:
+            inst = _inst_make_default(i)
+            inst.source = 'fx'
+            state.instr_edit = inst
+    elif i in state.instr_song:
         state.instr_edit = state.instr_song[i].copy()
         state.instr_edit.source = 'song'
     elif i in state.instr_bank:
@@ -752,37 +892,69 @@ def _instr_load_bank(state: EditorState):
 def _inst_list_text(state: EditorState) -> StyleAndTextTuples:
     result: StyleAndTextTuples = []
     focused = state.instr_focus == 'list'
-    sel = state.instr_list_sel
-    for i in range(16):
-        in_bank = i in state.instr_bank
-        in_song = i in state.instr_song
-        if in_bank and in_song:
-            tag  = '[SONG]*'
-            name = state.instr_song[i].name
-            tag_style = 'class:loop'
-        elif in_song:
-            tag  = '[SONG] '
-            name = state.instr_song[i].name
-            tag_style = 'class:note'
-        elif in_bank:
-            tag  = '[BANK] '
-            name = state.instr_bank[i].name
-            tag_style = 'class:at_cmd'
-        else:
-            tag  = '       '
-            name = '(empty)'
-            tag_style = 'class:comment'
-        if focused and i == sel:
-            row_style = 'class:secpanel.selected'
-            prefix    = '▸'
-        elif not focused and i == sel:
-            row_style = 'class:label'
-            prefix    = '▸'
-        else:
-            row_style = 'class:comment' if not (in_bank or in_song) else 'class:default'
-            prefix    = ' '
-        result.append((row_style, f'{prefix}{i:>2}  {name:<16}  '))
-        result.append((tag_style if not (focused and i == sel) else row_style, f'{tag}\n'))
+    sel     = state.instr_list_sel
+    ctx     = _active_ctx(state)
+    ctxs    = state.instr_contexts
+
+    # Context navigation header (only when multiple contexts exist)
+    if len(ctxs) > 1:
+        ctx_style = 'class:at_cmd' if ctx != 'SONG' else 'class:note'
+        result.append((ctx_style, f' ◀ {ctx} ▶   [/] cycle\n'))
+
+    if ctx == 'SONG':
+        for i in range(16):
+            in_bank = i in state.instr_bank
+            in_song = i in state.instr_song
+            if in_bank and in_song:
+                tag  = '[SONG]*'
+                name = state.instr_song[i].name
+                tag_style = 'class:loop'
+            elif in_song:
+                tag  = '[SONG] '
+                name = state.instr_song[i].name
+                tag_style = 'class:note'
+            elif in_bank:
+                tag  = '[BANK] '
+                name = state.instr_bank[i].name
+                tag_style = 'class:at_cmd'
+            else:
+                tag  = '       '
+                name = '(empty)'
+                tag_style = 'class:comment'
+            if focused and i == sel:
+                row_style = 'class:secpanel.selected'
+                prefix    = '▸'
+            elif not focused and i == sel:
+                row_style = 'class:label'
+                prefix    = '▸'
+            else:
+                row_style = 'class:comment' if not (in_bank or in_song) else 'class:default'
+                prefix    = ' '
+            result.append((row_style, f'{prefix}{i:>2}  {name:<16}  '))
+            result.append((tag_style if not (focused and i == sel) else row_style, f'{tag}\n'))
+    else:
+        fx_instr = state.instr_fx_sets.get(ctx, {})
+        for i in range(16):
+            in_fx = i in fx_instr
+            if in_fx:
+                tag       = '[FX]   '
+                name      = fx_instr[i].name
+                tag_style = 'class:at_cmd'
+            else:
+                tag       = '       '
+                name      = '(empty)'
+                tag_style = 'class:comment'
+            if focused and i == sel:
+                row_style = 'class:secpanel.selected'
+                prefix    = '▸'
+            elif not focused and i == sel:
+                row_style = 'class:label'
+                prefix    = '▸'
+            else:
+                row_style = 'class:comment' if not in_fx else 'class:default'
+                prefix    = ' '
+            result.append((row_style, f'{prefix}{i:>2}  {name:<16}  '))
+            result.append((tag_style if not (focused and i == sel) else row_style, f'{tag}\n'))
     return result
 
 
@@ -830,7 +1002,12 @@ def _inst_form_text(state: EditorState) -> StyleAndTextTuples:
     grp('FLAGS')
     field_row(10, 'FLAGS', f'{inst.flags}')
 
-    src_label = 'SONG' if inst.source == 'song' else 'BANK'
+    if inst.source == 'song':
+        src_label = 'SONG'
+    elif inst.source == 'fx':
+        src_label = f'FX:{_active_ctx(state)}'
+    else:
+        src_label = 'BANK'
     hint = _FIELD_RANGE_HINT.get(sel, '')
     result.append(('class:comment', f'\n  [{src_label}]  ←→/±=change  Ret=edit\n'))
     if hint:
@@ -1231,8 +1408,11 @@ def build_app(initial_file: Path | None = None) -> Application:
 
     @kb.add('f6', filter=Condition(lambda: state.mode == 'msl'))
     def _instr_open(event):
-        state.instr_song = _parse_inst_blocks(main_buf.text, 'song')
+        state.instr_song     = _parse_inst_blocks_toplevel(main_buf.text, 'song')
         _instr_load_bank(state)
+        state.instr_fx_sets  = _parse_fx_inst_sets(main_buf.text)
+        state.instr_contexts = ['SONG'] + list(state.instr_fx_sets.keys())
+        state.instr_ctx_idx  = 0
         state.instr_list_sel = 0
         state.instr_form_sel = 0
         state.instr_focus    = 'list'
@@ -1272,6 +1452,20 @@ def build_app(initial_file: Path | None = None) -> Application:
         else:
             state.instr_form_sel = min(_INST_FORM_FIELD_COUNT - 1, state.instr_form_sel + 1)
 
+    @kb.add('[', eager=True, filter=_instr_active)
+    def _instr_ctx_prev(event):
+        if len(state.instr_contexts) > 1:
+            state.instr_ctx_idx = (state.instr_ctx_idx - 1) % len(state.instr_contexts)
+            state.instr_list_sel = 0
+            _instr_load_edit(state)
+
+    @kb.add(']', eager=True, filter=_instr_active)
+    def _instr_ctx_next(event):
+        if len(state.instr_contexts) > 1:
+            state.instr_ctx_idx = (state.instr_ctx_idx + 1) % len(state.instr_contexts)
+            state.instr_list_sel = 0
+            _instr_load_edit(state)
+
     def _form_change(delta: int):
         if state.instr_focus == 'form' and state.instr_edit:
             _inst_cycle_field(state.instr_edit, state.instr_form_sel, delta)
@@ -1308,7 +1502,15 @@ def build_app(initial_file: Path | None = None) -> Application:
         inst = state.instr_edit
         if inst is None:
             return
-        if inst.source == 'song':
+        ctx = _active_ctx(state)
+        if ctx != 'SONG':
+            new_text = _update_text_inst_in_fx(main_buf.text, ctx, inst)
+            main_buf.set_document(Document(new_text, main_buf.cursor_position), bypass_readonly=True)
+            saved = inst.copy()
+            saved.source = 'fx'
+            state.instr_fx_sets.setdefault(ctx, {})[inst.id] = saved
+            _do_save(state, main_buf)
+        elif inst.source == 'song':
             new_text = _update_text_inst(main_buf.text, inst)
             main_buf.set_document(Document(new_text, main_buf.cursor_position), bypass_readonly=True)
             state.instr_song[inst.id] = inst.copy()
@@ -1380,22 +1582,30 @@ def build_app(initial_file: Path | None = None) -> Application:
 
     @kb.add('delete', eager=True, filter=_instr_active)
     def _instr_delete(event):
-        i = state.instr_list_sel
-        in_song = i in state.instr_song
-        in_bank = i in state.instr_bank
-        if in_song:
-            new_text = _remove_text_inst(main_buf.text, i)
-            main_buf.set_document(Document(new_text, main_buf.cursor_position), bypass_readonly=True)
-            del state.instr_song[i]
-        elif in_bank and state.bank_file:
-            bank_path = (state.filepath.parent / state.bank_file) if state.filepath else Path(state.bank_file)
-            try:
-                existing = bank_path.read_text(encoding='utf-8')
-                new_bank = _remove_text_inst(existing, i)
-                bank_path.write_text(new_bank, encoding='utf-8')
-                del state.instr_bank[i]
-            except OSError:
-                pass
+        i   = state.instr_list_sel
+        ctx = _active_ctx(state)
+        if ctx != 'SONG':
+            fx_instr = state.instr_fx_sets.get(ctx, {})
+            if i in fx_instr:
+                new_text = _remove_text_inst_in_fx(main_buf.text, ctx, i)
+                main_buf.set_document(Document(new_text, main_buf.cursor_position), bypass_readonly=True)
+                del state.instr_fx_sets[ctx][i]
+        else:
+            in_song = i in state.instr_song
+            in_bank = i in state.instr_bank
+            if in_song:
+                new_text = _remove_text_inst(main_buf.text, i)
+                main_buf.set_document(Document(new_text, main_buf.cursor_position), bypass_readonly=True)
+                del state.instr_song[i]
+            elif in_bank and state.bank_file:
+                bank_path = (state.filepath.parent / state.bank_file) if state.filepath else Path(state.bank_file)
+                try:
+                    existing = bank_path.read_text(encoding='utf-8')
+                    new_bank = _remove_text_inst(existing, i)
+                    bank_path.write_text(new_bank, encoding='utf-8')
+                    del state.instr_bank[i]
+                except OSError:
+                    pass
         _instr_load_edit(state)
 
     @kb.add('f6', filter=_instr_active)
