@@ -1,6 +1,7 @@
 @TITLE "Yuurei-kun Stage 1"
 @AUTHOR "Compile"
 @DESC "Fur Elise arr. for 3ch PSG — transcribed from PSG log at 150 BPM"
+@NAMESPACE YUUREI_STG1
 
 @INST(0, "Lead") {
     ADSR: 255, 12, 200, 40

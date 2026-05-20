@@ -1,28 +1,30 @@
-@INST(0, "Lead") {
-    ADSR: 255, 0, 255, 0
-    LFO:  0, 0, 0, 0, 0
-    FLAGS: 0
-}
-
-@INST(1, "Inst1") {
-    ADSR: 128, 0, 255, 0
-    LFO:  0, 0, 0, 0, 0
-    FLAGS: 0
-}
-
-@INST(2, "Inst2") {
-    ADSR: 128, 25, 222, 43
-    LFO:  1, 0, 64, 7, 0
-    FLAGS: 0
-}
-
-@INST(3, "Inst3") {
-    ADSR: 255, 0, 255, 255
-    LFO:  0, 0, 0, 0, 0
-    FLAGS: 0
-}
+@NAMESPACE FXSHEEP
 
 @FX(FXSHEEP) {
+    @INST(0, "Lead") {
+        ADSR: 255, 0, 255, 0
+        LFO:  0, 0, 0, 0, 0
+        FLAGS: 0
+    }
+
+    @INST(1, "Inst1") {
+        ADSR: 128, 0, 255, 0
+        LFO:  0, 0, 0, 0, 0
+        FLAGS: 0
+    }
+
+    @INST(2, "Inst2") {
+        ADSR: 128, 25, 222, 43
+        LFO:  1, 0, 64, 7, 0
+        FLAGS: 0
+    }
+
+    @INST(3, "Inst3") {
+        ADSR: 255, 0, 255, 255
+        LFO:  0, 0, 0, 0, 0
+        FLAGS: 0
+    }
+
     // CH_A: silent — skipped
     // CH_B: silent — skipped
     CH_C:

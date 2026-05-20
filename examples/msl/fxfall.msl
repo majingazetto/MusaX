@@ -1,28 +1,30 @@
-@INST(0, "Lead") {
-    ADSR: 255, 0, 255, 0
-    LFO:  0, 0, 0, 0, 0
-    FLAGS: 0
-}
-
-@INST(1, "Inst1") {
-    ADSR: 255, 0, 255, 192
-    LFO:  0, 0, 0, 0, 0
-    FLAGS: 0
-}
-
-@INST(2, "Inst2") {
-    ADSR: 128, 0, 255, 128
-    LFO:  0, 0, 0, 0, 0
-    FLAGS: 0
-}
-
-@INST(3, "Inst3") {
-    ADSR: 85, 0, 255, 255
-    LFO:  0, 0, 0, 0, 0
-    FLAGS: 0
-}
+@NAMESPACE FXFALL
 
 @FX(FXFALL) {
+    @INST(0, "Lead") {
+        ADSR: 255, 0, 255, 0
+        LFO:  0, 0, 0, 0, 0
+        FLAGS: 0
+    }
+
+    @INST(1, "Inst1") {
+        ADSR: 255, 0, 255, 192
+        LFO:  0, 0, 0, 0, 0
+        FLAGS: 0
+    }
+
+    @INST(2, "Inst2") {
+        ADSR: 128, 0, 255, 128
+        LFO:  0, 0, 0, 0, 0
+        FLAGS: 0
+    }
+
+    @INST(3, "Inst3") {
+        ADSR: 85, 0, 255, 255
+        LFO:  0, 0, 0, 0, 0
+        FLAGS: 0
+    }
+
     CH_A:
         @T75  @V9  @I0
         O7  L64  G#  F#  F  @V8  G  F#

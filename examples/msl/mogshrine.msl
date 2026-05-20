@@ -1,3 +1,5 @@
+@NAMESPACE MOGSHRINE
+
 @INST(0, "Lead") {
     ADSR: 196, 12, 156, 48
     LFO:  0, 0, 0, 0, 0

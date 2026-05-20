@@ -1,6 +1,7 @@
 
 // --- Song Demo in MusaX-ML (MSL) ---
 // This file demonstrates the 3-channel structure and engine commands.
+@NAMESPACE SONGDEMO
 
 @INST(0, "SquareWave") {
     ADSR: 255, 10, 200, 20

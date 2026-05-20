@@ -1,3 +1,5 @@
+@NAMESPACE PENTEARS
+
 @INST(0, "Lead") {
     ADSR: 244, 10, 0, 0
     LFO:  0, 0, 0, 0, 0

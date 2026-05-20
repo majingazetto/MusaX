@@ -7,14 +7,13 @@
 @DESC "FX Classic"
 @NAMESPACE FXDEMO
 
-
-@INST(0, "Laser") {
-    ADSR: 255, 20, 0, 1
-    LFO: 1, 1, 8, 15, 0 // Fast pitch sweep
-    FLAGS: 0
-}
-
 @FX(LASER) {
+    @INST(0, "Laser") {
+        ADSR: 255, 20, 0, 1
+        LFO: 1, 1, 8, 15, 0 // Fast pitch sweep
+        FLAGS: 0
+    }
+
     CH_A: O6 L16 @I0 @V15 C > C < C > C R0
     CH_B: O4 L32 @V15 @P5 C < C R0
 }

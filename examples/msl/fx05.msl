@@ -1,16 +1,18 @@
-@INST(0, "Lead") {
-    ADSR: 64, 139, 116, 39
-    LFO:  0, 0, 128, 0, 0
-    FLAGS: 0
-}
-
-@INST(1, "Inst1") {
-    ADSR: 128, 0, 255, 0
-    LFO:  0, 0, 0, 0, 0
-    FLAGS: 0
-}
+@NAMESPACE FX05
 
 @FX(FX05) {
+    @INST(0, "Lead") {
+        ADSR: 64, 139, 116, 39
+        LFO:  0, 0, 128, 0, 0
+        FLAGS: 0
+    }
+
+    @INST(1, "Inst1") {
+        ADSR: 128, 0, 255, 0
+        LFO:  0, 0, 0, 0, 0
+        FLAGS: 0
+    }
+
     // CH_A: silent — skipped
     // CH_B: silent — skipped
     CH_C:

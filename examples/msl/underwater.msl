@@ -1,3 +1,5 @@
+@NAMESPACE UNDERWATER
+
 @INST(0, "Lead") {
     ADSR: 255, 25, 142, 27
     LFO:  0, 0, 0, 0, 0

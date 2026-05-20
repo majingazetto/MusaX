@@ -5,6 +5,7 @@
 @TITLE "Comprehensive Demo"
 @AUTHOR "Gemini CLI"
 @DESC "Showcasing Phrases and FX in v1.10"
+@NAMESPACE COMPDEMO
 
 // --- Instruments ---
 

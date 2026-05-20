@@ -1,3 +1,5 @@
+@NAMESPACE THEMAP
+
 @INST(0, "Lead") {
     ADSR: 250, 12, 162, 99
     LFO:  0, 0, 0, 0, 0
