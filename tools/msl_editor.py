@@ -4,6 +4,7 @@
 import sys
 import os
 import argparse
+import math as _math
 import re
 import shutil
 import subprocess
@@ -176,6 +177,10 @@ _LFO_DEST_NAMES = ['Off', 'Pitch', 'Vol']
 _LFO_WAVE_NAMES = ['TRI', 'SAW', 'SQR', 'SIN']
 _LFO_DEST_MAX   = len(_LFO_DEST_NAMES) - 1
 _LFO_WAVE_MAX   = len(_LFO_WAVE_NAMES) - 1
+
+_WAVE_INNER_W = 20   # graph columns inside the ▕…▏ borders
+_ADSR_H       = 7    # rows for ADSR graph
+_LFO_H        = 5    # rows for LFO graph
 
 _FIELD_RANGE_HINT = {
     0:  'str, max 24 chars',
@@ -834,6 +839,113 @@ def _inst_form_text(state: EditorState) -> StyleAndTextTuples:
 
 
 # ---------------------------------------------------------------------------
+# Waveform panel helpers
+# ---------------------------------------------------------------------------
+
+def _rate_cols(rate: int, max_cols: int = 6) -> int:
+    """Convert a rate value (0–255, 255=instant) to a column width (1..max_cols)."""
+    return max(1, round((1.0 - rate / 255.0) * (max_cols - 1)) + 1)
+
+
+def _adsr_samples(inst: 'InstrumentData') -> list:
+    att, dec, sus, rel = inst.adsr
+    W     = _WAVE_INNER_W
+    sus_v = sus / 255.0
+    aw = _rate_cols(att)
+    dw = _rate_cols(dec)
+    rw = _rate_cols(rel)
+    while aw + dw + rw >= W:
+        if aw > 1:   aw -= 1
+        elif dw > 1: dw -= 1
+        elif rw > 1: rw -= 1
+        else: break
+    sw = W - aw - dw - rw
+    ys: list = []
+    for x in range(W):
+        if x < aw:
+            ys.append((x + 1) / aw)
+        elif x < aw + dw:
+            t = (x - aw + 1) / dw
+            ys.append(1.0 - t * (1.0 - sus_v))
+        elif x < aw + dw + sw:
+            ys.append(sus_v)
+        else:
+            t = (x - aw - dw - sw + 1) / rw
+            ys.append(sus_v * (1.0 - t))
+    return ys[:W]
+
+
+def _lfo_samples(wave: int) -> list:
+    W = _WAVE_INNER_W
+    ys: list = []
+    for x in range(W):
+        t = x / W
+        if wave == 0:    # TRI
+            ys.append(1.0 - abs(2 * t - 1))
+        elif wave == 1:  # SAW
+            ys.append(t)
+        elif wave == 2:  # SQR
+            ys.append(1.0 if t < 0.5 else 0.0)
+        else:            # SIN
+            ys.append(0.5 + 0.5 * _math.sin(2 * _math.pi * t))
+    return ys
+
+
+def _render_graph(ys: list, H: int) -> list:
+    """Render a list of 0.0–1.0 samples as H rows of _WAVE_INNER_W chars."""
+    W    = len(ys)
+    grid = [[' '] * W for _ in range(H)]
+    rows = [max(0, min(H - 1, round((1.0 - v) * (H - 1)))) for v in ys]
+    for x in range(W):
+        r = rows[x]
+        if x == 0:
+            grid[r][x] = '·'
+        else:
+            p = rows[x - 1]
+            if r == p:
+                grid[r][x] = '─'
+            elif r < p:              # rising amplitude
+                grid[r][x] = '╱'
+                for ry in range(r + 1, p):
+                    grid[ry][x] = '│'
+            else:                    # falling amplitude
+                grid[r][x] = '╲'
+                for ry in range(p + 1, r):
+                    grid[ry][x] = '│'
+    return [''.join(row) for row in grid]
+
+
+def _inst_wave_text(state: 'EditorState') -> StyleAndTextTuples:
+    inst = state.instr_edit
+    if inst is None:
+        return [('class:comment', '  (no instrument)\n')]
+    result: StyleAndTextTuples = []
+    W = _WAVE_INNER_W
+
+    def graph_section(ys, H, ch_style):
+        for ln in _render_graph(ys, H):
+            result.append(('class:comment', ' ▕'))
+            result.append((ch_style, ln))
+            result.append(('class:comment', '▏\n'))
+
+    result.append(('class:comment', f' ADSR {"─" * (W - 4)}\n'))
+    graph_section(_adsr_samples(inst), _ADSR_H, 'class:note')
+
+    wave = inst.lfo[1]
+    dest = inst.lfo[0]
+    wn   = _LFO_WAVE_NAMES[wave] if 0 <= wave <= _LFO_WAVE_MAX else '?'
+    dn   = _LFO_DEST_NAMES[dest] if 0 <= dest <= _LFO_DEST_MAX else '?'
+    hdr  = f' LFO {wn}→{dn} '
+    result.append(('class:comment', f'\n{hdr}{"─" * max(0, W + 3 - len(hdr))}\n'))
+    if dest == 0:
+        result.append(('class:comment', '  (LFO off)\n'))
+    else:
+        graph_section(_lfo_samples(wave), _LFO_H, 'class:at_cmd')
+
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Build the Application
 # ---------------------------------------------------------------------------
 
@@ -927,8 +1039,12 @@ def build_app(initial_file: Path | None = None) -> Application:
         content=FormattedTextControl(lambda: _inst_form_text(state), focusable=True),
         style='class:default',
     )
+    instr_wave_window = Window(
+        content=FormattedTextControl(lambda: _inst_wave_text(state)),
+        width=_WAVE_INNER_W + 4, style='class:default',
+    )
     instr_body = ConditionalContainer(
-        content=VSplit([instr_list_window, instr_form_window]),
+        content=VSplit([instr_list_window, instr_form_window, instr_wave_window]),
         filter=Condition(lambda: state.mode == 'instr'),
     )
 

@@ -63,7 +63,7 @@ F2 / Ctrl+S   Save current file
 F3 / Ctrl+O   Open file (directory picker — ↑↓ navigate, Enter open/descend, Esc cancel)
 F4            Toggle Z8A view (read-only assembled output; Esc or F4 to return)
 F5            Toggle Vi mode (only active in Main Editor mode)
-F6            Switch to Instrument Editor (not yet implemented)
+F6            Switch to Instrument Editor
 F9 / Ctrl+B   Build — compiles MSL, shows errors in panel
 F10 / Ctrl+R  Build + Play — compiles, then suspends editor and runs simulator
 Ctrl+E / F12  Toggle error panel (↑↓ to select, Enter to jump to line)
@@ -101,45 +101,60 @@ The editor suspends itself and hands the terminal to `musax_sim.py` completely (
 
 ## 4. Instrument Editor Layout (F6)
 
+Three-panel layout:
+
 ```
-┌─ MusaX Instrument Editor ─────────────────────────────────────────┐
-│  [BANK: mi_banco.msxi]              [SONG: cancion.msl]           │
-│                                                                    │
-│  0  Piano          [BANK]    │  Name:  Piano                      │
-│  1  VibratoLead    [SONG]    │  ──────────────────────────────    │
-│  2  BassDrum       [BANK]    │  ADSR   Att: 10  Dec:  5           │
-│  3  SquareLead     [SONG]*   │         Sus:255  Rel: 10           │
-│  4  (empty)                  │  ──────────────────────────────    │
-│  ...                         │  LFO    Dest: Pitch  Wave: TRI     │
-│  15 (empty)                  │         Speed:  2    Amp:   12     │
-│                              │         Delay: 20                  │
-│                              │  ──────────────────────────────    │
-│                              │  FLAGS: 0                          │
-├────────────────────────────────────────────────────────────────────┤
-│  * = SONG overrides BANK instrument with same ID                  │
-├────────────────────────────────────────────────────────────────────┤
-│ F2 Save  F4 Copy→Bank  F5 Copy→Song  Del Delete  Esc/F6 Back     │
-└────────────────────────────────────────────────────────────────────┘
+┌─ MusaX Instrument Editor ─ BANK: mi_banco.msxi ───────────────────────────────────────┐
+│                                                                                         │
+│  0  Piano          [BANK]    │  Name:  Piano          │ ADSR ────────────────         │
+│  1  VibratoLead    [SONG]    │  ── ADSR ──────────    │ ▕  ╱─                  ▏     │
+│  2  BassDrum       [BANK]    │▸ Att        :  10      │ ▕  │ ╲────────         ▏     │
+│  3  SquareLead     [SONG]*   │  Dec        :   5      │ ▕·─          ╲──       ▏     │
+│  4  (empty)                  │  Sus        : 255      │ ▕               ╲──    ▏     │
+│  ...                         │  Rel        :  10      │                         │     │
+│  15 (empty)                  │  ── LFO ───────────    │ LFO TRI→Pitch ─────────      │
+│                              │  Dest       : Pitch    │ ▕     ╱──              ▏     │
+│                              │  Wave       : TRI      │ ▕   ╱─   ╲──           ▏     │
+│                              │  Speed      :   2      │ ▕·──        ╲──        ▏     │
+│                              │  Amp        :  12      │ ▕              ╲──     ▏     │
+│                              │  Delay      :  20      │ ▕                 ╲────▏     │
+│                              │  ── FLAGS ─────────    │                              │
+│                              │  FLAGS      :   0      │                              │
+│                              │                        │                              │
+│                              │  [BANK]  ←→/±=change  │                              │
+├─────────────────────────────────────────────────────────────────────────────────────────┤
+│  * = SONG overrides BANK instrument with same ID                                       │
+├─────────────────────────────────────────────────────────────────────────────────────────┤
+│ F2 Save  F4 Copy→Bank  F5 Copy→Song  Del Delete  F6 Try!  Esc Back                    │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Instrument List (left panel)
+### Instrument List (left panel, 32 cols)
 - Always shows all 16 slots (IDs 0–15), including empty ones.
 - Labels: `[BANK]` — from bank file only. `[SONG]` — defined inline in MSL. `[SONG]*` — defined in both; SONG overrides BANK (compiler emits a warning).
 
-### Instrument Form (right panel)
+### Instrument Form (middle panel)
 - Fields: Name, ADSR (Att/Dec/Sus/Rel), LFO (Dest/Wave/Speed/Amp/Delay), FLAGS.
 - `Tab` moves focus between list and form.
 - `↑↓` navigates the list or form fields.
+
+### Wave Preview (right panel, 24 cols)
+Live ASCII graphs that update as parameter values change:
+- **ADSR envelope** (7 rows): shows the attack rise, decay slope, sustain level, and release slope as a line graph.
+- **LFO waveform** (5 rows): shows one full cycle of the selected wave type (TRI/SAW/SQR/SIN). Header displays wave type and destination. Hidden when LFO Dest is Off.
 
 ### Keyboard Map
 ```
 F2          Save (bank file or MSL depending on selected instrument source)
 F4          Copy selected instrument → Bank file
 F5          Copy selected instrument → Song (inline @INST)
+F6          Try! — build and audition the current instrument
 Del         Delete selected instrument from its source
 Tab         Toggle focus: list ↔ form
 ↑ ↓         Navigate list / form fields
-Esc / F6    Return to Main Editor
+← → / + -  Cycle field value (numeric fields step by 1; enum fields cycle options)
+Enter       Edit Name field directly
+Esc         Return to Main Editor
 ```
 
 ---
