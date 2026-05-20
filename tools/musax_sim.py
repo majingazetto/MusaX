@@ -116,7 +116,7 @@ class MusaXSim:
                 "fade_vol": 255.0, "fade_target": 255.0, "fade_step": 0.0,
                 "muted": False, "porta_speed": 0, "target_freq": 0.0,
                 "target_note": 255, "porta_timer": 0,
-                "adsr_state": 0, "adsr_acc": 0.0, "lfo_phase": 0.0, "lfo_delay_ctr": 0
+                "adsr_state": 0, "adsr_acc": 0.0, "lfo_phase": 0.0, "lfo_delay_ctr": 0, "lfo_val": 0.0
             })
 
         # Default instrument table — used when source's PTR_INST == 0.
@@ -784,6 +784,7 @@ class MusaXSim:
                     else:                # Sine
                         wave = int(127 * math.sin(2 * math.pi * p / 256))
                     lfo_val = (wave * lfo_amp) / 15.0
+            ch["lfo_val"] = lfo_val
 
             # --- 3. APPLY MODULATIONS ---
             final_vol_scale = ch["adsr_acc"]
@@ -882,8 +883,8 @@ class MusaXSim:
         sys.stdout.write("\033[94m━\033[0m" * W + "\r\n")
 
         # Column layout (visible chars, SEP=2):
-        # [11] CH+STATE  [4] I:N  [5] NOTE  [6] WAIT  [17] VU  [6] FADE  [5] BPM  [5] SLD  [9] ADSR  [10] LABEL  [12] LOOPS  [11] PC+FRAC  [11] HEX
-        sys.stdout.write("\033[1m  CH  STATE  I   NOTE WAIT  VOL/ENV          FADE  BPM  SLD  ADSR     LABEL     LOOPS       PC  FRAC  HEX\033[0m\r\n")
+        # [11] CH+STATE  [4] I:N  [5] NOTE  [6] WAIT  [17] VU  [6] FADE  [5] BPM  [5] LFO  [9] ADSR  [10] LABEL  [12] LOOPS  [11] PC+FRAC  [11] HEX
+        sys.stdout.write("\033[1m  CH  STATE  I   NOTE WAIT  VOL/ENV          FADE  BPM  LFO   ADSR     LABEL     LOOPS       PC  FRAC  HEX\033[0m\r\n")
         sys.stdout.write("  " + "\033[90m─\033[0m" * (W-2) + "\r\n")
 
         for i in range(MAX_CHANNELS):
@@ -930,18 +931,18 @@ class MusaXSim:
                     bpm_n     = f"{self._bpm(ch):>3}"
                     fade_n    = int(ch["fade_vol"] * 100 / 255)
                     fade_str  = f"{fade_n:>3}%"
-                    porta_str = f"{ch['porta_speed']:>3}" if ch['porta_speed'] > 0 else "   "
+                    lfo_str   = f"{int(ch['lfo_val']):>4}" if ch['lfo_val'] != 0 else "   0"
                     label     = f"\033[36m{self._current_label(ch)[:8]:8}\033[0m"
                     linfo     = f"\033[35m{self._loop_info(ch)[:10]:10}\033[0m"
                     inst_str  = f"\033[33m{ch['inst']:>2}\033[0m"
                 else:
-                    bpm_n = "   "; fade_str = "    "; porta_str = "   "
+                    bpm_n = "   "; fade_str = "    "; lfo_str = "    "
                     label = " " * 8; linfo = " " * 10; inst_str = "  "
 
                 adsr_info = f"{['---', 'ATT', 'DEC', 'SUS', 'REL'][ch['adsr_state']]} {int(ch['adsr_acc']):>3}"
 
                 # Uniform 2-space separator between every column.
-                # Visible widths: [11] state [4] inst [5] note [6] wait [17] vu [6] fade [5] bpm [5] sld [9] adsr [10] label [12] loops [11] pc+frac [11] hex
+                # Visible widths: [11] state [4] inst [5] note [6] wait [17] vu [6] fade [5] bpm [5] lfo [9] adsr [10] label [12] loops [11] pc+frac [11] hex
                 row  = f"{audible_marker} {ch_name} [{status_color}{status_text}\033[0m]"  # 11
                 row += f"  {inst_str}"                        # 2+2  = 4
                 row += f"  {note}"                            # 2+3  = 5
@@ -949,7 +950,7 @@ class MusaXSim:
                 row += f"  {self._pad(bar, 15)}"              # 2+15 = 17
                 row += f"  {fade_str}"                        # 2+4  = 6
                 row += f"  {bpm_n}"                           # 2+3  = 5
-                row += f"  {porta_str}"                       # 2+3  = 5
+                row += f" {lfo_str}"                          # 1+4  = 5
                 row += f"  {adsr_info}"                       # 2+7  = 9
                 row += f"  {self._pad(label, 8)}"             # 2+8  = 10
                 row += f"  {self._pad(linfo, 10)}"            # 2+10 = 12
