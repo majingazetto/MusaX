@@ -195,7 +195,7 @@ def msl2z8a(input_file, output_file=None, song_name=None):
                 ptr_a = next((l for l in block_labels if "CH_A" in l.upper() or "CHA" in l.upper()), "0")
                 ptr_b = next((l for l in block_labels if "CH_B" in l.upper() or "CHB" in l.upper()), "0")
                 ptr_c = next((l for l in block_labels if "CH_C" in l.upper() or "CHC" in l.upper()), "0")
-                f.write(_aline(f'HDR_{name}', 'DEFB', _g('TYPE_FX', use_module)))
+                f.write(_aline(f'HDR_{name}', 'DEFB', 'TYPE_FX'))
                 f.write(_line('DEFW', f'{ptr_a}, {ptr_b}, {ptr_c}'))
                 f.write(_line('DEFW', fx_itbl))
                 f.write('\n')
@@ -203,7 +203,7 @@ def msl2z8a(input_file, output_file=None, song_name=None):
                 if fx_instruments:
                     f.write(f"; --- Instrument Table: {name}\n\n")
                     first = True
-                    for i in range(16):
+                    for i in range(max(fx_instruments.keys()) + 1):
                         lbl = f'INST_TABLE_{name}' if first else ''
                         first = False
                         ref = f'INST_{name}_{i}' if i in fx_instruments else '0'
@@ -234,7 +234,7 @@ def msl2z8a(input_file, output_file=None, song_name=None):
             if not any([entry_a, entry_b, entry_c]) and not fx_defs:
                 entry_a = "STREAM_START"
 
-            f.write(_aline(hdr_label,  'DEFB', _g('TYPE_SONG', use_module)))
+            f.write(_aline(hdr_label,  'DEFB', 'TYPE_SONG'))
             f.write(_line('DEFW', f'{initial_tempo}, {entry_a or "0"}'))
             f.write(_line('DEFW', f'{initial_tempo}, {entry_b or "0"}'))
             f.write(_line('DEFW', f'{initial_tempo}, {entry_c or "0"}'))
@@ -245,7 +245,7 @@ def msl2z8a(input_file, output_file=None, song_name=None):
         if instruments:
             f.write("; --- Instrument Table ---\n\n")
             first = True
-            for i in range(16):
+            for i in range(max(instruments.keys()) + 1):
                 lbl = itbl_label if first else ''
                 first = False
                 ref = inst_label(i) if i in instruments else '0'

@@ -34,6 +34,7 @@
 // --- Song Channels ---
 
 CH_A:
+    
     @I0 @V10
     MAIN_A:
         O4 L4 C D E F
@@ -55,6 +56,12 @@ CH_C:
 
 // 1 — Jump: single channel, arpeggio up + landing note
 @FX(JUMP) {
+    
+@INST(1, "VibratoLead") {
+    ADSR: 10, 5, 255, 10
+    LFO:  1, 0, 10, 2, 15
+    FLAGS: 0
+}
     CH_A: @I0 @V15 O4 L16 C E G > L4 C R0
 }
 

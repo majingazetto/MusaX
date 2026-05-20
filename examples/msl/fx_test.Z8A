@@ -17,31 +17,39 @@ FX_TABLE        DEFW    HDR_JUMP, 10
 
 ; --- FX: JUMP
 
-HDR_JUMP        DEFB    @TYPE_FX
+HDR_JUMP        DEFB    TYPE_FX
                 DEFW    JUMP_CH_A, 0, 0
-                DEFW    INST_TABLE
+                DEFW    INST_TABLE_JUMP
+
+; --- Instrument Table: JUMP
+
+INST_TABLE_JUMP DEFW    0
+                DEFW    INST_JUMP_1
+
+INST_JUMP_1     DEFB    #0A, #05, #FF, #0A, #01, #00, #0A, #02
+                DEFB    #0F, #00, #00, #00, #00, #00, #00, #00
 
 ; --- FX: SIREN
 
-HDR_SIREN       DEFB    @TYPE_FX
+HDR_SIREN       DEFB    TYPE_FX
                 DEFW    SIREN_CH_A, 0, 0
-                DEFW    INST_TABLE
+                DEFW    @INST_TABLE
 
 ; --- FX: FANFARE
 
-HDR_FANFARE     DEFB    @TYPE_FX
+HDR_FANFARE     DEFB    TYPE_FX
                 DEFW    FANFARE_CH_A, FANFARE_CH_B, 0
-                DEFW    INST_TABLE
+                DEFW    @INST_TABLE
 
 ; --- FX: POWERUP
 
-HDR_POWERUP     DEFB    @TYPE_FX
+HDR_POWERUP     DEFB    TYPE_FX
                 DEFW    POWERUP_CH_A, POWERUP_CH_B, POWERUP_CH_C
-                DEFW    INST_TABLE
+                DEFW    @INST_TABLE
 
 ; --- Song Header ---
 
-HEADER          DEFB    @TYPE_SONG
+HEADER          DEFB    TYPE_SONG
                 DEFW    #081B, CH_A
                 DEFW    #081B, CH_B
                 DEFW    #081B, CH_C
@@ -51,25 +59,11 @@ HEADER          DEFB    @TYPE_SONG
 
 INST_TABLE      DEFW    INST_0
                 DEFW    INST_1
-                DEFW    0
-                DEFW    0
-                DEFW    0
-                DEFW    0
-                DEFW    0
-                DEFW    0
-                DEFW    0
-                DEFW    0
-                DEFW    0
-                DEFW    0
-                DEFW    0
-                DEFW    0
-                DEFW    0
-                DEFW    0
 
 INST_0          DEFB    #FF, #0A, #C8, #14, #00, #00, #00, #00
                 DEFB    #00, #00, #00, #00, #00, #00, #00, #00
-INST_1          DEFB    #0A, #05, #FF, #0A, #01, #00, #A2, #0F
-                DEFB    #00, #00, #00, #00, #00, #00, #00, #00
+INST_1          DEFB    #0A, #05, #FF, #0A, #01, #00, #0A, #02
+                DEFB    #0F, #00, #00, #00, #00, #00, #00, #00
 
 ; --- Bytecode Streams ---
 
