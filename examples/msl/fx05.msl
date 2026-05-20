@@ -1,0 +1,22 @@
+@INST(0, "Lead") {
+    ADSR: 64, 139, 116, 39
+    LFO:  0, 0, 128, 0, 0
+    FLAGS: 0
+}
+
+@INST(1, "Inst1") {
+    ADSR: 128, 0, 255, 0
+    LFO:  0, 0, 0, 0, 0
+    FLAGS: 0
+}
+
+@FX(FX05) {
+    // CH_A: silent — skipped
+    // CH_B: silent — skipped
+    CH_C:
+        @T112  @V11  @I0
+        O7  L16  G  L64  G  R  @I1  @V4
+        L32  G  L2.  R  L8  R
+        R0
+
+}

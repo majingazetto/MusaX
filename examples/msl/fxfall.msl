@@ -1,0 +1,53 @@
+@INST(0, "Lead") {
+    ADSR: 255, 0, 255, 0
+    LFO:  0, 0, 0, 0, 0
+    FLAGS: 0
+}
+
+@INST(1, "Inst1") {
+    ADSR: 255, 0, 255, 192
+    LFO:  0, 0, 0, 0, 0
+    FLAGS: 0
+}
+
+@INST(2, "Inst2") {
+    ADSR: 128, 0, 255, 128
+    LFO:  0, 0, 0, 0, 0
+    FLAGS: 0
+}
+
+@INST(3, "Inst3") {
+    ADSR: 85, 0, 255, 255
+    LFO:  0, 0, 0, 0, 0
+    FLAGS: 0
+}
+
+@FX(FXFALL) {
+    CH_A:
+        @T75  @V9  @I0
+        O7  L64  G#  F#  F  @V8  G  F#
+        @V9  E  @I1  D#  @I0  D  C#  @I1
+        C  @I0  O6  B  @I1  L32  A#  @I2
+        @V10  A  @I1  G#  @I2  @V11  G  @I1
+        F#  L4..  R  L32  R
+        R0
+
+    CH_B:
+        @T75  @V9  @I0
+        O7  L64  G#  F#  F  @V8  G  F#
+        @V9  E  @I1  D#  @I0  D  C#  @I1
+        C  O6  B  L32  A#  @V10  A  G#
+        @V11  G  F#  L4..  R  L64  R
+        R0
+
+    CH_C:
+        @T75  @V9  @I0
+        O7  L64  G  @I1  L32  F  @I0  @V8
+        L64  F#  @I1  F  @I0  @V9  E  D#
+        C#  @I1  C  O6  L32  B  L64  A#
+        @I3  @V10  L32  A  @I1  G#  @I3  @V11
+        G  @I1  F#  L64  F  L4..  R  L64
+        R
+        R0
+
+}
