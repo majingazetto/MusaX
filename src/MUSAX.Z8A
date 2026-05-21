@@ -194,13 +194,16 @@ UPSTREAM        ; --- TRANSPORT ---
                 SBC     HL,DE
                 
                 ; CHECK IF EXPIRED
-                JR      C,.EXPIRED
-                JR      Z,.EXPIRED
-                
-                LD      (IX + CHWAIT),L
+                JR      C,.EXPIRED      ; BORROW: UNDERFLOWED
+                JR      NZ,.NOEXP       ; CHWAIT > 0: STILL WAITING
+                LD      A,(IX + CHFRAC) ; CHWAIT == 0: CHECK FRAC
+                OR      A
+                JR      Z,.EXPIRED      ; FRAC ALSO 0: EXPIRED
+
+.NOEXP          LD      (IX + CHWAIT),L
                 LD      (IX + CHWAIT + 1),H
                 JR      .MODULAT        ; STILL WAITING
-                
+
 .EXPIRED        XOR     A
                 LD      (IX + CHWAIT),A
                 LD      (IX + CHWAIT + 1),A
@@ -228,11 +231,13 @@ PROCEVT         LD      L,(IX + CHPC)
                 JR      NC,.COMMAND
                 
                 ; NOTE EVENT: [NOTEID], [DURATION (DEFW)]
-                
+
                 ; (IMPLEMENTATION PENDING)
+                DEC     HL              ; UNDO FETCH
                 JR      .EXIT
 
 .COMMAND        ; (IMPLEMENTATION PENDING)
+                DEC     HL              ; UNDO FETCH
 
 .EXIT           LD      (IX + CHPC),L
                 LD      (IX + CHPC + 1),H

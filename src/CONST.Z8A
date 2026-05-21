@@ -226,3 +226,5 @@ INSLSPEE        EQU     6
 INSLAMP         EQU     7
 INSLDELA        EQU     8
 INSFLAGS        EQU     9
+
+INSSIZE         EQU     16              ; TOTAL SIZE PER RECORD (OFFSETS 10-15 RESERVED)
