@@ -210,6 +210,7 @@ CHADSRA         EQU     15              ; ADSR ACC (DEFB)
 CHLFOP          EQU     16              ; LFO PHASE (DEFB)
 CHLFOD          EQU     17              ; LFO DELAY (DEFB)
 CHFLAGS         EQU     18              ; FLAGS (DEFB)
+CHLFOVAL        EQU     19              ; LFO VALUE SIGNED (DEFB)
 
 CHSIZE          EQU     20              ; TOTAL SIZE PER CHANNEL (ROUNDED)
 PSGSIZE         EQU     14              ; PSG AUDIO REGISTERS SIZE (R0-R13)
