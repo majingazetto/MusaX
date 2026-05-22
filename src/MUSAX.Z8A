@@ -1,9 +1,5 @@
-;                                       ****************************************
-;                                       * MUSAX ENGINE                         *
-;                                       ****************************************
-
-#INCLUDE "CONST.Z8A"
-#INCLUDE "VARS.Z8A"
+                INCLUDE "CONST.Z8A"
+                INCLUDE "VARS.Z8A"
 
 
 ; --- MAIN ENTRY POINTS                 ----------------------------------------
@@ -17,18 +13,32 @@ MUSINIT         PUSH    AF
                 PUSH    DE
                 PUSH    HL
 
+                ; READ PHYSICAL R7 MIXER TO PRESERVE BITS 6-7 (I/O CONFIGURATION)
+                LD      A,7
+                OUT     (#A0),A
+                IN      A,(#A2)
+                AND     #C0
+                LD      B,A             ; SAVE PRESERVED BITS 6-7 IN B
+
                 ; CLEAR ALL ENGINE VARIABLES (LDIR)
-                
                 LD      HL,MUSVARS
                 LD      DE,MUSVARS + 1
                 LD      BC,MUSEVARS - MUSVARS - 1
                 LD      (HL),0
                 LDIR
 
-                ; DEFAULT VOLUME
+                ; RESTORE PRESERVED BITS 6-7 AND SET MUTE BITS 0-5 (1 = DISABLE SOUND)
+                LD      A,B
+                OR      #3F             ; DISABLE TONES AND NOISE (BITS 0-5 = 1)
+                LD      (PSGMUS + 7),A
+                LD      (PSGSFX + 7),A
+                LD      (PSGREG + 7),A
 
+                ; DEFAULT VOLUME
                 LD      A,15
                 LD      (MUSVOL),A
+
+                CALL    MUSCOMM
 
                 POP     HL
                 POP     DE
@@ -155,7 +165,7 @@ MUSUPDAT        PUSH    AF
 
                 ; COMMIT PSG
 
-                CALL    MUSCOMM
+                CALL    MUSMERGE
 
 .EXIT           POP     IY
                 POP     IX
@@ -249,28 +259,175 @@ PROCEVT         LD      L,(IX + CHPC)
 ; -
 
 MUSMUT          PUSH    HL
-                PUSH    BC
                 LD      HL,PSGMUS
-                LD      BC,14
-                XOR     A
-.LOOP           LD      (HL),A
-                INC     HL
-                DEC     BC
-                LD      A,B
-                OR      C
-                JR      NZ,.LOOP
-                
+                CALL    .MUTBUF
                 LD      HL,PSGSFX
-                LD      BC,14
-                XOR     A
-.LOOP2          LD      (HL),A
-                INC     HL
-                DEC     BC
-                LD      A,B
-                OR      C
-                JR      NZ,.LOOP2
-                POP     BC
+                CALL    .MUTBUF
+                LD      HL,PSGREG
+                CALL    .MUTBUF
                 POP     HL
+                RET
+
+.MUTBUF         PUSH    BC
+                PUSH    AF
+                LD      B,7
+                XOR     A
+.MCL1           LD      (HL),A
+                INC     HL
+                DJNZ    .MCL1
+                
+                LD      A,(HL)
+                AND     #C0             ; PRESERVE MIXER BITS 6-7
+                OR      #3F             ; SET BITS 0-5 TO 1 (DISABLE SOUND)
+                LD      (HL),A
+                INC     HL
+                
+                LD      B,6
+                XOR     A
+.MCL2           LD      (HL),A
+                INC     HL
+                DJNZ    .MCL2
+                
+                POP     AF
+                POP     BC
+                RET
+
+
+; - MUSMERGE ---------------------------
+; - MERGE PSGMUS AND PSGSFX TO PSGREG
+; -
+
+MUSMERGE        PUSH    AF
+                PUSH    BC
+                PUSH    DE
+                PUSH    HL
+
+                LD      A,(SFXMSK)
+                LD      D,A             ; D = SFXMSK
+
+                ; --- R0, R1 (PERIOD A) ---
+                BIT     0,D
+                LD      HL,PSGMUS
+                JR      Z,.COPA
+                LD      HL,PSGSFX
+.COPA           LD      A,(HL)
+                LD      (PSGREG),A
+                INC     HL
+                LD      A,(HL)
+                LD      (PSGREG + 1),A
+
+                ; --- R2, R3 (PERIOD B) ---
+                BIT     1,D
+                LD      HL,PSGMUS + 2
+                JR      Z,.COPB
+                LD      HL,PSGSFX + 2
+.COPB           LD      A,(HL)
+                LD      (PSGREG + 2),A
+                INC     HL
+                LD      A,(HL)
+                LD      (PSGREG + 3),A
+
+                ; --- R4, R5 (PERIOD C) ---
+                BIT     2,D
+                LD      HL,PSGMUS + 4
+                JR      Z,.COPC
+                LD      HL,PSGSFX + 4
+.COPC           LD      A,(HL)
+                LD      (PSGREG + 4),A
+                INC     HL
+                LD      A,(HL)
+                LD      (PSGREG + 5),A
+
+                ; --- R6 (NOISE PERIOD) ---
+                LD      A,D
+                OR      A
+                LD      HL,PSGMUS + 6
+                JR      Z,.COP6
+                LD      HL,PSGSFX + 6
+.COP6           LD      A,(HL)
+                LD      (PSGREG + 6),A
+
+                ; --- R8 (VOLUME A) ---
+                BIT     0,D
+                LD      HL,PSGMUS + 8
+                JR      Z,.COPV8
+                LD      HL,PSGSFX + 8
+.COPV8          LD      A,(HL)
+                LD      (PSGREG + 8),A
+
+                ; --- R9 (VOLUME B) ---
+                BIT     1,D
+                LD      HL,PSGMUS + 9
+                JR      Z,.COPV9
+                LD      HL,PSGSFX + 9
+.COPV9          LD      A,(HL)
+                LD      (PSGREG + 9),A
+
+                ; --- R10 (VOLUME C) ---
+                BIT     2,D
+                LD      HL,PSGMUS + 10
+                JR      Z,.COPV10
+                LD      HL,PSGSFX + 10
+.COPV10         LD      A,(HL)
+                LD      (PSGREG + 10),A
+
+                ; --- R11, R12 (ENVELOPE PERIOD) ---
+                LD      A,D
+                OR      A
+                LD      HL,PSGMUS + 11
+                JR      Z,.COPE11
+                LD      HL,PSGSFX + 11
+.COPE11         LD      A,(HL)
+                LD      (PSGREG + 11),A
+                INC     HL
+                LD      A,(HL)
+                LD      (PSGREG + 12),A
+
+                ; --- R13 (ENVELOPE SHAPE) ---
+                LD      A,D
+                OR      A
+                LD      HL,PSGMUS + 13
+                JR      Z,.COPE13
+                LD      HL,PSGSFX + 13
+.COPE13         LD      A,(HL)
+                LD      (PSGREG + 13),A
+
+                ; --- R7 (MIXER CONTROL) ---
+                ; COMPUTE MASK M = (SFXMSK & 7) | ((SFXMSK << 3) & #38)
+                LD      A,D
+                AND     7
+                LD      E,A
+                ADD     A,A
+                ADD     A,A
+                ADD     A,A
+                OR      E
+                LD      E,A             ; E = MASK M
+
+                ; R7_NEW = (PSGMUS_R7 & #C0) | (PSGSFX_R7 & M) | (PSGMUS_R7 & ~M & #3F)
+                LD      A,(PSGSFX + 7)
+                AND     E
+                LD      C,A             ; C = PSGSFX_R7 & M
+
+                LD      A,E
+                CPL
+                AND     #3F
+                LD      E,A             ; E = ~M & #3F
+
+                LD      A,(PSGMUS + 7)
+                LD      B,A             ; B = PSGMUS_R7
+                AND     E               ; A = PSGMUS_R7 & ~M & #3F
+                OR      C               ; A = (PSGMUS_R7 & ~M & #3F) | (PSGSFX_R7 & M)
+
+                LD      C,A             ; C = MIXED BITS 0-5
+                LD      A,B             ; A = PSGMUS_R7
+                AND     #C0             ; A = PSGMUS_R7 & #C0
+                OR      C               ; A = (PSGMUS_R7 & #C0) | MIXED BITS 0-5
+                LD      (PSGREG + 7),A
+
+                POP     HL
+                POP     DE
+                POP     BC
+                POP     AF
                 RET
 
 
@@ -278,7 +435,22 @@ MUSMUT          PUSH    HL
 ; - COMMIT SHADOW REGS TO PSG
 ; -
 
-MUSCOMM         ; (STUB: WRITE TO PORT #A0, #A1)
+MUSCOMM         PUSH    AF
+                PUSH    BC
+                PUSH    HL
+                LD      HL,PSGREG
+                LD      B,PSGSIZE
+                LD      C,0
+.COMLOP         LD      A,C
+                OUT     (#A0),A
+                LD      A,(HL)
+                OUT     (#A1),A
+                INC     HL
+                INC     C
+                DJNZ    .COMLOP
+                POP     HL
+                POP     BC
+                POP     AF
                 RET
 
 UPDADSR         RET                     ; STUB

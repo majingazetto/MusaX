@@ -212,6 +212,7 @@ CHLFOD          EQU     17              ; LFO DELAY (DEFB)
 CHFLAGS         EQU     18              ; FLAGS (DEFB)
 
 CHSIZE          EQU     20              ; TOTAL SIZE PER CHANNEL (ROUNDED)
+PSGSIZE         EQU     14              ; PSG AUDIO REGISTERS SIZE (R0-R13)
 
 
 ; --- INSTRUMENT RECORD OFFSETS         ----------------------------------------

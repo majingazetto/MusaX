@@ -14,8 +14,9 @@ CHANNELS        DEFS    CHSIZE * 6
 
 ; --- PSG SHADOW REGS                   ----------------------------------------
 
-PSGMUS          DEFS    14              ; MUSIC PSG REGISTERS
-PSGSFX          DEFS    14              ; FX PSG REGISTERS
+PSGMUS          DEFS    PSGSIZE         ; MUSIC PSG REGISTERS
+PSGSFX          DEFS    PSGSIZE         ; FX PSG REGISTERS
+PSGREG          DEFS    PSGSIZE         ; MERGED PSG REGISTERS FOR PHYSICAL WRITE
 SFXMSK          DEFB    0               ; FX OWNERSHIP MASK (BITS 0-2)
 
 
