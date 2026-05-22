@@ -43,7 +43,7 @@ LFOWAVES
 
 ; --- LFO WAVEFORMS (256 BYTES EACH)    ----------------------------------------
 
-; --- TRITBL table (256 bytes) ---
+; --- TRITBL TABLE (256 BYTES) ---
 TRITBL
         DEFB    #00, #02, #04, #06, #08, #0A, #0C, #0E
         DEFB    #10, #12, #14, #16, #18, #1A, #1C, #1E
@@ -78,7 +78,7 @@ TRITBL
         DEFB    #E1, #E3, #E5, #E7, #E9, #EB, #ED, #EF
         DEFB    #F1, #F3, #F5, #F7, #F9, #FB, #FD, #FF
 
-; --- SAWTBL table (256 bytes) ---
+; --- SAWTBL TABLE (256 BYTES) ---
 SAWTBL
         DEFB    #80, #81, #82, #83, #84, #85, #86, #87
         DEFB    #88, #89, #8A, #8B, #8C, #8D, #8E, #8F
@@ -113,7 +113,7 @@ SAWTBL
         DEFB    #70, #71, #72, #73, #74, #75, #76, #77
         DEFB    #78, #79, #7A, #7B, #7C, #7D, #7E, #7F
 
-; --- SQRTBL table (256 bytes) ---
+; --- SQRTBL TABLE (256 BYTES) ---
 SQRTBL
         DEFB    #81, #81, #81, #81, #81, #81, #81, #81
         DEFB    #81, #81, #81, #81, #81, #81, #81, #81
@@ -148,7 +148,7 @@ SQRTBL
         DEFB    #7F, #7F, #7F, #7F, #7F, #7F, #7F, #7F
         DEFB    #7F, #7F, #7F, #7F, #7F, #7F, #7F, #7F
 
-; --- SINTBL table (256 bytes) ---
+; --- SINTBL TABLE (256 BYTES) ---
 SINTBL
         DEFB    #00, #03, #06, #09, #0C, #10, #13, #16
         DEFB    #19, #1C, #1F, #22, #25, #28, #2B, #2E

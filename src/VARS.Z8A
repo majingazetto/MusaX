@@ -26,6 +26,8 @@ SFXMSK          DEFB    0               ; FX OWNERSHIP MASK (BITS 0-2)
 SONGPTR         DEFW    0               ; CURRENT SONG HEADER
 FXPTR           DEFW    0               ; CURRENT FX TABLE
 INSTTBL         DEFW    0               ; CURRENT INSTRUMENT TABLE
+FXINST          DEFW    0               ; CURRENT FX INSTRUMENT TABLE
+SFXPRI          DEFW    0               ; CURRENT FX PRIORITY
 
 
 ; --- GLOBAL STATE                      ----------------------------------------
