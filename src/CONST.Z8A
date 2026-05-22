@@ -211,8 +211,12 @@ CHLFOP          EQU     16              ; LFO PHASE (DEFB)
 CHLFOD          EQU     17              ; LFO DELAY (DEFB)
 CHFLAGS         EQU     18              ; FLAGS (DEFB)
 CHLFOVAL        EQU     19              ; LFO VALUE SIGNED (DEFB)
+CHNOTE          EQU     20              ; CURRENT PLAYING NOTE (DEFB, 255 = REST)
+CHFADVOL        EQU     21              ; CHANNEL FADE VOLUME MULTIPLIER (DEFB, 0..255)
+CHFADTRG        EQU     22              ; CHANNEL FADE TARGET (DEFB, 0..255)
+CHFADSPD        EQU     23              ; CHANNEL FADE SPEED/STEP (DEFB, 0 = INACTIVE)
 
-CHSIZE          EQU     20              ; TOTAL SIZE PER CHANNEL (ROUNDED)
+CHSIZE          EQU     24              ; TOTAL SIZE PER CHANNEL (ROUNDED)
 PSGSIZE         EQU     14              ; PSG AUDIO REGISTERS SIZE (R0-R13)
 
 

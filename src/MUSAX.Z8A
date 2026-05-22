@@ -48,6 +48,11 @@ MUSINIT         PUSH    AF
                 LD      A,15
                 LD      (MUSVOL),A
 
+                ; INITIALIZE GLOBAL FADE
+                LD      A,255
+                LD      (GLBFADVL),A
+                LD      (GLBFADTG),A
+
                 CALL    MUSCOMM
 
                 POP     HL
@@ -65,6 +70,7 @@ MUSINIT         PUSH    AF
 ; -
 
 MUSPLAY         DI
+                LD      (SONGLMT),A
                 PUSH    AF
                 PUSH    BC
                 PUSH    DE
@@ -79,18 +85,27 @@ MUSPLAY         DI
                 LD      A,1
                 LD      (MUSSTAT),A
 
+                ; INITIALIZE MASKS
+                XOR     A
+                LD      (SONGACT),A
+                LD      (SONGFIN),A
+                LD      (SONGLOP),A
+
                 ; INITIALIZE CHANNELS A, B, C (MUSIC)
                 ; HEADER: [TYPE_SONG, (BPM, PTR)x3, PTR_INST]
 
                 INC     HL              ; SKIP TYPE_SONG
                 
                 LD      IX,CHANNELS     ; CH A
+                LD      B,1
                 CALL    .INITCH
                 
                 LD      IX,CHANNELS + CHSIZE ; CH B
+                LD      B,2
                 CALL    .INITCH
 
                 LD      IX,CHANNELS + CHSIZE * 2 ; CH C
+                LD      B,4
                 CALL    .INITCH
 
                 ; INSTRUMENT TABLE
@@ -108,6 +123,7 @@ MUSPLAY         DI
                 EI
                 RET
 
+
 .INITCH         LD      A,(HL)          ; BPM LOW
                 LD      (IX + CHBPM),A
                 INC     HL
@@ -116,15 +132,34 @@ MUSPLAY         DI
                 INC     HL
                 LD      A,(HL)          ; PTR LOW
                 LD      (IX + CHPC),A
+                LD      C,A             ; C = PTR LOW
                 INC     HL
                 LD      A,(HL)          ; PTR HIGH
                 LD      (IX + CHPC + 1),A
                 INC     HL
                 
-                XOR     A
+                OR      C               ; A = PTR LOW | PTR HIGH
+                JR      Z,.INACTV
+                
+                ; ADD TO SONGACT
+                LD      A,(SONGACT)
+                OR      B
+                LD      (SONGACT),A
+                
+.INACTV         XOR     A
                 LD      (IX + CHWAIT),A
                 LD      (IX + CHWAIT + 1),A
                 LD      (IX + CHFRAC),A
+                LD      (IX + CHFADSPD),A
+                
+                LD      A,255
+                LD      (IX + CHGATE),A
+                LD      (IX + CHNOTE),A
+                LD      (IX + CHFADVOL),A
+                LD      (IX + CHFADTRG),A
+                
+                LD      A,15
+                LD      (IX + CHVOL),A
                 RET
 
 
@@ -179,6 +214,68 @@ MUSUPDAT        PUSH    AF
                 ADD     IX,DE
                 POP     BC
                 DJNZ    .LOOP
+
+                ; UPDATE GLOBAL FADE
+                LD      A,(MUSSTAT)
+                BIT     1,A
+                JR      Z,.NOGFAD
+                
+                LD      A,(GLBFADSP)
+                OR      A
+                JR      Z,.NOGFAD
+                
+                LD      A,(GLBFADVL)
+                LD      B,(GLBFADTG)
+                LD      C,(GLBFADSP)
+                
+                CP      B
+                JR      Z,.GFREAC
+                
+                JR      C,.GFIN
+                
+                ; FADEOUT (A > B)
+                SUB     C
+                JR      C,.GFCLMP
+                CP      B
+                JR      Z,.GFREAC
+                JR      C,.GFCLMP
+                JR      .GFSTOR
+                
+.GFIN           ADD     A,C
+                JR      C,.GFCLMP
+                CP      B
+                JR      Z,.GFREAC
+                JR      NC,.GFCLMP
+                JR      .GFSTOR
+                
+.GFCLMP         LD      A,B
+.GFREAC         ; TARGET REACHED
+                PUSH    AF
+                LD      A,(MUSSTAT)
+                RES     1,A
+                LD      (MUSSTAT),A
+                POP     AF
+                
+                OR      A
+                JR      NZ,.GFSTOR
+                
+                ; TARGET IS 0: STOP PLAYING
+                CALL    MUSSTOP
+                JR      .EXIT
+                
+.GFSTOR         LD      (GLBFADVL),A
+
+.NOGFAD         ; UPDATE SFX ACTIVE STATUS FLAG (BIT 2)
+                LD      A,(SFXMSK)
+                OR      A
+                LD      A,(MUSSTAT)
+                JR      Z,.NOSFX
+                OR      4
+                LD      (MUSSTAT),A
+                JR      .SFXDONE
+.NOSFX          AND     #FB             ; %11111011
+                LD      (MUSSTAT),A
+.SFXDONE
 
                 ; COMMIT PSG
 
@@ -243,6 +340,8 @@ UPSTREAM        ; --- TRANSPORT ---
                 
 .MODULAT        CALL    UPDADSR         ; UPDATE ADSR (STUB)
                 CALL    UPDLFO          ; UPDATE LFO (STUB)
+                CALL    UPDFADE         ; UPDATE CHANNEL FADE
+                CALL    UPDVOL          ; UPDATE CHANNEL VOLUME SCALE
                 RET
 
 
@@ -250,7 +349,7 @@ UPSTREAM        ; --- TRANSPORT ---
 ; - PROCESS BYTECODE EVENTS
 ; - IN: IX = CHANNEL STATE POINTER
 ; - OUT: NONE
-; - CLOBBERS: AF, HL
+; - CLOBBERS: AF, BC, DE, HL
 ; -
 
 PROCEVT         LD      L,(IX + CHPC)
@@ -261,15 +360,192 @@ PROCEVT         LD      L,(IX + CHPC)
                 
                 CP      #F0             ; COMMAND RANGE?
                 JR      NC,.COMMAND
+
+                ; NOTE EVENT: [NOTEID(1)] [DURATION(DEFW)]
+
+                LD      B,A             ; B = NOTE ID (GUARANTEED 0..#EF)
+                LD      (IX + CHNOTE),A ; STORE NOTE
+
+                ; LOAD DURATION INTO CHWAIT
+                LD      A,(HL)
+                INC     HL
+                LD      (IX + CHWAIT),A
+                LD      A,(HL)
+                INC     HL
+                LD      (IX + CHWAIT + 1),A
+                XOR     A
+                LD      (IX + CHFRAC),A
+
+                ; SAVE STREAM PC (THEN MAY CLOBBER HL)
+                LD      (IX + CHPC),L
+                LD      (IX + CHPC + 1),H
+                PUSH    HL
+
+                ; TRIGGER ADSR ATTACK
+                XOR     A
+                LD      (IX + CHADSRA),A
+                LD      A,1
+                LD      (IX + CHADSRS),A
+
+                ; WRITE PSG PERIOD FROM FREQ_TBL
+                CALL    GETCH           ; A = CHANNEL INDEX (0..5); CLOBBERS DE, HL
+                CP      3
+                JR      NC,.PNSKIP      ; SFX: PERIOD WRITE NOT YET IMPLEMENTED
+
+                LD      H,0
+                LD      L,A
+                ADD     HL,HL           ; HL = CH_IDX * 2 (PERIOD REG OFFSET)
+                LD      D,H
+                LD      E,L             ; DE = PERIOD REG OFFSET INTO PSGMUS
+
+                LD      A,(IX + CHNOTE)
+                LD      H,0
+                LD      L,A
+                ADD     HL,HL           ; HL = NOTE_IDX * 2 (TABLE BYTE OFFSET)
+                LD      BC,FREQ_TBL
+                ADD     HL,BC           ; HL = &FREQ_TBL[NOTE_IDX]
+
+                LD      A,(HL)
+                INC     HL
+                LD      C,(HL)          ; C = PERIOD HIGH BYTE
+                LD      HL,PSGMUS
+                ADD     HL,DE
+                LD      (HL),A          ; PSGMUS[CH*2]   = PERIOD LOW
+                INC     HL
+                LD      (HL),C          ; PSGMUS[CH*2+1] = PERIOD HIGH
+
+.PNSKIP         POP     HL              ; RESTORE PC (ALREADY STORED IN CHPC)
+                JP      .EXIT
+
+.COMMAND        CP      REST
+                JR      Z,.PCREST2
+                CP      CFADE
+                JR      Z,.PCFADE
+                CP      CRESTART
+                JR      Z,.PCREST
+
+                ; Unknown command: undo fetch and exit
+                DEC     HL
+                JP      .EXIT
+
+.PCREST2        ; REST [DURATION(DEFW)] — SILENCE CHANNEL, LOAD WAIT
+                LD      A,(HL)
+                INC     HL
+                LD      (IX + CHWAIT),A
+                LD      A,(HL)
+                INC     HL
+                LD      (IX + CHWAIT + 1),A
+                XOR     A
+                LD      (IX + CHFRAC),A
+                LD      A,255
+                LD      (IX + CHNOTE),A ; CHNOTE = 255 (REST/SILENT)
+
+                ; TRIGGER RELEASE IF IN ACTIVE STATE, ELSE GO IDLE
+                LD      A,(IX + CHADSRS)
+                CP      3               ; SUSTAIN?
+                JR      NZ,.PRSTNS
+                LD      A,4             ; RELEASE
+                LD      (IX + CHADSRS),A
+                JP      .EXIT
+.PRSTNS         CP      0               ; ALREADY IDLE?
+                JR      Z,.PRNE
+                LD      A,4             ; FORCE RELEASE FROM ATT/DEC
+                LD      (IX + CHADSRS),A
+.PRNE           JP      .EXIT
+
+.PCFADE         ; CFADE Target, Step
+                LD      A,(HL)          ; Target
+                INC     HL
+                LD      C,(HL)          ; Step
+                INC     HL
                 
-                ; NOTE EVENT: [NOTEID], [DURATION (DEFW)]
+                LD      (IX + CHFADTRG),A
+                LD      A,C
+                CP      255
+                JR      NZ,.PSLOW
+                
+                ; Snap immediately
+                LD      A,(IX + CHFADTRG)
+                LD      (IX + CHFADVOL),A
+                XOR     A
+                LD      (IX + CHFADSPD),A
+                JP      .FETCH
+                
+.PSLOW          LD      (IX + CHFADSPD),A
+                JP      .FETCH
 
-                ; (IMPLEMENTATION PENDING)
-                DEC     HL              ; UNDO FETCH
-                JR      .EXIT
-
-.COMMAND        ; (IMPLEMENTATION PENDING)
-                DEC     HL              ; UNDO FETCH
+.PCREST         ; CRESTART [Addr (DEFW)]
+                LD      E,(HL)
+                INC     HL
+                LD      D,(HL)
+                INC     HL              ; DE = restart address
+                
+                CALL    GETCH           ; A = channel index (0..5)
+                CP      3
+                JR      NC,.SFXRST
+                
+                ; Music channel loop restart logic
+                ; Set bit in SONGFIN
+                LD      B,A
+                OR      A
+                LD      A,1
+                JR      Z,.MSK0
+                DEC     B
+                LD      A,2
+                JR      Z,.MSK0
+                LD      A,4
+.MSK0           LD      B,A             ; B = mask for current channel
+                LD      A,(SONGFIN)
+                OR      B
+                LD      (SONGFIN),A
+                
+                ; Check if SONGFIN == SONGACT
+                LD      C,A             ; C = SONGFIN
+                LD      A,(SONGACT)
+                AND     C
+                LD      C,A             ; C = SONGFIN & SONGACT
+                LD      A,(SONGACT)
+                CP      C
+                JR      NZ,.NJUMP       ; Not all channels finished
+                
+                ; All active channels finished loop: increment loop counter
+                LD      A,(SONGLOP)
+                INC     A
+                LD      (SONGLOP),A
+                
+                ; Clear SONGFIN
+                XOR     A
+                LD      (SONGFIN),A
+                
+                ; Check loop limit
+                LD      A,(SONGLMT)
+                OR      A
+                JR      Z,.NJUMP        ; Infinite loop if limit is 0
+                
+                LD      B,A
+                LD      A,(SONGLOP)
+                CP      B
+                JR      NZ,.NJUMP
+                
+                ; Limit reached: stop song
+                CALL    MUSSTOP
+                JR      .EXIT           ; Stop parsing, exit
+                
+.NJUMP          ; Loop continue: jump to address in DE
+                LD      L,E
+                LD      H,D
+                JP      .FETCH
+                
+.SFXRST         ; SFX CHANNEL RESTART = STOP
+                LD      A,255
+                LD      (IX + CHNOTE),A
+                XOR     A
+                LD      (IX + CHPC),A
+                LD      (IX + CHPC + 1),A
+                LD      (IX + CHWAIT),A
+                LD      (IX + CHWAIT + 1),A
+                LD      (IX + CHFRAC),A
+                RET                     ; CHPC ALREADY SET TO 0 IN IX; DO NOT USE .EXIT
 
 .EXIT           LD      (IX + CHPC),L
                 LD      (IX + CHPC + 1),H
@@ -494,13 +770,96 @@ MUSCOMM         PUSH    AF
 
 
 ; - UPDADSR ----------------------------
-; - UPDATE ADSR ENVELOPE FOR CHANNEL (STUB)
+; - UPDATE ADSR ENVELOPE FOR CHANNEL
 ; - IN: IX = CHANNEL STATE POINTER
-; - OUT: NONE
-; - CLOBBERS: NONE (STUB)
+; - OUT: (IX + CHADSRA) = UPDATED ENVELOPE ACCUMULATOR
+; - CLOBBERS: AF, BC, DE, HL
 ; -
 
-UPDADSR         RET                     ; STUB
+UPDADSR         LD      A,(IX + CHADSRS)
+                OR      A
+                RET     Z               ; STATE 0 = IDLE, NOTHING TO DO
+
+                ; RESOLVE INSTRUMENT PARAMETERS (DEFAULTS IF CHINST = 0)
+                LD      L,(IX + CHINST)
+                LD      H,(IX + CHINST + 1)
+                LD      A,H
+                OR      L
+                JR      NZ,.HAVINST
+
+                ; DEFAULT INSTRUMENT: ATT=4, DEC=2, SUS=180, REL=3
+                LD      B,4             ; ATT
+                LD      C,2             ; DEC
+                LD      D,180           ; SUS
+                LD      E,3             ; REL
+                JR      .DISPATCH
+
+.HAVINST        PUSH    IY
+                PUSH    HL
+                POP     IY              ; IY = INSTRUMENT PTR
+                LD      B,(IY + INSATT) ; ATT
+                LD      C,(IY + INSDEC) ; DEC
+                LD      D,(IY + INSUS)  ; SUS
+                LD      E,(IY + INSREL) ; REL
+                POP     IY
+
+.DISPATCH       LD      A,(IX + CHADSRS)
+                CP      1
+                JP      Z,.ATTACK
+                CP      2
+                JP      Z,.DECAY
+                CP      3
+                JP      Z,.SUST
+                CP      4
+                JP      Z,.RELES
+                RET                     ; UNKNOWN STATE: IGNORE
+
+; --- ATTACK
+.ATTACK         LD      A,(IX + CHADSRA)
+                ADD     A,B             ; CHADSRA += INSATT
+                JR      NC,.ATOK        ; NO OVERFLOW
+                LD      A,255           ; CLAMP TO 255
+.ATOK           LD      (IX + CHADSRA),A
+                CP      255
+                RET     NZ              ; NOT PEAK YET
+                LD      A,2             ; TRANSITION TO DECAY
+                LD      (IX + CHADSRS),A
+                RET
+
+; --- DECAY
+.DECAY          LD      A,(IX + CHADSRA)
+                SUB     C               ; CHADSRA -= INSDEC
+                JR      NC,.DCOK        ; NO UNDERFLOW
+                XOR     A               ; CLAMP TO 0 ON UNDERFLOW
+.DCOK           CP      D               ; COMPARE WITH SUSTAIN LEVEL
+                JR      NC,.DCNOT       ; CHADSRA >= SUS: STILL DECAYING
+                LD      A,D             ; CLAMP TO SUSTAIN LEVEL
+                LD      (IX + CHADSRA),A
+                LD      A,3             ; TRANSITION TO SUSTAIN
+                LD      (IX + CHADSRS),A
+                RET
+.DCNOT          LD      (IX + CHADSRA),A
+                RET
+
+; --- SUSTAIN
+.SUST           LD      A,D             ; HOLD SUSTAIN LEVEL
+                LD      (IX + CHADSRA),A
+                RET
+
+; --- RELEASE
+.RELES          LD      A,(IX + CHADSRA)
+                OR      A
+                JR      Z,.RLDONE       ; ALREADY ZERO
+                SUB     E               ; CHADSRA -= INSREL
+                JR      NC,.RLOK        ; NO UNDERFLOW
+                XOR     A               ; CLAMP TO 0
+.RLOK           LD      (IX + CHADSRA),A
+                OR      A
+                RET     NZ              ; STILL RELEASING
+.RLDONE         XOR     A               ; RELEASE DONE
+                LD      (IX + CHADSRS),A; STATE = IDLE
+                LD      (IX + CHADSRA),A
+                RET
 
 
 ; - UPDLFO -----------------------------
@@ -609,4 +968,275 @@ UPDLFO          PUSH    IY
                 LD      (IX + CHLFOVAL),A
 .EXIT           POP     IY
                 RET
+
+
+; - GETCH ------------------------------
+; - GET CHANNEL INDEX FROM IX
+; - IN: IX = CHANNEL STATE POINTER
+; - OUT: A = CHANNEL INDEX (0..5)
+; - CLOBBERS: DE, HL
+; -
+
+GETCH           PUSH    IX
+                POP     HL
+                LD      DE,CHANNELS
+                OR      A
+                SBC     HL,DE           ; HL = IX - CHANNELS
+                
+                LD      A,0
+.L1             LD      DE,24
+                OR      A
+                SBC     HL,DE
+                RET     C
+                INC     A
+                JR      .L1
+
+
+; - UPDFADE ----------------------------
+; - UPDATE CHANNEL FADE VOLUME
+; - IN: IX = CHANNEL STATE POINTER
+; - OUT: NONE
+; - CLOBBERS: AF, BC, HL
+; -
+
+UPDFADE         LD      A,(IX + CHFADSPD)
+                OR      A
+                RET     Z               ; INACTIVE IF SPEED IS 0
+
+                LD      A,(IX + CHFADVOL)
+                LD      B,(IX + CHFADTRG)
+                LD      C,(IX + CHFADSPD)
+
+                CP      B
+                JR      Z,.REACH        ; ALREADY EQUAL
+
+                JR      C,.FADEIN       ; A < B
+
+; --- FADEOUT (A > B)
+                SUB     C
+                JR      C,.CLAMP        ; UNDERFLOW/CARRY: CLAMP TO TARGET
+                CP      B
+                JR      Z,.REACH        ; EXACT MATCH
+                JR      C,.CLAMP        ; OVERSHOT
+                JR      .STORE
+
+.FADEIN         ADD     A,C
+                JR      C,.CLAMP        ; OVERFLOW/CARRY
+                CP      B
+                JR      Z,.REACH        ; EXACT MATCH
+                JR      NC,.CLAMP       ; OVERSHOT
+                JR      .STORE
+
+.CLAMP          LD      A,B
+.REACH          LD      C,0
+                LD      (IX + CHFADSPD),C ; TARGET REACHED, DISABLE FADE
+.STORE          LD      (IX + CHFADVOL),A
+                RET
+
+
+; - UPDVOL -----------------------------
+; - UPDATE CHANNEL VOLUME WITH SCALING
+; - IN: IX = CHANNEL STATE POINTER
+; - OUT: NONE
+; - CLOBBERS: AF, BC, DE, HL
+; -
+
+UPDVOL          CALL    GETCH           ; A = channel index
+                PUSH    AF              ; SAVE CHANNEL INDEX
+                LD      A,(IX + CHNOTE)
+                CP      255
+                JR      NZ,.ACTIVE
+
+                ; Channel is silent: write 0
+                POP     BC
+                XOR     A
+                PUSH    AF              ; Preserve 0
+                JP      .CALCDST        ; Calculate destination and write
+
+.ACTIVE         ; 1. Calculate VOLSCALE (ADSR + Tremolo)
+                LD      A,(IX + CHLFOVAL)
+                LD      E,A
+                RLCA
+                SBC     A,A
+                LD      D,A             ; DE = sign-extended CHLFOVAL
+
+                LD      A,(IX + CHADSRA)
+                LD      L,A
+                LD      H,0             ; HL = CHADSRA (unsigned)
+
+                ADD     HL,DE           ; HL = CHADSRA + CHLFOVAL
+                
+                ; Clamp to 0..255
+                LD      A,H
+                OR      A
+                JR      Z,.VOLOK
+                JP      P,.V255
+                LD      L,0
+                JR      .VOLOK
+.V255           LD      L,255
+.VOLOK          ; L = clamped VOLSCALE (0..255)
+
+                ; 2. Apply Channel Fade
+                LD      A,(IX + CHFADVOL)
+                CP      255
+                JR      Z,.SKIPCF
+
+                LD      C,L             ; C = SCALE
+                CALL    MUL8            ; HL = SCALE * CHFADVOL
+                LD      DE,128
+                ADD     HL,DE
+                LD      L,H             ; L = HL >> 8
+.SKIPCF         ; L = updated SCALE
+
+                ; Check if music channel (index < 3)
+                POP     BC              ; Restore channel index
+                PUSH    BC              ; Save again
+                LD      A,C
+                CP      3
+                JP      NC,.SKIPGLB     ; If SFX channel, skip global fade and master volume
+
+                ; 3. Apply Global Fade
+                LD      A,(GLBFADVL)
+                CP      255
+                JR      Z,.SKIPGF
+
+                LD      C,L             ; C = SCALE
+                CALL    MUL8            ; HL = SCALE * GLBFADVL
+                LD      DE,128
+                ADD     HL,DE
+                LD      L,H             ; L = HL >> 8
+.SKIPGF         ; L = updated SCALE
+
+                ; 4. Calculate Base Volume (Channel Vol * Master Vol)
+                PUSH    HL              ; Save HL (L = SCALE)
+                LD      A,(MUSVOL)
+                CP      15
+                JR      Z,.NOMUSV
+
+                LD      C,A             ; C = MUSVOL
+                LD      A,(IX + CHVOL)  ; A = CHVOL
+                CALL    MUL8            ; HL = CHVOL * MUSVOL
+                LD      E,L
+                LD      D,H
+                ADD     HL,HL
+                ADD     HL,HL
+                ADD     HL,HL
+                ADD     HL,HL
+                ADD     HL,DE           ; HL = HL * 17
+                LD      DE,128
+                ADD     HL,DE
+                LD      A,H             ; A = BASEVOL
+                JR      .DONEBV
+
+.NOMUSV         LD      A,(IX + CHVOL)  ; A = BASEVOL
+.DONEBV         POP     HL              ; Restore HL (L = SCALE)
+                JR      .DONEB2
+
+.SKIPGLB        LD      A,(IX + CHVOL)  ; A = BASEVOL (for SFX channel)
+.DONEB2         ; A = BASEVOL
+
+                ; 5. Combine Base Volume with Scale
+                LD      H,A             ; H = BASEVOL
+                LD      A,L             ; A = SCALE
+                CP      255
+                LD      A,H             ; Restore BASEVOL to A
+                JR      Z,.SKIPSC       ; If SCALE == 255, FINALVOL = BASEVOL
+
+                LD      C,L             ; C = SCALE
+                CALL    MUL8            ; HL = BASEVOL * SCALE
+                LD      DE,128
+                ADD     HL,DE
+                LD      A,H             ; A = FINALVOL
+.SKIPSC         ; A = FINALVOL
+                POP     BC              ; Restore channel index
+                PUSH    AF              ; Preserve FINALVOL
+
+.CALCDST        LD      A,C
+                CP      3
+                JR      NC,.SFXVOL
+                ADD     A,8             ; A = C + 8
+                LD      E,A
+                LD      D,0
+                LD      HL,PSGMUS
+                ADD     HL,DE
+                JR      .DONEV
+.SFXVOL         SUB     3
+                ADD     A,8             ; A = C - 3 + 8 = C + 5
+                LD      E,A
+                LD      D,0
+                LD      HL,PSGSFX
+                ADD     HL,DE
+.DONEV          POP     AF              ; A = FINALVOL
+                LD      (HL),A          ; Write to shadow register
+                RET
+
+
+; - MUL8 -------------------------------
+; - 8-BIT UNSIGNED MULTIPLY (HL = A * C)
+; - IN: A, C
+; - OUT: HL = A * C
+; - CLOBBERS: A, B, DE
+; -
+
+MUL8            LD      L,0
+                LD      H,L             ; HL = 0
+                LD      E,C
+                LD      D,0             ; DE = C
+                LD      B,8
+.LOOP           SRL     A
+                JR      NC,.NOADD
+                ADD     HL,DE
+.NOADD          EX      DE,HL
+                ADD     HL,HL
+                EX      DE,HL
+                DJNZ    .LOOP
+                RET
+
+
+; - MUSFADE ----------------------------
+; - TRIGGER GLOBAL SONG VOLUME FADE
+; - IN: A = TARGET VOLUME (0..255), H = SPEED (1..255, 255 = SNAP)
+; - OUT: NONE
+; - CLOBBERS: NONE
+; -
+
+MUSFADE         PUSH    AF
+                PUSH    BC
+                
+                LD      C,A             ; C = TARGET VOLUME
+                LD      A,H
+                CP      255
+                JR      NZ,.SLOW
+                
+                ; SNAP IMMEDIATELY
+                LD      A,C
+                LD      (GLBFADVL),A
+                LD      (GLBFADTG),A
+                XOR     A
+                LD      (GLBFADSP),A
+                
+                ; CLEAR BIT 1 OF MUSSTAT
+                LD      A,(MUSSTAT)
+                AND     #FD             ; %11111101
+                LD      (MUSSTAT),A
+                JR      .EXIT
+                
+.SLOW           ; SLOW FADE
+                LD      A,C
+                LD      (GLBFADTG),A
+                LD      A,H
+                LD      (GLBFADSP),A
+                
+                ; SET BIT 1 OF MUSSTAT
+                LD      A,(MUSSTAT)
+                OR      2               ; %00000010
+                LD      (MUSSTAT),A
+                
+.EXIT           POP     BC
+                POP     AF
+                RET
+
+
+                INCLUDE "TABLES.Z8A"
+
 

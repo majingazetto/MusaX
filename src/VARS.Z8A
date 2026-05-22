@@ -32,6 +32,13 @@ INSTTBL         DEFW    0               ; CURRENT INSTRUMENT TABLE
 
 MUSSTAT         DEFB    0               ; BIT 0: PLAYING, BIT 1: FADING...
 MUSVOL          DEFB    15              ; GLOBAL MASTER VOLUME
+GLBFADVL       DEFB    255             ; GLOBAL FADE CURRENT VOLUME (0..255)
+GLBFADTG       DEFB    255             ; GLOBAL FADE TARGET VOLUME (0..255)
+GLBFADSP       DEFB    0               ; GLOBAL FADE SPEED/STEP (0 = INACTIVE)
+SONGLOP         DEFB    0               ; CURRENT SONG LOOP COUNTER
+SONGLMT         DEFB    0               ; SONG LOOP LIMIT (0 = INFINITE)
+SONGACT         DEFB    0               ; ACTIVE MUSIC CHANNELS MASK
+SONGFIN         DEFB    0               ; FINISHED MUSIC CHANNELS MASK
 
 
 ; --- ENGINE VARIABLES END              ----------------------------------------
