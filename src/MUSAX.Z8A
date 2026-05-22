@@ -6,7 +6,10 @@
 
 ; - MUSINIT ----------------------------
 ; - INITIALIZE ENGINE
-; - 
+; - IN: NONE
+; - OUT: NONE
+; - CLOBBERS: NONE
+; -
 
 MUSINIT         PUSH    AF
                 PUSH    BC
@@ -56,6 +59,8 @@ MUSINIT         PUSH    AF
 ; - MUSPLAY ----------------------------
 ; - START A SONG
 ; - IN: HL = SONG HEADER
+; - OUT: NONE
+; - CLOBBERS: NONE
 ; -
 
 MUSPLAY         DI
@@ -124,6 +129,9 @@ MUSPLAY         DI
 
 ; - MUSSTOP ----------------------------
 ; - STOP ALL SOUND
+; - IN: NONE
+; - OUT: NONE
+; - CLOBBERS: NONE
 ; -
 
 MUSSTOP         DI
@@ -143,8 +151,10 @@ MUSSTOP         DI
 
 
 ; - MUSUPDAT ---------------------------
-; - ENGINE FRAME UPDATE
-; - CALL EVERY VBLANK
+; - ENGINE FRAME UPDATE (CALL EVERY VBLANK)
+; - IN: NONE
+; - OUT: NONE
+; - CLOBBERS: NONE
 ; -
 
 MUSUPDAT        PUSH    AF
@@ -186,7 +196,9 @@ MUSUPDAT        PUSH    AF
 
 ; - UPSTREAM ---------------------------
 ; - UPDATE SINGLE STREAM
-; - IN: IX = CHANNEL STATE
+; - IN: IX = CHANNEL STATE POINTER
+; - OUT: NONE
+; - CLOBBERS: AF, BC, DE, HL
 ; -
 
 UPSTREAM        ; --- TRANSPORT ---
@@ -234,7 +246,9 @@ UPSTREAM        ; --- TRANSPORT ---
 
 ; - PROCEVT ----------------------------
 ; - PROCESS BYTECODE EVENTS
-; - IN: IX = CHANNEL STATE
+; - IN: IX = CHANNEL STATE POINTER
+; - OUT: NONE
+; - CLOBBERS: AF, HL
 ; -
 
 PROCEVT         LD      L,(IX + CHPC)
@@ -262,6 +276,9 @@ PROCEVT         LD      L,(IX + CHPC)
 
 ; - MUSMUT -----------------------------
 ; - SILENCE PSG SHADOW REGS
+; - IN: NONE
+; - OUT: NONE
+; - CLOBBERS: NONE
 ; -
 
 MUSMUT          PUSH    HL
@@ -301,6 +318,9 @@ MUSMUT          PUSH    HL
 
 ; - MUSMERGE ---------------------------
 ; - MERGE PSGMUS AND PSGSFX TO PSGREG
+; - IN: NONE
+; - OUT: NONE
+; - CLOBBERS: NONE
 ; -
 
 MUSMERGE        PUSH    AF
@@ -439,6 +459,9 @@ MUSMERGE        PUSH    AF
 
 ; - MUSCOMM ----------------------------
 ; - COMMIT SHADOW REGS TO PSG
+; - IN: NONE
+; - OUT: NONE
+; - CLOBBERS: NONE
 ; -
 
 MUSCOMM         PUSH    AF
@@ -467,7 +490,16 @@ MUSCOMM         PUSH    AF
                 POP     AF
                 RET
 
+
+; - UPDADSR ----------------------------
+; - UPDATE ADSR ENVELOPE FOR CHANNEL (STUB)
+; - IN: IX = CHANNEL STATE POINTER
+; - OUT: NONE
+; - CLOBBERS: NONE (STUB)
+; -
+
 UPDADSR         RET                     ; STUB
+
 
 ; - UPDLFO -----------------------------
 ; - UPDATE LFO (VIBRATO/TREMOLO) FOR CHANNEL
@@ -475,6 +507,7 @@ UPDADSR         RET                     ; STUB
 ; - OUT: (IX + CHLFOVAL) = SIGNED LFO FREQUENCY/AMPLITUDE OFFSET VALUE
 ; - CLOBBERS: AF, BC, DE, HL
 ; -
+
 UPDLFO          PUSH    IY
 
                 ; 1. CHECK ADSR ACTIVE
