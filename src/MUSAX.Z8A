@@ -468,6 +468,13 @@ MUSCOMM         PUSH    AF
                 RET
 
 UPDADSR         RET                     ; STUB
+
+; - UPDLFO -----------------------------
+; - UPDATE LFO (VIBRATO/TREMOLO) FOR CHANNEL
+; - IN: IX = CHANNEL STATE POINTER
+; - OUT: (IX + CHLFOVAL) = SIGNED LFO FREQUENCY/AMPLITUDE OFFSET VALUE
+; - CLOBBERS: AF, BC, DE, HL
+; -
 UPDLFO          PUSH    IY
 
                 ; 1. CHECK ADSR ACTIVE
