@@ -4,6 +4,7 @@
 
 ; --- MAIN ENTRY POINTS                 ----------------------------------------
 
+
 ; - MUSINIT ----------------------------
 ; - INITIALIZE ENGINE
 ; - IN: NONE
@@ -193,6 +194,7 @@ MUSUPDAT        PUSH    AF
 
 
 ; --- INTERNAL ROUTINES                 ----------------------------------------
+
 
 ; - UPSTREAM ---------------------------
 ; - UPDATE SINGLE STREAM
