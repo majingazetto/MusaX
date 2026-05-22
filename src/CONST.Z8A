@@ -216,9 +216,17 @@ CHFADVOL        EQU     21              ; CHANNEL FADE VOLUME MULTIPLIER (DEFB, 
 CHFADTRG        EQU     22              ; CHANNEL FADE TARGET (DEFB, 0..255)
 CHFADSPD        EQU     23              ; CHANNEL FADE SPEED/STEP (DEFB, 0 = INACTIVE)
 CHRET           EQU     24              ; SUBROUTINE RETURN PC (DEFW)
+CHDETUNE        EQU     26              ; DETUNE CENTS (DEFB, SIGNED)
+CHPORTAS        EQU     27              ; PORTAMENTO SPEED (DEFB)
+CHPORTAT        EQU     28              ; PORTAMENTO TIMER (DEFB)
+CHPORTAN        EQU     29              ; PORTAMENTO TARGET NOTE (DEFB)
+CHIDX           EQU     30              ; CHANNEL INDEX (0..5) (DEFB)
 
-CHSIZE          EQU     26              ; TOTAL SIZE PER CHANNEL (ROUNDED)
+CHSIZE          EQU     32              ; UPDATE TOTAL SIZE (ROUNDED TO POWER-OF-2)
 PSGSIZE         EQU     14              ; PSG AUDIO REGISTERS SIZE (R0-R13)
+PSGADR          EQU     #A0             ; PSG ADDRESS SELECT PORT
+PSGWR           EQU     #A1             ; PSG DATA WRITE PORT
+PSGRD           EQU     #A2             ; PSG DATA READ PORT
 
 
 ; --- INSTRUMENT RECORD OFFSETS         ----------------------------------------

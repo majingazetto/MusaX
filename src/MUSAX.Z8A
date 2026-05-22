@@ -25,6 +25,16 @@ MUSINIT         PUSH    AF
                 LD      (HL),0
                 LDIR
 
+                ; INITIALIZE CHANNEL INDICES (CHIDX)
+                LD      HL,CHANNELS + CHIDX
+                LD      DE,CHSIZE
+                LD      B,6
+                XOR     A
+.SETIDX         LD      (HL),A
+                ADD     HL,DE
+                INC     A
+                DJNZ    .SETIDX
+
                 ; INITIALIZE PSGOLD TO #FF TO FORCE INITIAL PHYSICAL WRITE
                 LD      HL,PSGOLD
                 LD      (HL),#FF
@@ -34,8 +44,8 @@ MUSINIT         PUSH    AF
 
                 ; READ PHYSICAL R7 MIXER TO PRESERVE BITS 6-7 (I/O CONFIGURATION)
                 LD      A,7
-                OUT     (#A0),A
-                IN      A,(#A2)
+                OUT     (PSGADR),A
+                IN      A,(PSGRD)
                 AND     #C0
 
                 ; RESTORE PRESERVED BITS 6-7 AND SET MUTE BITS 0-5 (1 = DISABLE SOUND)
@@ -149,12 +159,16 @@ MUSPLAY         LD      (SONGLMT),A
                 LD      (IX + CHWAIT + 1),A
                 LD      (IX + CHFRAC),A
                 LD      (IX + CHFADSPD),A
+                LD      (IX + CHDETUNE),A
+                LD      (IX + CHPORTAS),A
+                LD      (IX + CHPORTAT),A
                 
                 LD      A,255
                 LD      (IX + CHGATE),A
                 LD      (IX + CHNOTE),A
                 LD      (IX + CHFADVOL),A
                 LD      (IX + CHFADTRG),A
+                LD      (IX + CHPORTAN),A
                 
                 LD      A,15
                 LD      (IX + CHVOL),A
@@ -297,38 +311,40 @@ FXPLAY          PUSH    AF
 
 .INCHFX         LD      A,D
                 OR      E
-                JR      NZ,.FX_ACT
+                JR      NZ,.FXACT
 
                 ; INACTIVE CHANNEL
-                LD      (IX + CHPC),0
-                LD      (IX + CHPC + 1),0
-                LD      A,255
-                LD      (IX + CHNOTE),A
                 XOR     A
+                LD      (IX + CHPC),A
+                LD      (IX + CHPC + 1),A
                 LD      (IX + CHWAIT),A
                 LD      (IX + CHWAIT + 1),A
                 LD      (IX + CHFRAC),A
                 LD      (IX + CHADSRS),A ; STATE = IDLE
                 LD      (IX + CHADSRA),A
+                LD      (IX + CHDETUNE),A
+                LD      (IX + CHPORTAS),A
+                LD      (IX + CHPORTAT),A
+                
+                LD      A,255
+                LD      (IX + CHNOTE),A
+                LD      (IX + CHPORTAN),A
 
                 ; DISABLE TONE A/B/C IN PSGSFX R7
-                PUSH    BC
-                CALL    GETCH           ; A = CHANNEL INDEX, CLOBBERS DE, HL
+                LD      A,(IX + CHIDX)
                 SUB     3
-                LD      C,A
                 LD      B,1
-                INC     C
-.FX_L1          DEC     C
-                JR      Z,.FX_S1
-                SLA     B
-                JR      .FX_L1
-.FX_S1          LD      A,(PSGSFX + 7)
+                JR      Z,.FXS1
+                DEC     A
+                LD      B,2
+                JR      Z,.FXS1
+                LD      B,4
+.FXS1           LD      A,(PSGSFX + 7)
                 OR      B
                 LD      (PSGSFX + 7),A
-                POP     BC
                 RET
 
-.FX_ACT         LD      (IX + CHPC),E
+.FXACT          LD      (IX + CHPC),E
                 LD      (IX + CHPC + 1),D
 
                 XOR     A
@@ -337,6 +353,9 @@ FXPLAY          PUSH    AF
                 LD      (IX + CHFRAC),A
                 LD      (IX + CHADSRS),A ; STATE = IDLE
                 LD      (IX + CHADSRA),A
+                LD      (IX + CHDETUNE),A
+                LD      (IX + CHPORTAS),A
+                LD      (IX + CHPORTAT),A
 
                 LD      A,15
                 LD      (IX + CHVOL),A
@@ -344,9 +363,10 @@ FXPLAY          PUSH    AF
                 LD      A,255
                 LD      (IX + CHGATE),A
                 LD      (IX + CHNOTE),A
+                LD      (IX + CHPORTAN),A
 
                 ; SET CHBPM TO #2400
-                LD      A,#00
+                XOR     A
                 LD      (IX + CHBPM),A
                 LD      A,#24
                 LD      (IX + CHBPM + 1),A
@@ -355,15 +375,15 @@ FXPLAY          PUSH    AF
                 LD      HL,(FXINST)
                 LD      A,H
                 OR      L
-                JR      Z,.FX_NOINS
+                JR      Z,.FXNOIN
 
                 LD      E,(HL)
                 INC     HL
                 LD      D,(HL)          ; DE = INSTRUMENT 0 RECORD ADDR
-                JR      .FX_SETINS
+                JR      .FXSETIN
 
-.FX_NOINS       LD      DE,0
-.FX_SETINS      LD      (IX + CHINST),E
+.FXNOIN         LD      DE,0
+.FXSETIN        LD      (IX + CHINST),E
                 LD      (IX + CHINST + 1),D
                 RET
 
@@ -407,8 +427,10 @@ MUSUPDAT        PUSH    AF
                 JR      Z,.NOGFAD
                 
                 LD      A,(GLBFADVL)
-                LD      B,(GLBFADTG)
-                LD      C,(GLBFADSP)
+                LD      HL,GLBFADTG
+                LD      B,(HL)
+                INC     HL
+                LD      C,(HL)
                 
                 CP      B
                 JR      Z,.GFREAC
@@ -549,8 +571,10 @@ UPSTREAM        ; --- TRANSPORT ---
                 
 .PROCESS        CALL    PROCEVT         ; PROCESS BYTECODE EVENTS
                 
-.MODULAT        CALL    UPDADSR         ; UPDATE ADSR (STUB)
-                CALL    UPDLFO          ; UPDATE LFO (STUB)
+.MODULAT        CALL    UPDPORTA        ; UPDATE CHROMATIC PORTAMENTO
+                CALL    UPDADSR         ; UPDATE ADSR ENVELOPE
+                CALL    UPDLFO          ; UPDATE LFO
+                CALL    CALCPER         ; CALCULATE PERIOD
                 CALL    UPDFADE         ; UPDATE CHANNEL FADE
                 CALL    UPDVOL          ; UPDATE CHANNEL VOLUME SCALE
                 RET
@@ -578,7 +602,6 @@ PROCEVT         LD      L,(IX + CHPC)
                 ; NOTE EVENT: [NOTEID(1)] [DURATION(DEFW)]
 
                 LD      B,A             ; B = NOTE ID (GUARANTEED 0..#EF)
-                LD      (IX + CHNOTE),A ; STORE NOTE
 
                 ; LOAD DURATION INTO CHWAIT
                 LD      A,(HL)
@@ -590,93 +613,105 @@ PROCEVT         LD      L,(IX + CHPC)
                 XOR     A
                 LD      (IX + CHFRAC),A
 
-                ; SAVE STREAM PC (THEN MAY CLOBBER HL)
+                ; SAVE STREAM PC
                 LD      (IX + CHPC),L
                 LD      (IX + CHPC + 1),H
                 PUSH    HL
 
-                ; TRIGGER ADSR ATTACK
+                ; CHECK LEGATO: CHPORTAS != 0 AND CHNOTE != 255
+                LD      A,(IX + CHPORTAS)
+                OR      A
+                JR      Z,.SNAP
+                LD      A,(IX + CHNOTE)
+                CP      255
+                JR      Z,.SNAP
+
+                ; LEGATO PATH: SET TARGET NOTE AND RESET TIMER
+                LD      (IX + CHPORTAN),B
                 XOR     A
+                LD      (IX + CHPORTAT),A
+                JR      .LEGFIN
+
+.SNAP           ; SNAP PATH: SET CURRENT NOTE, CLEAR TARGET, TRIGGER ADSR, INIT LFO
+                LD      (IX + CHNOTE),B
+                LD      A,255
+                LD      (IX + CHPORTAN),A
+                XOR     A
+                LD      (IX + CHPORTAT),A
+
+                ; TRIGGER ADSR ATTACK (STATE 1, ACC 0)
                 LD      (IX + CHADSRA),A
                 LD      A,1
                 LD      (IX + CHADSRS),A
 
-                ; WRITE PSG PERIOD FROM FREQ_TBL
-                CALL    GETCH           ; A = CHANNEL INDEX (0..5); CLOBBERS DE, HL
-                PUSH    AF              ; SAVE CHANNEL INDEX
-                
-                CP      3
-                JR      NC,.PN_SFX
-                
-                ; MUSIC CHANNEL
+                ; INITIALIZE LFO DELAY
+                LD      L,(IX + CHINST)
+                LD      H,(IX + CHINST + 1)
+                LD      A,H
+                OR      L
+                JR      Z,.NOLFO
+                LD      DE,INSLDELA
+                ADD     HL,DE
+                LD      A,(HL)
+                JR      .SETLFO
+.NOLFO          XOR     A
+.SETLFO         LD      (IX + CHLFOD),A
+                XOR     A
+                LD      (IX + CHLFOP),A
+
+                ; WRITE PSG PERIOD FROM FREQ_TBL (SNAP ONLY)
+                LD      A,(IX + CHIDX)
+                LD      C,A             ; SAVE CHANNEL INDEX
+                ADD     A,A             ; A = CHIDX * 2
+                CP      6
+                JR      C,.PNDUNDER
+                ADD     A,8             ; PSGSFX STARTS AT PSGMUS + 14
+.PNDUNDER       LD      L,A
                 LD      H,0
-                LD      L,A
-                ADD     HL,HL           ; HL = CH_IDX * 2
                 LD      DE,PSGMUS
-                ADD     HL,DE           ; HL = &PSGMUS[CH_IDX * 2]
-                JR      .PN_WRITE
-                
-.PN_SFX         ; SFX CHANNEL
-                SUB     3
-                LD      H,0
-                LD      L,A
-                ADD     HL,HL           ; HL = (CH_IDX - 3) * 2
-                LD      DE,PSGSFX
-                ADD     HL,DE           ; HL = &PSGSFX[(CH_IDX - 3) * 2]
-                
-.PN_WRITE       ; HL POINTS TO DEST SHADOW REGISTER (LOW BYTE)
-                PUSH    HL              ; SAVE DEST ADDR
-                
-                ; GET FREQ TABLE POINTER FOR NOTE
+                ADD     HL,DE
+
+.PNWRIT         PUSH    HL              ; SAVE DEST ADDR
                 LD      A,(IX + CHNOTE)
                 LD      H,0
                 LD      L,A
-                ADD     HL,HL           ; HL = NOTE_IDX * 2
-                LD      BC,FREQ_TBL
-                ADD     HL,BC           ; HL = &FREQ_TBL[NOTE_IDX]
-                
+                ADD     HL,HL
+                LD      DE,FREQ_TBL
+                ADD     HL,DE
                 LD      A,(HL)
                 INC     HL
-                LD      C,(HL)          ; C = PERIOD HIGH BYTE
-                
-                POP     HL              ; RESTORE DEST ADDR
-                LD      (HL),A          ; WRITE PERIOD LOW
+                LD      D,(HL)          ; D = PERIOD HIGH
+                POP     HL              ; DEST ADDR
+                LD      (HL),A
                 INC     HL
-                LD      (HL),C          ; WRITE PERIOD HIGH
+                LD      (HL),D
 
-                ; ENABLE TONE IN R7
-                POP     AF              ; RESTORE CHANNEL INDEX (0..5)
-                PUSH    BC
-                LD      C,A             ; C = CHANNEL INDEX
-                
-                ; COMPUTE B = ~(1 << (A % 3))
+.LEGFIN         ; ENABLE TONE IN R7 (LEGATO & SNAP)
+                LD      A,(IX + CHIDX)
+                LD      C,A             ; SAVE CHANNEL INDEX
                 CP      3
-                JR      C,.E_OK
+                JR      C,.EOK
                 SUB     3
-.E_OK           LD      B,%11111110
+.EOK            LD      B,1
                 OR      A
-                JR      Z,.EMASK_OK
-                LD      B,%11111101
+                JR      Z,.EMASKOK
+.EL             ADD     B,B
                 DEC     A
-                JR      Z,.EMASK_OK
-                LD      B,%11111011
-.EMASK_OK       LD      A,C
+                JR      NZ,.EL
+.EMASKOK        LD      A,B
+                CPL
+                LD      B,A             ; B = MASK
+                LD      HL,PSGMUS + 7
+                LD      A,C
                 CP      3
-                JR      NC,.ESFX
-                
-                ; MUSIC CHANNEL
-                LD      A,(PSGMUS + 7)
+                JR      C,.R7OK
+                LD      DE,14
+                ADD     HL,DE
+.R7OK           LD      A,(HL)
                 AND     B
-                LD      (PSGMUS + 7),A
-                JR      .EFIN
-                
-.ESFX           ; SFX CHANNEL
-                LD      A,(PSGSFX + 7)
-                AND     B
-                LD      (PSGSFX + 7),A
-                
-.EFIN           POP     BC
-                POP     HL              ; RESTORE PC (ALREADY STORED IN CHPC)
+                LD      (HL),A
+
+.EFIN           POP     HL              ; RESTORE PC
                 JP      .EXIT
 
 .COMMAND        SUB     #F0             ; A = INDEX (0..15)
@@ -753,7 +788,7 @@ PROCEVT         LD      L,(IX + CHPC)
                 LD      D,(HL)
                 INC     HL              ; DE = RESTART ADDRESS
                 
-                CALL    GETCH           ; A = CHANNEL INDEX (0..5)
+                LD      A,(IX + CHIDX)  ; A = CHANNEL INDEX (0..5)
                 CP      3
                 JR      NC,.SFXRST
                 
@@ -843,7 +878,7 @@ PROCEVT         LD      L,(IX + CHPC)
                 PUSH    HL              ; SAVE STREAM PC
                 
                 ; FIND TABLE BASE POINTER
-                CALL    GETCH           ; A = CHANNEL INDEX (0..5)
+                LD      A,(IX + CHIDX)  ; A = CHANNEL INDEX (0..5)
                 CP      3
                 JR      NC,.PI_SFX
                 
@@ -913,18 +948,48 @@ PROCEVT         LD      L,(IX + CHPC)
                 LD      H,(IX + CHRET + 1)
                 JP      .FETCH
 
-.PCPHASE        INC     HL              ; SKIP 1 BYTE
-                JP      .FETCH
-
-.PCDETUN        INC     HL              ; SKIP 1 BYTE
-                JP      .FETCH
-
-.PCPORTA        INC     HL              ; SKIP 1 BYTE
-                JP      .FETCH
-
-.PCCHOR         INC     HL              ; SKIP 2 BYTES
+.PCPHASE        LD      A,(HL)          ; READ PHASE VALUE
                 INC     HL
+                LD      C,A
+                LD      A,(IX + CHFRAC)
+                SUB     C
+                LD      (IX + CHFRAC),A
+                JR      NC,.PHOK
+                LD      E,(IX + CHWAIT)
+                LD      D,(IX + CHWAIT + 1)
+                INC     DE
+                LD      (IX + CHWAIT),E
+                LD      (IX + CHWAIT + 1),D
+.PHOK           JP      .FETCH
+
+.PCDETUN        LD      A,(HL)          ; READ DETUNE VALUE
+                INC     HL
+                LD      (IX + CHDETUNE),A
                 JP      .FETCH
+
+.PCPORTA        LD      A,(HL)          ; READ PORTAMENTO SPEED
+                INC     HL
+                LD      (IX + CHPORTAS),A
+                JP      .FETCH
+
+.PCCHOR         LD      A,(HL)          ; READ PHASE VALUE
+                INC     HL
+                LD      C,A             ; C = PHASE VALUE
+                LD      A,(HL)          ; READ DETUNE VALUE
+                INC     HL
+                LD      (IX + CHDETUNE),A
+                
+                ; APPLY PHASE DELAY TO CHFRAC/CHWAIT
+                LD      A,(IX + CHFRAC)
+                SUB     C
+                LD      (IX + CHFRAC),A
+                JR      NC,.CHOK
+                LD      E,(IX + CHWAIT)
+                LD      D,(IX + CHWAIT + 1)
+                INC     DE
+                LD      (IX + CHWAIT),E
+                LD      (IX + CHWAIT + 1),D
+.CHOK           JP      .FETCH
 
 .EXIT           LD      (IX + CHPC),L
                 LD      (IX + CHPC + 1),H
@@ -938,38 +1003,34 @@ PROCEVT         LD      L,(IX + CHPC)
 ; - CLOBBERS: NONE
 ; -
 
-MUSMUT          PUSH    HL
+MUSMUT          PUSH    AF
+                PUSH    BC
+                PUSH    DE
+                PUSH    HL
+                
+                ; READ PHYSICAL R7 MIXER BITS 6-7
+                LD      A,(PSGREG + 7)
+                AND     #C0
+                OR      #3F             ; SET BITS 0-5 TO 1 (DISABLE ALL CHANNELS)
+                LD      C,A             ; SAVE IT IN C
+                
+                ; CLEAR BYTES CONTIGUOUSLY (PSGMUS, PSGSFX, PSGREG)
                 LD      HL,PSGMUS
-                CALL    .MUTBUF
-                LD      HL,PSGSFX
-                CALL    .MUTBUF
-                LD      HL,PSGREG
-                CALL    .MUTBUF
+                LD      (HL),0
+                LD      DE,PSGMUS + 1
+                LD      BC,PSGOLD - PSGMUS - 1
+                LDIR
+                
+                ; RESTORE MIXER BITS
+                LD      A,C
+                LD      (PSGMUS + 7),A
+                LD      (PSGSFX + 7),A
+                LD      (PSGREG + 7),A
+                
                 POP     HL
-                RET
-
-.MUTBUF         PUSH    BC
-                PUSH    AF
-                LD      B,7
-                XOR     A
-.MCL1           LD      (HL),A
-                INC     HL
-                DJNZ    .MCL1
-                
-                LD      A,(HL)
-                AND     #C0             ; PRESERVE MIXER BITS 6-7
-                OR      #3F             ; SET BITS 0-5 TO 1 (DISABLE SOUND)
-                LD      (HL),A
-                INC     HL
-                
-                LD      B,6
-                XOR     A
-.MCL2           LD      (HL),A
-                INC     HL
-                DJNZ    .MCL2
-                
-                POP     AF
+                POP     DE
                 POP     BC
+                POP     AF
                 RET
 
 
@@ -1134,9 +1195,9 @@ MUSCOMM         PUSH    AF
                 JR      Z,.SKIP
                 LD      (HL),A
                 LD      A,C
-                OUT     (#A0),A
+                OUT     (PSGADR),A
                 LD      A,(DE)
-                OUT     (#A1),A
+                OUT     (PSGWR),A
 .SKIP           INC     DE
                 INC     HL
                 INC     C
@@ -1240,34 +1301,28 @@ UPDADSR         LD      A,(IX + CHADSRS)
                 LD      (IX + CHADSRA),A
                 
                 PUSH    BC
-                CALL    GETCH           ; A = CHANNEL INDEX (0..5), CLOBBERS DE, HL
+                LD      A,(IX + CHIDX)  ; A = CHANNEL INDEX (0..5)
                 LD      C,A             ; C = CHANNEL INDEX
                 
                 ; COMPUTE B = (1 << (A % 3))
                 CP      3
                 JR      C,.M_OK
                 SUB     3
-.M_OK           LD      B,%00000001
+.M_OK           LD      B,1
                 OR      A
                 JR      Z,.MASK_OK
-                LD      B,%00000010
+.RL             ADD     B,B
                 DEC     A
-                JR      Z,.MASK_OK
-                LD      B,%00000100
-.MASK_OK        LD      A,C
+                JR      NZ,.RL
+.MASK_OK        LD      HL,PSGMUS + 7
+                LD      A,C
                 CP      3
-                JR      NC,.RLSFX
-                
-                ; MUSIC CHANNEL
-                LD      A,(PSGMUS + 7)
+                JR      C,.R7OK
+                LD      DE,14
+                ADD     HL,DE
+.R7OK           LD      A,(HL)
                 OR      B
-                LD      (PSGMUS + 7),A
-                JR      .RLFIN
-                
-.RLSFX          ; SFX CHANNEL
-                LD      A,(PSGSFX + 7)
-                OR      B
-                LD      (PSGSFX + 7),A
+                LD      (HL),A
                 
 .RLFIN          POP     BC
                 RET
@@ -1381,28 +1436,6 @@ UPDLFO          PUSH    IY
                 RET
 
 
-; - GETCH ------------------------------
-; - GET CHANNEL INDEX FROM IX
-; - IN: IX = CHANNEL STATE POINTER
-; - OUT: A = CHANNEL INDEX (0..5)
-; - CLOBBERS: DE, HL
-; -
-
-GETCH           PUSH    IX
-                POP     HL
-                LD      DE,CHANNELS
-                OR      A
-                SBC     HL,DE           ; HL = IX - CHANNELS
-                
-                LD      A,0
-.L1             LD      DE,CHSIZE
-                OR      A
-                SBC     HL,DE
-                RET     C
-                INC     A
-                JR      .L1
-
-
 ; - UPDFADE ----------------------------
 ; - UPDATE CHANNEL FADE VOLUME
 ; - IN: IX = CHANNEL STATE POINTER
@@ -1452,29 +1485,36 @@ UPDFADE         LD      A,(IX + CHFADSPD)
 ; - CLOBBERS: AF, BC, DE, HL
 ; -
 
-UPDVOL          CALL    GETCH           ; A = CHANNEL INDEX
-                PUSH    AF              ; SAVE CHANNEL INDEX
-                LD      A,(IX + CHNOTE)
+UPDVOL          LD      A,(IX + CHNOTE)
                 CP      255
                 JR      NZ,.ACTIVE
 
                 ; CHANNEL IS SILENT: WRITE 0
-                POP     BC
                 XOR     A
-                PUSH    AF              ; PRESERVE 0
+                PUSH    AF              ; PRESERVE 0 (FINALVOL)
                 JP      .CALCDST        ; CALCULATE DESTINATION AND WRITE
 
 .ACTIVE         ; 1. CALCULATE VOLSCALE (ADSR + TREMOLO)
-                LD      A,(IX + CHLFOVAL)
+                LD      L,(IX + CHINST)
+                LD      H,(IX + CHINST + 1)
+                LD      A,H
+                OR      L
+                JR      Z,.NOTREM
+                PUSH    HL
+                POP     IY
+                LD      A,(IY + INSLDEST)
+                CP      2               ; TREMOLO?
+                JR      Z,.TREM
+.NOTREM         LD      DE,0
+                JR      .ADDLFO
+.TREM           LD      A,(IX + CHLFOVAL)
                 LD      E,A
                 RLCA
                 SBC     A,A
                 LD      D,A             ; DE = SIGN-EXTENDED CHLFOVAL
-
-                LD      A,(IX + CHADSRA)
+.ADDLFO         LD      A,(IX + CHADSRA)
                 LD      L,A
                 LD      H,0             ; HL = CHADSRA (UNSIGNED)
-
                 ADD     HL,DE           ; HL = CHADSRA + CHLFOVAL
                 
                 ; CLAMP TO 0..255
@@ -1500,9 +1540,7 @@ UPDVOL          CALL    GETCH           ; A = CHANNEL INDEX
 .SKIPCF         ; L = UPDATED SCALE
 
                 ; CHECK IF MUSIC CHANNEL (INDEX < 3)
-                POP     BC              ; RESTORE CHANNEL INDEX
-                PUSH    BC              ; SAVE AGAIN
-                LD      A,C
+                LD      A,(IX + CHIDX)
                 CP      3
                 JP      NC,.SKIPGLB     ; IF SFX CHANNEL, SKIP GLOBAL FADE AND MASTER VOLUME
 
@@ -1559,10 +1597,9 @@ UPDVOL          CALL    GETCH           ; A = CHANNEL INDEX
                 ADD     HL,DE
                 LD      A,H             ; A = FINALVOL
 .SKIPSC         ; A = FINALVOL
-                POP     BC              ; RESTORE CHANNEL INDEX
                 PUSH    AF              ; PRESERVE FINALVOL
 
-.CALCDST        LD      A,C
+.CALCDST        LD      A,(IX + CHIDX)
                 CP      3
                 JR      NC,.SFXVOL
                 ADD     A,8             ; A = C + 8
@@ -1706,6 +1743,338 @@ CALFUN          ADD     A,A             ; A = INDEX * 2
                 PUSH    HL              ; PUSH TARGET ADDR ON STACK
                 EX      DE,HL           ; HL = STREAM PC, DE = TARGET ADDR (UNUSED)
                 RET                     ; JUMP TO TARGET ADDR
+
+
+; - UPDPORTA ---------------------------
+; - UPDATE CHROMATIC PORTAMENTO
+; - IN: IX = CHANNEL STATE POINTER
+; - OUT: NONE
+; - CLOBBERS: AF, BC
+; -
+
+UPDPORTA        LD      A,(IX + CHPORTAS)
+                OR      A
+                RET     Z               ; SPEED == 0: NO PORTAMENTO
+                
+                LD      A,(IX + CHNOTE)
+                CP      255
+                RET     Z               ; REST: NO PORTAMENTO
+                
+                LD      A,(IX + CHPORTAN)
+                CP      255
+                RET     Z               ; NO TARGET: NO PORTAMENTO
+                
+                LD      C,A             ; C = TARGET NOTE
+                LD      A,(IX + CHNOTE)
+                CP      C
+                RET     Z               ; ALREADY AT TARGET
+                
+                ; INCREMENT TIMER
+                LD      A,(IX + CHPORTAT)
+                INC     A
+                LD      (IX + CHPORTAT),A
+                
+                ; CHECK IF TIMER >= SPEED
+                CP      (IX + CHPORTAS)
+                RET     C               ; TIMER < SPEED: WAIT
+                
+                ; TIMER >= SPEED: RESET TIMER AND STEP NOTE
+                XOR     A
+                LD      (IX + CHPORTAT),A
+                
+                LD      A,(IX + CHNOTE)
+                CP      C
+                JR      NC,.DEC
+                
+                ; NOTE < TARGET: INC
+                INC     A
+                LD      (IX + CHNOTE),A
+                RET
+                
+.DEC            ; NOTE > TARGET: DEC
+                DEC     A
+                LD      (IX + CHNOTE),A
+                RET
+
+
+; - CALCPER ----------------------------
+; - CALCULATE DETUNED PERIOD
+; - IN: IX = CHANNEL STATE POINTER
+; - OUT: NONE
+; - CLOBBERS: AF, BC, DE, HL
+; -
+
+CALCPER         LD      A,(IX + CHIDX)
+                ADD     A,A             ; A = CHIDX * 2
+                CP      6
+                JR      C,.UNDER
+                ADD     A,8             ; PSGSFX STARTS AT PSGMUS + 14
+.UNDER          LD      L,A
+                LD      H,0
+                LD      DE,PSGMUS
+                ADD     HL,DE
+                PUSH    HL              ; SAVE SHADOW ADDR ON STACK
+
+                LD      A,(IX + CHNOTE)
+                CP      255
+                JR      NZ,.NOTRST
+                
+                ; REST: POP SHADOW ADDR AND RETURN
+                POP     HL
+                RET
+
+.NOTRST         ; COMPUTE TOTAL CENTS
+                LD      A,(IX + CHDETUNE)
+                LD      C,A
+                
+                LD      L,(IX + CHINST)
+                LD      H,(IX + CHINST + 1)
+                LD      A,H
+                OR      L
+                JR      Z,.CENTSOK
+                PUSH    HL
+                POP     IY
+                LD      A,(IY + INSLDEST)
+                CP      1
+                JR      NZ,.CENTSOK
+                LD      A,(IX + CHLFOVAL)
+                ADD     A,C
+                LD      C,A
+.CENTSOK        ; C = TOTAL CENTS (SIGNED)
+                LD      A,C
+                OR      A
+                JR      NZ,.INTERP
+                
+                ; CENTS == 0: WRITE BASE PERIOD
+                LD      A,(IX + CHNOTE)
+                LD      H,0
+                LD      L,A
+                ADD     HL,HL
+                LD      DE,FREQ_TBL
+                ADD     HL,DE
+                LD      A,(HL)
+                INC     HL
+                LD      H,(HL)
+                POP     DE              ; DE = SHADOW ADDR
+                LD      A,L
+                LD      (DE),A
+                INC     DE
+                LD      A,H
+                LD      (DE),A
+                RET
+
+.INTERP         ; CENTS IS SIGNED IN C
+                JP      M,.NEGCENTS
+                
+                ; POSITIVE CENTS (0..127)
+                LD      A,C
+                CP      100
+                JR      C,.POSCLP
+                LD      A,99
+.POSCLP         LD      C,A             ; C = ABS(CENTS) CLAMPED TO 99
+
+                ; P0 = FREQ_TBL[NOTE]
+                ; P1 = FREQ_TBL[NOTE+1] (CLAMP TO 95)
+                LD      A,(IX + CHNOTE)
+                CP      95
+                JR      C,.POSOK
+                LD      A,95
+.POSOK          LD      E,A             ; E = NOTE
+                INC     A               ; A = NOTE + 1
+                LD      D,A             ; D = NEXT NOTE
+                
+                ; LOOKUP P0 (IN HL)
+                LD      A,E
+                LD      H,0
+                LD      L,A
+                ADD     HL,HL
+                LD      BC,FREQ_TBL
+                ADD     HL,BC
+                LD      A,(HL)
+                INC     HL
+                LD      H,(HL)
+                LD      L,A             ; HL = P0
+                PUSH    HL              ; SAVE P0
+                
+                ; LOOKUP P1 (IN DE)
+                LD      A,D
+                LD      H,0
+                LD      L,A
+                ADD     HL,HL
+                LD      BC,FREQ_TBL
+                ADD     HL,BC
+                LD      A,(HL)
+                INC     HL
+                LD      H,(HL)
+                LD      L,A             ; HL = P1
+                
+                POP     DE              ; DE = P0
+                PUSH    DE              ; SAVE P0 AGAIN
+                
+                ; COMPUTE DELTA P = P0 - P1
+                EX      DE,HL
+                OR      A
+                SBC     HL,DE           ; HL = DELTA P
+                
+                ; MULTIPLY BY CENTS (C)
+                CALL    MUL168          ; HL:A = DELTA P * C
+                CALL    DIV24100        ; HL = QUOTIENT
+                
+                ; PERIOD = P0 - QUOTIENT
+                POP     DE              ; DE = P0
+                EX      DE,HL           ; HL = P0, DE = QUOTIENT
+                OR      A
+                POP     DE              ; DE = SHADOW ADDR
+                LD      A,L
+                LD      (DE),A
+                INC     DE
+                LD      A,H
+                LD      (DE),A
+                RET
+
+.NEGCENTS       ; CENTS IS NEGATIVE (-1..-128)
+                LD      A,C
+                NEG
+                CP      100
+                JR      C,.NEGCLP
+                LD      A,99
+.NEGCLP         LD      C,A             ; C = ABS(CENTS) CLAMPED TO 99
+                
+                ; P0 = FREQ_TBL[NOTE]
+                ; P1 = FREQ_TBL[NOTE-1] (CLAMP TO 0)
+                LD      A,(IX + CHNOTE)
+                OR      A
+                JR      NZ,.NEGOK
+                LD      A,0
+.NEGOK          LD      E,A             ; E = NOTE
+                DEC     A               ; A = NOTE - 1
+                LD      D,A             ; D = PREV NOTE
+                
+                ; LOOKUP P0 (IN HL)
+                LD      A,E
+                LD      H,0
+                LD      L,A
+                ADD     HL,HL
+                LD      BC,FREQ_TBL
+                ADD     HL,BC
+                LD      A,(HL)
+                INC     HL
+                LD      H,(HL)
+                LD      L,A             ; HL = P0
+                PUSH    HL              ; SAVE P0
+                
+                ; LOOKUP P1 (IN DE)
+                LD      A,D
+                LD      H,0
+                LD      L,A
+                ADD     HL,HL
+                LD      BC,FREQ_TBL
+                ADD     HL,BC
+                LD      A,(HL)
+                INC     HL
+                LD      H,(HL)
+                LD      L,A             ; HL = P1
+                
+                POP     DE              ; DE = P0
+                PUSH    DE              ; SAVE P0 AGAIN
+                
+                ; COMPUTE DELTA P = P1 - P0
+                OR      A
+                SBC     HL,DE           ; HL = DELTA P
+                
+                ; MULTIPLY BY CENTS (C)
+                CALL    MUL168          ; HL:A = DELTA P * C
+                CALL    DIV24100        ; HL = QUOTIENT
+                
+                ; PERIOD = P0 + QUOTIENT
+                POP     DE              ; DE = P0
+                POP     DE              ; DE = SHADOW ADDR
+                LD      A,L
+                LD      (DE),A
+                INC     DE
+                LD      A,H
+                LD      (DE),A
+                RET
+
+
+; - MUL168 -----------------------------
+; - MULTIPLY 16-BIT HL BY 8-BIT C
+; - IN: HL = 16-BIT MULTIPLICAND, C = 8-BIT MULTIPLIER
+; - OUT: HL:A = 24-BIT PRODUCT (HL = HIGH 16-BITS, A = LOW 8-BITS)
+; - CLOBBERS: BC, DE
+; -
+
+MUL168          LD      D,H
+                LD      E,L             ; DE = MULTIPLICAND
+                LD      HL,0            ; HL = HIGH 16-BITS PRODUCT
+                LD      A,0             ; A = LOW 8-BITS PRODUCT
+                LD      B,8
+.LOOP           SRL     C               ; SHIFT MULTIPLIER BIT 0 TO CARRY
+                JR      NC,.SHIFT
+                
+                PUSH    DE              ; SAVE MULTIPLICAND
+                ADD     A,E
+                LD      E,A
+                LD      A,L
+                ADC     A,D
+                LD      L,A
+                LD      A,H
+                ADC     A,0
+                LD      H,A
+                LD      A,E
+                POP     DE              ; RESTORE MULTIPLICAND
+                
+.SHIFT          SLA     E
+                RL      D
+                DJNZ    .LOOP
+                RET
+
+
+; - DIV24100 ---------------------------
+; - DIVISION OF 24-BIT HL:A BY 100
+; - IN: HL:A = 24-BIT DIVIDEND (HL = HIGH 16-BITS, A = LOW 8-BITS)
+; - OUT: HL = 16-BIT QUOTIENT
+; - CLOBBERS: BC, DE
+; -
+
+DIV24100        LD      DE,0            ; REMAINDER = 0
+                LD      B,24            ; 24 BITS
+.LOOP           ADD     A,A             ; SHIFT A LEFT
+                ADC     HL,HL           ; SHIFT HL LEFT, CARRY INTO HL
+                
+                ; SHIFT CARRY INTO REMAINDER DE
+                RL      E
+                RL      D
+                
+                ; TEST DE >= 100
+                PUSH    HL              ; SAVE QUOTIENT HIGH (HL)
+                PUSH    AF              ; SAVE QUOTIENT LOW (A)
+                
+                LD      A,E
+                SUB     100
+                LD      L,A
+                LD      A,D
+                SBC     A,0
+                LD      H,A             ; HL = DE - 100
+                
+                JR      C,.RESTORE
+                
+                ; DE >= 100: DE = DE - 100
+                LD      E,L
+                LD      D,H
+                POP     AF              ; RESTORE AF
+                POP     HL              ; RESTORE HL
+                OR      1               ; SET QUOTIENT BIT 0
+                JR      .NEXT
+                
+.RESTORE        POP     AF              ; RESTORE AF (QUOTIENT BIT 0 IS 0)
+                POP     HL              ; RESTORE HL
+                
+.NEXT           DJNZ    .LOOP
+                LD      H,L
+                LD      L,A
+                RET
+
 
 
                 INCLUDE "TABLES.Z8A"
