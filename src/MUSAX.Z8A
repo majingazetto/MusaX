@@ -18,7 +18,7 @@ MUSINIT         PUSH    AF
                 OUT     (#A0),A
                 IN      A,(#A2)
                 AND     #C0
-                LD      B,A             ; SAVE PRESERVED BITS 6-7 IN B
+                PUSH    AF              ; SAVE PRESERVED BITS 6-7 ON STACK
 
                 ; CLEAR ALL ENGINE VARIABLES (LDIR)
                 LD      HL,MUSVARS
@@ -27,8 +27,9 @@ MUSINIT         PUSH    AF
                 LD      (HL),0
                 LDIR
 
+                POP     AF              ; RESTORE PRESERVED BITS 6-7 TO A
+
                 ; RESTORE PRESERVED BITS 6-7 AND SET MUTE BITS 0-5 (1 = DISABLE SOUND)
-                LD      A,B
                 OR      #3F             ; DISABLE TONES AND NOISE (BITS 0-5 = 1)
                 LD      (PSGMUS + 7),A
                 LD      (PSGSFX + 7),A
