@@ -13,12 +13,6 @@ MUSINIT         PUSH    AF
                 PUSH    DE
                 PUSH    HL
 
-                ; READ PHYSICAL R7 MIXER TO PRESERVE BITS 6-7 (I/O CONFIGURATION)
-                LD      A,7
-                OUT     (#A0),A
-                IN      A,(#A2)
-                AND     #C0
-                PUSH    AF              ; SAVE PRESERVED BITS 6-7 ON STACK
 
                 ; CLEAR ALL ENGINE VARIABLES (LDIR)
                 LD      HL,MUSVARS
@@ -27,7 +21,18 @@ MUSINIT         PUSH    AF
                 LD      (HL),0
                 LDIR
 
-                POP     AF              ; RESTORE PRESERVED BITS 6-7 TO A
+                ; INITIALIZE PSGOLD TO #FF TO FORCE INITIAL PHYSICAL WRITE
+                LD      HL,PSGOLD
+                LD      (HL),#FF
+                LD      DE,PSGOLD + 1
+                LD      BC,PSGSIZE - 1
+                LDIR
+
+                ; READ PHYSICAL R7 MIXER TO PRESERVE BITS 6-7 (I/O CONFIGURATION)
+                LD      A,7
+                OUT     (#A0),A
+                IN      A,(#A2)
+                AND     #C0
 
                 ; RESTORE PRESERVED BITS 6-7 AND SET MUTE BITS 0-5 (1 = DISABLE SOUND)
                 OR      #3F             ; DISABLE TONES AND NOISE (BITS 0-5 = 1)
@@ -438,18 +443,26 @@ MUSMERGE        PUSH    AF
 
 MUSCOMM         PUSH    AF
                 PUSH    BC
+                PUSH    DE
                 PUSH    HL
-                LD      HL,PSGREG
+                LD      DE,PSGREG
+                LD      HL,PSGOLD
                 LD      B,PSGSIZE
                 LD      C,0
-.COMLOP         LD      A,C
+.COMLOP         LD      A,(DE)
+                CP      (HL)
+                JR      Z,.SKIP
+                LD      (HL),A
+                LD      A,C
                 OUT     (#A0),A
-                LD      A,(HL)
+                LD      A,(DE)
                 OUT     (#A1),A
+.SKIP           INC     DE
                 INC     HL
                 INC     C
                 DJNZ    .COMLOP
                 POP     HL
+                POP     DE
                 POP     BC
                 POP     AF
                 RET
