@@ -6,3 +6,10 @@ __pycache__/
 /*.dsk
 /*.Z8A
 examples/msl/*.Z8A
+.DS_Store
+**/.DS_Store
+build.lst
+src/build.lst
+src/musax.bin
+*.bin
+*.lst
