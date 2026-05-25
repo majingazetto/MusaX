@@ -1,0 +1,73 @@
+@TITLE "LFO Modulation Test"
+@AUTHOR "Antigravity"
+@NAMESPACE LFOTEST
+
+// Inst 0: Triangle Vibrato
+@INST(0, "TriVib") {
+    ADSR: 255, 0, 255, 5
+    LFO:  1, 0, 20, 4, 0
+    FLAGS: 0
+}
+
+// Inst 1: Sawtooth Vibrato
+@INST(1, "SawVib") {
+    ADSR: 255, 0, 255, 5
+    LFO:  1, 1, 20, 4, 0
+    FLAGS: 0
+}
+
+// Inst 2: Square Vibrato
+@INST(2, "SqrVib") {
+    ADSR: 255, 0, 255, 5
+    LFO:  1, 2, 20, 4, 0
+    FLAGS: 0
+}
+
+// Inst 3: Sine Vibrato
+@INST(3, "SinVib") {
+    ADSR: 255, 0, 255, 5
+    LFO:  1, 3, 20, 4, 0
+    FLAGS: 0
+}
+
+// Inst 4: Triangle Tremolo
+@INST(4, "TriTrem") {
+    ADSR: 255, 0, 255, 5
+    LFO:  2, 0, 16, 6, 0
+    FLAGS: 0
+}
+
+// Inst 5: Sine Tremolo
+@INST(5, "SinTrem") {
+    ADSR: 255, 0, 255, 5
+    LFO:  2, 3, 16, 6, 0
+    FLAGS: 0
+}
+
+// Inst 6: Delayed Vibrato
+@INST(6, "DelVib") {
+    ADSR: 255, 0, 255, 5
+    LFO:  1, 0, 24, 6, 60
+    FLAGS: 0
+}
+
+@T120
+
+CH_A:
+    @V13 @G255
+    START_A:
+        // 1. Pitch Vibrato Waveforms (Triangle, Saw, Square, Sine)
+        @I0 O4 C1   // Triangle Vibrato on C4 (long note)
+        @I1 C1      // Sawtooth Vibrato
+        @I2 C1      // Square Vibrato
+        @I3 C1      // Sine Vibrato
+        
+        // 2. Volume Tremolo Waveforms (Triangle, Sine)
+        @I4 G1      // Triangle Tremolo
+        @I5 G1      // Sine Tremolo
+        
+        // 3. Delayed Vibrato (should start straight/flat for 1 second, then vibrate)
+        @I6 E1
+        
+        R2
+        @RESTART(START_A)

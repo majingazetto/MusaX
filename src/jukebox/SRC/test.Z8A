@@ -76,8 +76,18 @@ ROMINIT         DI
                 LD      (HL),0
                 LDIR
 
+                ; INITIALIZE KEYPREV TO #FF (ALL RELEASED)
+                LD      A,#FF
+                LD      (KEYPREV),A
+                LD      (KEYPREV + 1),A
+                LD      (KEYPREV + 2),A
+
                 ; INITIALIZE MUSAX AUDIO ENGINE
                 CALL    MUSINIT
+
+                ; SET FX TABLE POINTER FOR SOUND EFFECTS
+                LD      HL,SFXTEST.FX_TABLE
+                LD      (FXPTR),HL
 
                 ; HOOK VBLANK INTERRUPT (HTIMI)
                 LD      A,#C3           ; JP INSTRUCTION
@@ -94,6 +104,7 @@ ROMINIT         DI
 
 
 .LOOP           HALT
+                CALL    POLLKEY         ; POLL KEYBOARD FOR ACTIONS
                 CALL    MUSUPDAT        ; UPDATE ENGINE SEQUENCER
                 JP      .LOOP
 
@@ -106,6 +117,121 @@ ROMINIT         DI
 ; -
 
 IRQINT          CALL    MUSCOMM         ; COMMIT REGISTERS TO PHYSICAL PSG
+                RET
+
+
+; - POLLKEY ----------------------------
+; - POLLS KEYBOARD FOR TEST SELECTION AND FX TRIGGERING VIA RAM DIRECT MATRIX SCAN
+; - IN: NONE
+; - OUT: NONE
+; - CLOBBERS: ALL
+; -
+
+POLLKEY         ; --- PROCESS ROW 0 ---
+                LD      A,(KEYPREV)
+                LD      B,A
+                LD      A,(#FBE5)       ; ROW 0: '0','1','2','3','4','5','6','7'
+                LD      C,A
+                XOR     B
+                AND     B
+                LD      D,A             ; D = transitions (1 for press)
+
+                LD      A,C
+                LD      (KEYPREV),A     ; Save current Row 0
+
+                ; Check key '1' (Bit 1)
+                BIT     1,D
+                JR      Z,.NOT1
+                LD      HL,MOGSHRINE.HEADER
+                CALL    .PLAY
+                JR      .ROW1
+
+.NOT1           BIT     2,D
+                JR      Z,.NOT2
+                LD      HL,ADSRTEST.HEADER
+                CALL    .PLAY
+                JR      .ROW1
+
+.NOT2           BIT     3,D
+                JR      Z,.NOT3
+                LD      HL,LFOTEST.HEADER
+                CALL    .PLAY
+                JR      .ROW1
+
+.NOT3           BIT     4,D
+                JR      Z,.NOT4
+                LD      HL,SEQTEST.HEADER
+                CALL    .PLAY
+                JR      .ROW1
+
+.NOT4           BIT     5,D
+                JR      Z,.NOT5
+                LD      HL,MODTEST.HEADER
+                CALL    .PLAY
+                JR      .ROW1
+
+.NOT5           BIT     6,D
+                JR      Z,.NOT6
+                LD      HL,SFXTEST.HEADER
+                CALL    .PLAY
+                JR      .ROW1
+
+.NOT6           BIT     7,D
+                JR      Z,.NOT7
+                LD      A,0             ; FX_LO (ID 0)
+                CALL    FXPLAY
+                JR      .ROW1
+
+.NOT7           BIT     0,D             ; '0'
+                JR      Z,.ROW1
+                LD      A,3             ; FX_TRI (ID 3)
+                CALL    FXPLAY
+
+.ROW1           ; --- PROCESS ROW 1 ---
+                LD      A,(KEYPREV + 1)
+                LD      B,A
+                LD      A,(#FBE6)       ; ROW 1: '8','9'
+                LD      C,A
+                XOR     B
+                AND     B
+                LD      D,A             ; D = transitions
+
+                LD      A,C
+                LD      (KEYPREV + 1),A ; Save current Row 1
+
+                BIT     0,D             ; '8'
+                JR      Z,.NOT8
+                LD      A,1             ; FX_HI (ID 1)
+                CALL    FXPLAY
+                JR      .ROW5
+
+.NOT8           BIT     1,D             ; '9'
+                JR      Z,.ROW5
+                LD      A,2             ; FX_FAN (ID 2)
+                CALL    FXPLAY
+
+.ROW5           ; --- PROCESS ROW 5 ---
+                LD      A,(KEYPREV + 2)
+                LD      B,A
+                LD      A,(#FBEA)       ; ROW 5: 'S' (Bit 0)
+                LD      C,A
+                XOR     B
+                AND     B
+                LD      D,A             ; D = transitions
+
+                LD      A,C
+                LD      (KEYPREV + 2),A ; Save current Row 5
+
+                BIT     0,D             ; 'S' (Bit 0)
+                RET     Z
+                CALL    MUSSTOP
+                RET
+
+.PLAY           PUSH    HL
+                CALL    MUSSTOP
+                POP     HL
+                LD      A,0             ; loop limit
+                CALL    MUSPLAY
                 RET
 
 
@@ -124,6 +250,11 @@ IRQINT          CALL    MUSCOMM         ; COMMIT REGISTERS TO PHYSICAL PSG
 ; --- COMPILED SONG DATA                ----------------------------------------
 
                 INCLUDE "TMP/mogshrine.Z8A"
+                INCLUDE "TMP/adsr_test.Z8A"
+                INCLUDE "TMP/lfo_test.Z8A"
+                INCLUDE "TMP/sfx_priority_test.Z8A"
+                INCLUDE "TMP/sequencer_test.Z8A"
+                INCLUDE "TMP/modulation_test.Z8A"
 
 
 ; --- ROM PADDING                       ----------------------------------------
@@ -137,3 +268,4 @@ IRQINT          CALL    MUSCOMM         ; COMMIT REGISTERS TO PHYSICAL PSG
 
                 ORG     #E000
                 INCLUDE "../../driver/VARS.Z8A"
+KEYPREV         DEFS    3

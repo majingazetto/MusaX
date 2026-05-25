@@ -1,0 +1,53 @@
+@TITLE "Modulation and Slide Test"
+@AUTHOR "Antigravity"
+@NAMESPACE MODTEST
+
+@T120
+
+CH_A:
+    @V14 @I0
+    START_A:
+        // 1. Portamento test
+        // Glide ascending: C4 to C5
+        @P10 O4 C2 O5 C2
+        // Glide descending: C5 to C4
+        O5 C2 O4 C2
+        // Disable portamento
+        @P0
+        R2
+        
+        // 2. Per-channel fade test
+        // Start at full volume
+        @V15
+        O4 L4 C D
+        // Fade out to 0 slowly (target 0, speed 2)
+        @F(0, 2)
+        O4 L2 E L2 F L2 G
+        // Snap back to full volume (target 255, speed 255)
+        @F(255, 255)
+        O4 L4 A B
+        // Fade down to 50% volume (target 128, speed 4)
+        @F(128, 4)
+        O5 L2 C L2 D
+        // Restore fade volume
+        @F(255, 255)
+        
+        R2
+        @RESTART(START_A)
+
+CH_B:
+    @V12 @I0
+    START_B:
+        // 3. Detune and Chorus test
+        // Plays a simple phrase dry
+        O4 L4 C E G >C
+        R2
+        @RESTART(START_B)
+
+CH_C:
+    // Plays the same phrase but with -10 cents detune and half-tick phase delay
+    @V10 @I0 @CH(128, -10)
+    START_C:
+        O4 L4 C E G >C
+        R2
+        @RESTART(START_C)

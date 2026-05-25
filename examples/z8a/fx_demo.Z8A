@@ -1,65 +1,109 @@
 ; ************************************************************************
 ; * fx_demo.Z8A - Generated from fx_demo.msl
-; * MusaX-ML Compiler v1.0
+; * Title: FX Demo
+; * Description: FX Classic
+; * MusaX-ML Compiler v1.1
 ; ************************************************************************
 
-INCLUDE "musax_const.Z8A"
+                MODULE  FXDEMO
 
 ; --- FX Table ---
-FX_TABLE:
-    DEFW HDR_LASER, 10
-    DEFW HDR_JUMP, 10
-    DEFW HDR_EXPLOSION, 10
-    DEFW 0, 0
 
-; --- FX: LASER ---
-HDR_LASER:
-    DEFB TYPE_FX
-    DEFW LASER_CH_A, 0, 0
-    DEFW INST_TABLE
+FX_TABLE        DEFW    HDR_LASER, 10
+                DEFW    HDR_JUMP, 10
+                DEFW    HDR_EXPLOSION, 10
+                DEFW    0, 0
 
-; --- FX: JUMP ---
-HDR_JUMP:
-    DEFB TYPE_FX
-    DEFW JUMP_CH_A, 0, 0
-    DEFW INST_TABLE
+; --- FX: LASER
 
-; --- FX: EXPLOSION ---
-HDR_EXPLOSION:
-    DEFB TYPE_FX
-    DEFW 0, 0, EXPLOSION_CH_C
-    DEFW INST_TABLE
+HDR_LASER       DEFB    TYPEFX
+                DEFW    LASER_CH_A, LASER_CH_B, 0
+                DEFW    INST_TABLE_LASER
 
-; --- Instrument Table ---
-INST_TABLE:
-    DEFW INST_0
-    DEFW 0
-    DEFW 0
-    DEFW 0
-    DEFW 0
-    DEFW 0
-    DEFW 0
-    DEFW 0
-    DEFW 0
-    DEFW 0
-    DEFW 0
-    DEFW 0
-    DEFW 0
-    DEFW 0
-    DEFW 0
-    DEFW 0
+; --- Instrument Table: LASER
 
-INST_0:
-    DEFB #FF, #14, #00, #01, #01, #01, #8F, #00, #00, #00, #00, #00, #00, #00, #00, #00
+INST_TABLE_LASER DEFW    INST_LASER_0
+
+INST_LASER_0    DEFB    #FF, #14, #00, #01, #01, #01, #08, #0F
+                DEFB    #00, #00, #00, #00, #00, #00, #00, #00
+
+; --- FX: JUMP
+
+HDR_JUMP        DEFB    TYPEFX
+                DEFW    JUMP_CH_A, 0, 0
+                DEFW    0
+
+; --- FX: EXPLOSION
+
+HDR_EXPLOSION   DEFB    TYPEFX
+                DEFW    0, 0, EXPLOSION_CH_C
+                DEFW    0
 
 ; --- Bytecode Streams ---
-LASER_CH_A:
-    DEFB #FA, #00, #FC, #0F, #48, #C0, #00, #54
-    DEFB #C0, #00, #48, #C0, #00, #54, #C0, #00
-    DEFB #FF, #00, #00
-JUMP_CH_A:
-    DEFB #FC, #0F, #F2, #05, #30, #60, #00, #24
-    DEFB #60, #00, #FF, #00, #00
-EXPLOSION_CH_C:
-    DEFB #FC, #0F, #F5, #0A, #F9, #08, #18, #C0
-    DEFB #00, #FF, #C0, #00, #F8, #FF, #00, #00
+
+LASER_CH_A      DEFB    @CINST, #00
+                DEFB    @CVOLUME, #0F
+                DEFB    @C6
+                DEFW    @LENS
+                DEFB    @C7
+                DEFW    @LENS
+                DEFB    @C6
+                DEFW    @LENS
+                DEFB    @C7
+                DEFW    @LENS
+                DEFB    @REST
+                DEFW    @C0
+LASER_CH_B      DEFB    @CVOLUME, #0F
+                DEFB    @CPORTA, #05
+                DEFB    @C4
+                DEFW    @LENT
+                DEFB    @C3
+                DEFW    @LENT
+                DEFB    @REST
+                DEFW    @C0
+JUMP_CH_A       DEFB    @CVOLUME, #0F
+                DEFB    @CPORTA, #05
+                DEFB    @C4
+                DEFW    @LENT
+                DEFB    @C3
+                DEFW    @LENT
+                DEFB    @REST
+                DEFW    @C0
+EXPLOSION_CH_C  DEFB    @CVOLUME, #0F
+                DEFB    @CDETUNE, #0A
+                DEFB    @C2
+                DEFW    @LENS
+                DEFB    @REST
+                DEFW    @LENS
+                DEFB    @C2
+                DEFW    @LENS
+                DEFB    @REST
+                DEFW    @LENS
+                DEFB    @C2
+                DEFW    @LENS
+                DEFB    @REST
+                DEFW    @LENS
+                DEFB    @C2
+                DEFW    @LENS
+                DEFB    @REST
+                DEFW    @LENS
+                DEFB    @C2
+                DEFW    @LENS
+                DEFB    @REST
+                DEFW    @LENS
+                DEFB    @C2
+                DEFW    @LENS
+                DEFB    @REST
+                DEFW    @LENS
+                DEFB    @C2
+                DEFW    @LENS
+                DEFB    @REST
+                DEFW    @LENS
+                DEFB    @C2
+                DEFW    @LENS
+                DEFB    @REST
+                DEFW    @LENS
+                DEFB    @REST
+                DEFW    @C0
+
+                ENDMODULE ; FXDEMO

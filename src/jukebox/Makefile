@@ -18,8 +18,14 @@ MUSAX_COMP  = $(PYTHON) $(MUSAX_DIR)/tools/musax.py
 # --- SOURCE AND OUTPUT FILES
 ROM_OUTPUT  = $(ROM_DIR)/test.rom
 SRC_FILE    = $(SRC_DIR)/test.Z8A
-SONG_MSL    = $(MUSAX_DIR)/examples/msl/mogshrine.msl
-SONG_Z8A    = $(TMP_DIR)/mogshrine.Z8A
+
+# Test files lists
+MSL_TESTS   = $(wildcard $(SRC_DIR)/TESTS/*.msl)
+Z8A_TESTS   = $(patsubst $(SRC_DIR)/TESTS/%.msl,$(TMP_DIR)/%.Z8A,$(MSL_TESTS))
+MOG_MSL     = $(MUSAX_DIR)/examples/msl/mogshrine.msl
+MOG_Z8A     = $(TMP_DIR)/mogshrine.Z8A
+
+ALL_Z8A     = $(MOG_Z8A) $(Z8A_TESTS)
 
 # --- INCLUDES AND EMULATION
 EMULATOR    = m1 ntsc
@@ -33,12 +39,16 @@ $(ROM_DIR) $(TMP_DIR):
 	@mkdir -p $@
 
 # --- COMPILE MSL SONG TO Z8A
-$(SONG_Z8A): $(SONG_MSL) | $(TMP_DIR)
-	@echo "Compiling song to Z8A..."
+$(TMP_DIR)/%.Z8A: $(SRC_DIR)/TESTS/%.msl | $(TMP_DIR)
+	@echo "Compiling test $< to Z8A..."
+	@$(MUSAX_COMP) build $< -o $@
+
+$(MOG_Z8A): $(MOG_MSL) | $(TMP_DIR)
+	@echo "Compiling song $< to Z8A..."
 	@$(MUSAX_COMP) build $< -o $@
 
 # --- ASSEMBLE ROM BINARY
-$(ROM_OUTPUT): $(SRC_FILE) $(SONG_Z8A) | $(ROM_DIR)
+$(ROM_OUTPUT): $(SRC_FILE) $(ALL_Z8A) | $(ROM_DIR)
 	@echo "Assembling Minimal Test ROM..."
 	@$(ASM) $(SJASM_OPTS) $(SRC_FILE)
 	@cp $(TMP_DIR)/test.raw $(ROM_OUTPUT)

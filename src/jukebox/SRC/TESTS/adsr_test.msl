@@ -1,0 +1,64 @@
+@TITLE "ADSR Envelope Test"
+@AUTHOR "Antigravity"
+@NAMESPACE ADSRTEST
+
+// --- Custom Instruments ---
+
+// Inst 0: Plucky (Instant Attack, Fast Decay, No Sustain)
+@INST(0, "Plucky") {
+    ADSR: 255, 30, 0, 10
+    LFO:  0, 0, 0, 0, 0
+    FLAGS: 0
+}
+
+// Inst 1: Pad (Slow Attack, Fast Decay, High Sustain, Slow Release)
+@INST(1, "Pad") {
+    ADSR: 15, 10, 180, 5
+    LFO:  0, 0, 0, 0, 0
+    FLAGS: 0
+}
+
+// Inst 2: Organ (Instant Attack, No Decay, Full Sustain, Instant Release)
+@INST(2, "Organ") {
+    ADSR: 255, 0, 255, 255
+    LFO:  0, 0, 0, 0, 0
+    FLAGS: 0
+}
+
+// Inst 3: Slow Release (Instant Attack, Fast Decay, Low Sustain, Very Slow Release)
+@INST(3, "SlowRelease") {
+    ADSR: 255, 50, 40, 2
+    LFO:  0, 0, 0, 0, 0
+    FLAGS: 0
+}
+
+@T120
+
+CH_A:
+    @V15
+    START_A:
+        // Test Inst 0 (Plucky) - sharp notes
+        @I0 @G255
+        O4 L4 C D E F
+        
+        // Test Inst 1 (Pad) - slow swelling notes
+        @I1 @G255
+        O4 L4 G A B >C
+        
+        // Test Inst 2 (Organ) - full sustain
+        @I2 @G255
+        O5 L4 C <B A G
+        
+        // Test Inst 3 (Slow Release) - ring out
+        @I3 @G255
+        O4 L2 F L2 E
+        
+        // Test Gate time modulation on Organ (Staccato vs Legato)
+        @I2
+        @G32  O4 L4 C  // Staccato (Gate 32/255)
+        @G64  O4 L4 C  // Medium-Staccato (Gate 64/255)
+        @G128 O4 L4 C  // Half-gate (Gate 128/255)
+        @G255 O4 L4 C  // Legato (Gate 255/255)
+        
+        R2
+        @RESTART(START_A)

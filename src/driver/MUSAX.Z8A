@@ -366,6 +366,8 @@ FXPLAY          PUSH    AF
                 LD      (IX + CHGATE),A
                 LD      (IX + CHNOTE),A
                 LD      (IX + CHPORTAN),A
+                LD      (IX + CHFADVOL),A
+                LD      (IX + CHFADTRG),A
 
                 ; SET CHBPM TO #2400
                 XOR     A
@@ -741,9 +743,18 @@ PROCEVT         LD      L,(IX + CHPC)
 .PCREST2        ; REST [DURATION(DEFW)] — SILENCE CHANNEL, LOAD WAIT
                 LD      A,(HL)
                 INC     HL
-                LD      (IX + CHWAIT),A
+                LD      C,A             ; C = DURATION LOW
                 LD      A,(HL)
                 INC     HL
+                LD      D,A             ; D = DURATION HIGH
+                OR      C               ; DURATION == 0?
+                JR      NZ,.PRWAIT      ; NON-ZERO: REGULAR REST
+                LD      A,(IX + CHIDX)  ; FX CHANNEL?
+                CP      3
+                JP      NC,.SFXRST      ; FX CHANNEL + DURATION 0: STOP
+.PRWAIT         LD      A,C
+                LD      (IX + CHWAIT),A
+                LD      A,D
                 LD      (IX + CHWAIT + 1),A
                 XOR     A
                 LD      (IX + CHFRAC),A
@@ -1229,7 +1240,19 @@ UPDADSR         LD      A,(IX + CHADSRS)
                 OR      L
                 JR      NZ,.HAVINST
 
-                ; DEFAULT INSTRUMENT: ATT=4, DEC=2, SUS=180, REL=3
+                ; DEFAULT PARAMS DEPEND ON CHANNEL TYPE (MUSIC VS FX)
+                LD      A,(IX + CHIDX)
+                CP      3
+                JR      C,.MUSDEF
+
+                ; FX DEFAULT: IMMEDIATE FULL VOLUME
+                LD      B,255           ; ATT
+                LD      C,0             ; DEC
+                LD      D,255           ; SUS
+                LD      E,255           ; REL
+                JR      .DISPATCH
+
+.MUSDEF         ; MUSIC DEFAULT: ATT=4, DEC=2, SUS=180, REL=3
                 LD      B,4             ; ATT
                 LD      C,2             ; DEC
                 LD      D,180           ; SUS
