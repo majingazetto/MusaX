@@ -1,3 +1,6 @@
+                IFNDEF  _CONST_Z8A_
+                DEFINE  _CONST_Z8A_
+
 ;                                       ****************************************
 ;                                       * MUSAX CONSTANTS                      *
 ;                                       ****************************************
@@ -243,3 +246,5 @@ INSLDELA        EQU     8
 INSFLAGS        EQU     9
 
 INSSIZE         EQU     16              ; TOTAL SIZE PER RECORD (OFFSETS 10-15 RESERVED)
+
+                ENDIF

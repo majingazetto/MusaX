@@ -1,3 +1,6 @@
+                IFNDEF  _TABLES_Z8A_
+                DEFINE  _TABLES_Z8A_
+
 ;                                       ****************************************
 ;                                       * MUSAX TABLES                         *
 ;                                       ****************************************
@@ -5,10 +8,10 @@
 
 ; --- PSG PERIOD TABLE                  ----------------------------------------
 
+; PSG CLOCK = 1,789,772.5 Hz (MSX MASTER CLOCK / 2)
+; TP(n) = ROUND(1789772.5 / (16 * 440 * 2^((n-57)/12)))
+; NOTES C0(0) THROUGH B7(95)
 FREQ_TBL
-        DEFW    #3572, #3272, #2F9D, #2CF1
-        DEFW    #2A6B, #280A, #25CB, #23AC
-        DEFW    #21AB, #1FC7, #1DFF, #1C50
         DEFW    #1AB9, #1939, #17CF, #1679
         DEFW    #1536, #1405, #12E5, #11D6
         DEFW    #10D6, #0FE4, #0EFF, #0E28
@@ -30,6 +33,9 @@ FREQ_TBL
         DEFW    #006B, #0065, #005F, #005A
         DEFW    #0055, #0050, #004C, #0047
         DEFW    #0043, #0040, #003C, #0039
+        DEFW    #0035, #0032, #0030, #002D
+        DEFW    #002A, #0028, #0026, #0024
+        DEFW    #0022, #0020, #001E, #001C
 
 
 ; --- LFO WAVEFORM POINTERS             ----------------------------------------
@@ -182,3 +188,5 @@ SINTBL
         DEFB    #B9, #BC, #BF, #C1, #C4, #C7, #CA, #CD
         DEFB    #CF, #D2, #D5, #D8, #DB, #DE, #E1, #E4
         DEFB    #E7, #EA, #ED, #F0, #F4, #F7, #FA, #FD
+
+                ENDIF

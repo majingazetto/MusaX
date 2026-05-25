@@ -207,11 +207,11 @@ class MusaXSim:
             return 0
 
     def _preload_base_constants(self):
-        """Load EQU symbols from musax_const.Z8A into self.symbols (idempotent)."""
+        """Load EQU symbols from CONST.Z8A into self.symbols (idempotent)."""
         if getattr(self, '_base_constants_loaded', False):
             return
         self._base_constants_loaded = True
-        const_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'src', 'musax_const.Z8A')
+        const_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'src', 'driver', 'CONST.Z8A')
         if not os.path.exists(const_file):
             return
         const_lines = self.read_with_includes(os.path.basename(const_file), os.path.dirname(const_file))
@@ -428,7 +428,9 @@ class MusaXSim:
             os.path.join(base_path, fname),
             fname,
             os.path.join(base_path, "..", "src", fname),
+            os.path.join(base_path, "..", "src", "driver", fname),
             os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src", fname),
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src", "driver", fname),
         ]
         full_path = next((p for p in candidates if os.path.exists(p)), None)
         if full_path is None: return []

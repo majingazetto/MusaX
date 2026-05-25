@@ -13,8 +13,8 @@ from MusaX.tools.msl_parser import MSLParser
 from MusaX.tools.msl_compiler import MSLCompiler
 
 def load_constants():
-    """Loads constants from musax_const.Z8A and returns a mapping from value to name."""
-    const_file = os.path.join(project_root, "MusaX", "src", "musax_const.Z8A")
+    """Loads constants from CONST.Z8A and returns a mapping from value to name."""
+    const_file = os.path.join(project_root, "MusaX", "src", "driver", "CONST.Z8A")
     val_to_name = {}
     if not os.path.exists(const_file):
         return val_to_name
@@ -23,7 +23,7 @@ def load_constants():
     base_tick = 768
     with open(const_file, 'r') as f:
         content = f.read()
-        match = re.search(r'^\s*BASE_TICK\s+EQU\s+(\d+)', content, re.MULTILINE | re.IGNORECASE)
+        match = re.search(r'^\s*BASETIC\s+EQU\s+(\d+)', content, re.MULTILINE | re.IGNORECASE)
         if match:
             base_tick = int(match.group(1))
 
@@ -40,9 +40,9 @@ def load_constants():
                     except ValueError: continue
                 elif val_str.isdigit():
                     val = int(val_str)
-                elif 'BASE_TICK' in val_str.upper():
+                elif 'BASETIC' in val_str.upper():
                     try:
-                        expr = val_str.upper().replace('BASE_TICK', str(base_tick))
+                        expr = val_str.upper().replace('BASETIC', str(base_tick))
                         val = int(eval(expr))
                     except:
                         continue
@@ -51,7 +51,7 @@ def load_constants():
                 const_list.append((name, val))
 
     for name, val in const_list:
-        if name.startswith('LEN_'): continue
+        if name.startswith('LEN') and name != 'LEN': continue
         if 0 <= val <= 95:
             if val not in val_to_name or ("#" not in name and "S" not in name):
                 if len(name) <= 3:
@@ -61,16 +61,16 @@ def load_constants():
                 val_to_name[val] = name
 
     for name, val in const_list:
-        if name.startswith('LEN_'):
+        if name.startswith('LEN') and name != 'LEN':
             val_to_name[val] = name
 
     priority_cmds = {
-        0xFE: "CMD_RESTART", 0xFD: "CMD_TEMPO", 0xFC: "CMD_VOLUME",
-        0xFB: "CMD_GATE",    0xFA: "CMD_INST",  0xF9: "CMD_LOOP_S",
-        0xF8: "CMD_LOOP_E",  0xF7: "CMD_GOTO",  0xF6: "CMD_PHASE",
-        0xF5: "CMD_DETUNE",  0xF4: "CMD_CHORUS",0xF3: "CMD_FADE",
-        0xF2: "CMD_PORTA",   0xF1: "CMD_CALL",  0xF0: "CMD_RET",
-        255: "REST", 0x80: "TYPE_SONG", 0x81: "TYPE_FX"
+        0xFE: "CRESTART", 0xFD: "CTEMPO", 0xFC: "CVOLUME",
+        0xFB: "CGATE",    0xFA: "CINST",  0xF9: "CLOOPS",
+        0xF8: "CLOOPE",  0xF7: "CGOTO",  0xF6: "CPHASE",
+        0xF5: "CDETUNE",  0xF4: "CCHORUS",0xF3: "CFADE",
+        0xF2: "CPORTA",   0xF1: "CCALL",  0xF0: "CRET",
+        255: "REST", 0x80: "TYPESONG", 0x81: "TYPEFX"
     }
     val_to_name.update(priority_cmds)
     return val_to_name
@@ -168,7 +168,7 @@ def msl2z8a(input_file, output_file=None, song_name=None):
         if use_module:
             f.write(_line('MODULE', module_name) + '\n')
         else:
-            f.write('INCLUDE "musax_const.Z8A"\n\n')
+            f.write('INCLUDE "CONST.Z8A"\n\n')
 
         # --- FX Table ---
         if fx_defs:
@@ -195,7 +195,7 @@ def msl2z8a(input_file, output_file=None, song_name=None):
                 ptr_a = next((l for l in block_labels if "CH_A" in l.upper() or "CHA" in l.upper()), "0")
                 ptr_b = next((l for l in block_labels if "CH_B" in l.upper() or "CHB" in l.upper()), "0")
                 ptr_c = next((l for l in block_labels if "CH_C" in l.upper() or "CHC" in l.upper()), "0")
-                f.write(_aline(f'HDR_{name}', 'DEFB', 'TYPE_FX'))
+                f.write(_aline(f'HDR_{name}', 'DEFB', 'TYPEFX'))
                 f.write(_line('DEFW', f'{ptr_a}, {ptr_b}, {ptr_c}'))
                 f.write(_line('DEFW', fx_itbl))
                 f.write('\n')
@@ -234,7 +234,7 @@ def msl2z8a(input_file, output_file=None, song_name=None):
             if not any([entry_a, entry_b, entry_c]) and not fx_defs:
                 entry_a = "STREAM_START"
 
-            f.write(_aline(hdr_label,  'DEFB', 'TYPE_SONG'))
+            f.write(_aline(hdr_label,  'DEFB', 'TYPESONG'))
             f.write(_line('DEFW', f'{initial_tempo}, {entry_a or "0"}'))
             f.write(_line('DEFW', f'{initial_tempo}, {entry_b or "0"}'))
             f.write(_line('DEFW', f'{initial_tempo}, {entry_c or "0"}'))
@@ -283,12 +283,12 @@ def msl2z8a(input_file, output_file=None, song_name=None):
                 cmd_name = val_to_const[b]
                 cmd_ref  = _g(cmd_name, use_module)
 
-                if cmd_name in ["CMD_TEMPO", "CMD_GOTO", "CMD_RESTART", "CMD_CALL", "REST"] or (0 <= b <= 95):
+                if cmd_name in ["CTEMPO", "CGOTO", "CRESTART", "CCALL", "REST"] or (0 <= b <= 95):
                     if i + 2 < len(bytecode):
                         w_val   = bytecode[i+1] | (bytecode[i+2] << 8)
                         raw_dur = val_to_const.get(w_val, f'#{w_val:04X}')
                         f.write(_aline(lbl, 'DEFB', cmd_ref))
-                        if cmd_name in ["CMD_GOTO", "CMD_RESTART", "CMD_CALL"]:
+                        if cmd_name in ["CGOTO", "CRESTART", "CCALL"]:
                             target = next((l for l, a in labels.items() if a == w_val), raw_dur)
                             f.write(_line('DEFW', target))
                         else:
@@ -298,7 +298,7 @@ def msl2z8a(input_file, output_file=None, song_name=None):
                         f.write(_aline(lbl, 'DEFB', cmd_ref))
                         i += 1
 
-                elif cmd_name in ["CMD_FADE", "CMD_CHORUS"]:
+                elif cmd_name in ["CFADE", "CCHORUS"]:
                     if i + 2 < len(bytecode):
                         v1, v2 = bytecode[i+1], bytecode[i+2]
                         f.write(_aline(lbl, 'DEFB', f'{cmd_ref}, #{v1:02X}, #{v2:02X}'))
@@ -307,8 +307,8 @@ def msl2z8a(input_file, output_file=None, song_name=None):
                         f.write(_aline(lbl, 'DEFB', cmd_ref))
                         i += 1
 
-                elif cmd_name in ["CMD_VOLUME", "CMD_GATE", "CMD_INST", "CMD_LOOP_S",
-                                  "CMD_PHASE", "CMD_DETUNE", "CMD_PORTA"]:
+                elif cmd_name in ["CVOLUME", "CGATE", "CINST", "CLOOPS",
+                                  "CPHASE", "CDETUNE", "CPORTA"]:
                     if i + 1 < len(bytecode):
                         v = bytecode[i+1]
                         f.write(_aline(lbl, 'DEFB', f'{cmd_ref}, #{v:02X}'))

@@ -1,0 +1,139 @@
+;                                       ****************************************
+;                                       * MUSAX MINIMAL TEST ROM               *
+;                                       * CODED BY ANTIGRAVITY                 *
+;                                       ****************************************
+
+
+; --- ROM OUTPUT                        ----------------------------------------
+
+                OUTPUT  test.raw
+
+
+; --- MSX SYSTEM CONSTANTS              ----------------------------------------
+
+HTIMI           EQU     #FD9F           ; VBLANK INTERRUPT HOOK ADDRESS
+HKEYI           EQU     #FD9A           ; KEYBOARD INTERRUPT HOOK ADDRESS
+EXPTBL          EQU     #FCC1           ; BIOS EXPTBL ADDRESS
+ENASLT          EQU     #0024           ; BIOS ENABLE SLOT ENTRY POINT
+RSLREG          EQU     #0138           ; BIOS READ SLOT REGISTER ENTRY POINT
+
+
+; --- MSX ROM HEADER                    ----------------------------------------
+
+
+                ORG     #4000
+                DEFB    #41, #42        ; ROM CARTRIDGE SIGNATURE ('AB')
+                DEFW    ROMINIT         ; INIT EXECUTION ADDRESS
+                DEFS    12              ; RESERVED BYTES
+
+
+; --- ROM INIT                          ----------------------------------------
+
+
+; - ROMINIT ----------------------------
+; - INITIALIZE SYSTEM AND SOUND ENGINE
+; - IN: NONE
+; - OUT: NONE
+; - CLOBBERS: ALL
+; -
+
+ROMINIT         DI
+                LD      SP,#F380        ; PAGE 3 STACK POINTER SETUP
+
+                ; DISABLE INTERRUPT HOOKS TEMPORARILY
+                LD      A,#C9           ; RET INSTRUCTION
+                LD      (HKEYI),A
+                LD      (HTIMI),A
+
+                ; SET SLOT PAGE 2 (SAME AS ROM CARTRIDGE PAGE 1)
+                CALL    RSLREG
+                RRCA
+                RRCA
+                AND     3
+                LD      C,A
+                LD      B,0
+                LD      HL,EXPTBL
+                ADD     HL,BC
+                LD      A,(HL)
+                AND     #80
+                JP      Z,.NOEXP
+                OR      C
+                LD      C,A
+                INC     HL
+                INC     HL
+                INC     HL
+                INC     HL
+                LD      A,(HL)
+                AND     %00001100
+.NOEXP          OR      C
+                LD      H,#80
+                CALL    ENASLT          ; ENABLE SLOT AT #8000-#BFFF
+
+                ; CLEAR RAM VARIABLES AREA (LDIR)
+                LD      HL,#E000
+                LD      DE,#E001
+                LD      BC,#0200        ; CLEAR 512 BYTES OF RAM AT #E000
+                LD      (HL),0
+                LDIR
+
+                ; INITIALIZE MUSAX AUDIO ENGINE
+                CALL    MUSINIT
+
+                ; HOOK VBLANK INTERRUPT (HTIMI)
+                LD      A,#C3           ; JP INSTRUCTION
+                LD      (HTIMI),A
+                LD      HL,IRQINT
+                LD      (HTIMI + 1),HL
+
+                ; START COMPILATION OF KOROBEINIKI SONG
+                LD      HL,TETRIS.HEADER
+                LD      A,0             ; INFINITE LOOPING LIMIT
+                CALL    MUSPLAY         ; PLAY SONG!
+
+                EI                      ; ENABLE INTERRUPTS!
+
+
+.LOOP           HALT
+                CALL    MUSUPDAT        ; UPDATE ENGINE SEQUENCER
+                JP      .LOOP
+
+
+; - IRQINT -----------------------------
+; - VBLANK IRQ HANDLER FOR MUSAX UPDATE
+; - IN: NONE
+; - OUT: NONE
+; - CLOBBERS: NONE
+; -
+
+IRQINT          CALL    MUSCOMM         ; COMMIT REGISTERS TO PHYSICAL PSG
+                RET
+
+
+; --- INCLUDES                          ----------------------------------------
+
+
+; --- MUSAX SOUND ENGINE CODE           ----------------------------------------
+
+                DEFINE  _MUSAX_INTEGRATION_
+
+                INCLUDE "../../driver/CONST.Z8A"
+                INCLUDE "../../driver/MUSAX.Z8A"
+                INCLUDE "../../driver/TABLES.Z8A"
+
+
+; --- COMPILED SONG DATA                ----------------------------------------
+
+                INCLUDE "TMP/korobeiniki.Z8A"
+
+
+; --- ROM PADDING                       ----------------------------------------
+
+                SIZE    32 * 1024
+                OUTEND
+
+
+; --- RAM MEMORY VARIABLES              ----------------------------------------
+
+
+                ORG     #E000
+                INCLUDE "../../driver/VARS.Z8A"

@@ -1,5 +1,7 @@
+                IFNDEF  _MUSAX_INTEGRATION_
                 INCLUDE "CONST.Z8A"
                 INCLUDE "VARS.Z8A"
+                ENDIF
 
 
 ; --- MAIN ENTRY POINTS                 ----------------------------------------
@@ -695,7 +697,7 @@ PROCEVT         LD      L,(IX + CHPC)
 .EOK            LD      B,1
                 OR      A
                 JR      Z,.EMASKOK
-.EL             ADD     B,B
+.EL             SLA     B
                 DEC     A
                 JR      NZ,.EL
 .EMASKOK        LD      A,B
@@ -1012,7 +1014,7 @@ MUSMUT          PUSH    AF
                 LD      A,(PSGREG + 7)
                 AND     #C0
                 OR      #3F             ; SET BITS 0-5 TO 1 (DISABLE ALL CHANNELS)
-                LD      C,A             ; SAVE IT IN C
+                PUSH    AF              ; SAVE MIXER BITS ON STACK
                 
                 ; CLEAR BYTES CONTIGUOUSLY (PSGMUS, PSGSFX, PSGREG)
                 LD      HL,PSGMUS
@@ -1022,7 +1024,7 @@ MUSMUT          PUSH    AF
                 LDIR
                 
                 ; RESTORE MIXER BITS
-                LD      A,C
+                POP     AF
                 LD      (PSGMUS + 7),A
                 LD      (PSGSFX + 7),A
                 LD      (PSGREG + 7),A
@@ -1311,7 +1313,7 @@ UPDADSR         LD      A,(IX + CHADSRS)
 .M_OK           LD      B,1
                 OR      A
                 JR      Z,.MASK_OK
-.RL             ADD     B,B
+.RL             SLA     B
                 DEC     A
                 JR      NZ,.RL
 .MASK_OK        LD      HL,PSGMUS + 7
@@ -1852,11 +1854,10 @@ CALCPER         LD      A,(IX + CHIDX)
                 ADD     HL,HL
                 LD      DE,FREQ_TBL
                 ADD     HL,DE
-                LD      A,(HL)
+                LD      A,(HL)          ; A = PERIOD_LOW
                 INC     HL
-                LD      H,(HL)
+                LD      H,(HL)          ; H = PERIOD_HIGH; A STILL HOLDS PERIOD_LOW
                 POP     DE              ; DE = SHADOW ADDR
-                LD      A,L
                 LD      (DE),A
                 INC     DE
                 LD      A,H
@@ -1924,6 +1925,7 @@ CALCPER         LD      A,(IX + CHIDX)
                 POP     DE              ; DE = P0
                 EX      DE,HL           ; HL = P0, DE = QUOTIENT
                 OR      A
+                SBC     HL,DE           ; HL = P0 - QUOTIENT
                 POP     DE              ; DE = SHADOW ADDR
                 LD      A,L
                 LD      (DE),A
@@ -1988,6 +1990,7 @@ CALCPER         LD      A,(IX + CHIDX)
                 
                 ; PERIOD = P0 + QUOTIENT
                 POP     DE              ; DE = P0
+                ADD     HL,DE           ; HL = QUOTIENT + P0
                 POP     DE              ; DE = SHADOW ADDR
                 LD      A,L
                 LD      (DE),A
@@ -2077,6 +2080,8 @@ DIV24100        LD      DE,0            ; REMAINDER = 0
 
 
 
+                IFNDEF  _MUSAX_INTEGRATION_
                 INCLUDE "TABLES.Z8A"
+                ENDIF
 
 

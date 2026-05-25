@@ -10,10 +10,10 @@
 
 // --- Instruments ---
 
-// Inst 0: Lead Pulse (Sharp attack, 50% duty vibe, slight vibrato)
+// Inst 0: Lead Pulse (Sharp attack, slow release, no vibrato)
 @INST(0, "LeadPulse") {
     ADSR: 255, 10, 150, 15
-    LFO:  1, 2, 32, 4, 15
+    LFO:  0, 0, 0, 0, 0
     FLAGS: 0
 }
 

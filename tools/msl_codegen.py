@@ -5,16 +5,16 @@ from msl_parser import MMLEvent, Note, SetVolume, SetInstrument, SetTempo, SetGa
 NOTE_NAMES = ["C", "Cs", "D", "Ds", "E", "F", "Fs", "G", "Gs", "A", "As", "B"]
 
 TICKS_TO_LEN_MAP = {
-    768 * 4: "LEN_W",
-    768 * 2: "LEN_H",
-    768: "LEN_Q",
-    int(768 / 2): "LEN_E",
-    int(768 / 4): "LEN_S",
-    int(768 / 8): "LEN_T",
-    256: "LEN_ET",
-    128: "LEN_ST",
-    int(768 + 768 / 2): "LEN_QD",
-    int(768 / 2 + 768 / 4): "LEN_ED",
+    768 * 4: "LENW",
+    768 * 2: "LENH",
+    768: "LENQ",
+    int(768 / 2): "LENE",
+    int(768 / 4): "LENS",
+    int(768 / 8): "LENT",
+    256: "LENET",
+    128: "LENST",
+    int(768 + 768 / 2): "LENQD",
+    int(768 / 2 + 768 / 4): "LENED",
 }
 
 def pitch_to_note_name(pitch_val: int) -> str:
@@ -42,40 +42,40 @@ class CodeGenerator:
         self.z80_code += f"    DEFW    {duration_label}\n"
 
     def _generate_set_volume(self, event: SetVolume):
-        self.z80_code += f"    DEFB    CMD_VOLUME, {event.volume}\n"
+        self.z80_code += f"    DEFB    CVOLUME, {event.volume}\n"
 
     def _generate_set_instrument(self, event: SetInstrument):
-        self.z80_code += f"    DEFB    CMD_INST, {event.instrument_id}\n"
+        self.z80_code += f"    DEFB    CINST, {event.instrument_id}\n"
 
     def _generate_set_tempo(self, event: SetTempo):
-        self.z80_code += f"    DEFB    CMD_TEMPO\n"
+        self.z80_code += f"    DEFB    CTEMPO\n"
         self.z80_code += f"    DEFW    #{event.bpm_step:04X}\n"
 
     def _generate_goto(self, event: GoTo):
-        self.z80_code += f"    DEFB    CMD_GOTO\n"
+        self.z80_code += f"    DEFB    CGOTO\n"
         self.z80_code += f"    DEFW    {event.label}\n"
 
     def _generate_restart(self, event: Restart):
-        self.z80_code += f"    DEFB    CMD_RESTART\n"
+        self.z80_code += f"    DEFB    CRESTART\n"
         self.z80_code += f"    DEFW    {event.label}\n"
 
     def _generate_set_gate_time(self, event: SetGateTime):
-        self.z80_code += f"    DEFB    CMD_GATE, {event.gate_time}\n"
+        self.z80_code += f"    DEFB    CGATE, {event.gate_time}\n"
 
     def _generate_set_portamento(self, event: SetPortamento):
-        self.z80_code += f"    DEFB    CMD_PORTA, {event.speed}\n"
+        self.z80_code += f"    DEFB    CPORTA, {event.speed}\n"
 
     def _generate_volume_fade(self, event: VolumeFade):
-        self.z80_code += f"    DEFB    CMD_FADE, {event.target}, {event.step}\n"
+        self.z80_code += f"    DEFB    CFADE, {event.target}, {event.step}\n"
 
     def _generate_detune(self, event: Detune):
-        self.z80_code += f"    DEFB    CMD_DETUNE, {event.cents}\n"
+        self.z80_code += f"    DEFB    CDETUNE, {event.cents}\n"
 
     def _generate_phase_delay(self, event: PhaseDelay):
-        self.z80_code += f"    DEFB    CMD_PHASE, {event.delay}\n"
+        self.z80_code += f"    DEFB    CPHASE, {event.delay}\n"
 
     def _generate_chorus(self, event: Chorus):
-        self.z80_code += f"    DEFB    CMD_CHORUS, {event.phase}, {event.detune}\n"
+        self.z80_code += f"    DEFB    CCHORUS, {event.phase}, {event.detune}\n"
 
     def generate(self, events: List[MMLEvent]) -> str:
         self.z80_code = ""
