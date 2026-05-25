@@ -1,0 +1,23 @@
+@TITLE "Portamento / Slide Test"
+@AUTHOR "Antigravity"
+@NAMESPACE PORTATST
+
+@T80
+
+CH_A:
+    @V14
+    LOOP:
+        // SLOW SLIDE (6 FRAMES/SEMITONE): OCTAVE UP THEN DOWN
+        @P6
+        O4 C2 O5 C2
+        O5 C2 O4 C2
+        R8
+        // FAST SLIDE (2 FRAMES/SEMITONE): TWO-OCTAVE JUMP
+        @P2
+        O3 C2 O5 C2
+        R8
+        // NO PORTAMENTO: SNAP FOR COMPARISON
+        @P0
+        O4 L4 C E G >C < G E
+        R4
+        @RESTART(LOOP)

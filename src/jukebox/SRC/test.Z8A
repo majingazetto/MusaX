@@ -81,6 +81,7 @@ ROMINIT         DI
                 LD      (KEYPREV),A
                 LD      (KEYPREV + 1),A
                 LD      (KEYPREV + 2),A
+                LD      (KEYPREV + 3),A
 
                 ; INITIALIZE MUSAX AUDIO ENGINE
                 CALL    MUSINIT
@@ -213,19 +214,69 @@ POLLKEY         ; --- PROCESS ROW 0 ---
 .ROW5           ; --- PROCESS ROW 5 ---
                 LD      A,(KEYPREV + 2)
                 LD      B,A
-                LD      A,(#FBEA)       ; ROW 5: 'S' (Bit 0)
+                LD      A,(#FBEA)       ; ROW 5: 'S' BIT 0
                 LD      C,A
                 XOR     B
                 AND     B
-                LD      D,A             ; D = transitions
+                LD      D,A             ; D = TRANSITIONS
 
                 LD      A,C
-                LD      (KEYPREV + 2),A ; Save current Row 5
+                LD      (KEYPREV + 2),A ; SAVE CURRENT ROW 5
 
-                BIT     0,D             ; 'S' (Bit 0)
-                RET     Z
+                BIT     0,D             ; 'S' (BIT 0) - STOP
+                JR      Z,.ROW3
                 CALL    MUSSTOP
-                RET
+
+.ROW3           ; --- PROCESS ROW 3 ---
+                LD      A,(KEYPREV + 3)
+                LD      B,A
+                LD      A,(#FBE8)       ; ROW 3: C,D,E,F,G,H,I,J (BITS 0..7)
+                LD      C,A
+                XOR     B
+                AND     B
+                LD      D,A             ; D = TRANSITIONS
+
+                LD      A,C
+                LD      (KEYPREV + 3),A ; SAVE CURRENT ROW 3
+
+                BIT     0,D             ; 'C' (BIT 0) - PORTA TEST
+                JR      Z,.NOTRC
+                LD      HL,PORTATST.HEADER
+                CALL    .PLAY
+                JR      .RROW3
+
+.NOTRC          BIT     1,D             ; 'D' (BIT 1) - DETUNE TEST
+                JR      Z,.NOTRD
+                LD      HL,DTNTST.HEADER
+                CALL    .PLAY
+                JR      .RROW3
+
+.NOTRD          BIT     2,D             ; 'E' (BIT 2) - CHORUS TEST
+                JR      Z,.NOTRE
+                LD      HL,CHORTST.HEADER
+                CALL    .PLAY
+                JR      .RROW3
+
+.NOTRE          BIT     3,D             ; 'F' (BIT 3) - FADE OUT
+                JR      Z,.NOTFD
+                LD      A,0             ; TARGET = 0 (SILENCE)
+                LD      H,3             ; SPEED = 3 (~85 FRAMES)
+                CALL    MUSFADE
+                JR      .RROW3
+
+.NOTFD          BIT     6,D             ; 'I' (BIT 6) - FADE IN
+                JR      Z,.RROW3
+                LD      A,0
+                LD      H,255           ; SNAP GLOBAL VOL TO 0
+                CALL    MUSFADE
+                LD      HL,MOGSHRINE.HEADER
+                CALL    .PLAY
+                LD      A,255           ; TARGET = FULL VOLUME
+                LD      H,3             ; SPEED = 3 (~85 FRAMES)
+                CALL    MUSFADE
+
+.RROW3          RET
+
 
 .PLAY           PUSH    HL
                 CALL    MUSSTOP
@@ -255,6 +306,9 @@ POLLKEY         ; --- PROCESS ROW 0 ---
                 INCLUDE "TMP/sfx_priority_test.Z8A"
                 INCLUDE "TMP/sequencer_test.Z8A"
                 INCLUDE "TMP/modulation_test.Z8A"
+                INCLUDE "TMP/porta_test.Z8A"
+                INCLUDE "TMP/detune_test.Z8A"
+                INCLUDE "TMP/chorus_test.Z8A"
 
 
 ; --- ROM PADDING                       ----------------------------------------
@@ -268,4 +322,4 @@ POLLKEY         ; --- PROCESS ROW 0 ---
 
                 ORG     #E000
                 INCLUDE "../../driver/VARS.Z8A"
-KEYPREV         DEFS    3
+KEYPREV         DEFS    4

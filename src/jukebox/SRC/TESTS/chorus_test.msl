@@ -1,0 +1,25 @@
+@TITLE "Chorus Test"
+@AUTHOR "Antigravity"
+@NAMESPACE CHORTST
+
+@T110
+
+PHRASE(MEL) {
+    O4 L4 C E G >C
+    L8 B A G F
+    L4 E G
+    L1 C
+    R4
+}
+
+CH_A:
+    @V13
+    LOOP_A:
+        @CALL(MEL)
+        @RESTART(LOOP_A)
+
+CH_B:
+    @V9 @CH(128, -10)
+    LOOP_B:
+        @CALL(MEL)
+        @RESTART(LOOP_B)

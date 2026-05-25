@@ -1,0 +1,31 @@
+@TITLE "Detune Test"
+@AUTHOR "Antigravity"
+@NAMESPACE DTNTST
+
+@T100
+
+PHRASE(MEL) {
+    O4 L4 C E G >C
+    < L2 G
+    L4 E G
+    L1 C
+    R4
+}
+
+CH_A:
+    @V13
+    LOOP_A:
+        @CALL(MEL)
+        @RESTART(LOOP_A)
+
+CH_B:
+    @V10 @D5
+    LOOP_B:
+        @CALL(MEL)
+        @RESTART(LOOP_B)
+
+CH_C:
+    @V10 @D-5
+    LOOP_C:
+        @CALL(MEL)
+        @RESTART(LOOP_C)
