@@ -85,8 +85,8 @@ ROMINIT         DI
                 LD      HL,IRQINT
                 LD      (HTIMI + 1),HL
 
-                ; START COMPILATION OF KOROBEINIKI SONG
-                LD      HL,TETRIS.HEADER
+                ; START COMPILATION OF MOGSHRINE SONG
+                LD      HL,MOGSHRINE.HEADER
                 LD      A,0             ; INFINITE LOOPING LIMIT
                 CALL    MUSPLAY         ; PLAY SONG!
 
@@ -123,7 +123,7 @@ IRQINT          CALL    MUSCOMM         ; COMMIT REGISTERS TO PHYSICAL PSG
 
 ; --- COMPILED SONG DATA                ----------------------------------------
 
-                INCLUDE "TMP/korobeiniki.Z8A"
+                INCLUDE "TMP/mogshrine.Z8A"
 
 
 ; --- ROM PADDING                       ----------------------------------------

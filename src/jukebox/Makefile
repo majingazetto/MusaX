@@ -18,8 +18,8 @@ MUSAX_COMP  = $(PYTHON) $(MUSAX_DIR)/tools/musax.py
 # --- SOURCE AND OUTPUT FILES
 ROM_OUTPUT  = $(ROM_DIR)/test.rom
 SRC_FILE    = $(SRC_DIR)/test.Z8A
-SONG_MSL    = $(MUSAX_DIR)/examples/msl/korobeiniki.msl
-SONG_Z8A    = $(TMP_DIR)/korobeiniki.Z8A
+SONG_MSL    = $(MUSAX_DIR)/examples/msl/mogshrine.msl
+SONG_Z8A    = $(TMP_DIR)/mogshrine.Z8A
 
 # --- INCLUDES AND EMULATION
 EMULATOR    = m1 ntsc

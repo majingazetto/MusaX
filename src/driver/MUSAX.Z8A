@@ -1397,7 +1397,8 @@ UPDLFO          PUSH    IY
                 JP      P,.POS
                 INC     C
                 NEG
-.POS            LD      E,A             ; DE = ABS(W) (D = 0)
+.POS            LD      E,A
+                LD      D,0             ; DE = ABS(W) (D = 0)
 
                 ; 8. SCALE AMPLITUDE (* AMP / 15)
                 ; HL = ABS(W) * AMP (AMP IN 0..15)
