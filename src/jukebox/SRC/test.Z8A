@@ -96,8 +96,8 @@ ROMINIT         DI
                 LD      HL,IRQINT
                 LD      (HTIMI + 1),HL
 
-                ; START COMPILATION OF MOGSHRINE SONG
-                LD      HL,MOGSHRINE.HEADER
+                ; START COMPILATION OF SHALOMCASTLE SONG
+                LD      HL,SHALOMCASTLE.HEADER
                 LD      A,0             ; INFINITE LOOPING LIMIT
                 CALL    MUSPLAY         ; PLAY SONG!
 
@@ -143,7 +143,7 @@ POLLKEY         ; --- PROCESS ROW 0 ---
                 ; Check key '1' (Bit 1)
                 BIT     1,D
                 JR      Z,.NOT1
-                LD      HL,MOGSHRINE.HEADER
+                LD      HL,SHALOMCASTLE.HEADER
                 CALL    .PLAY
                 JR      .ROW1
 
@@ -269,7 +269,7 @@ POLLKEY         ; --- PROCESS ROW 0 ---
                 LD      A,0
                 LD      H,255           ; SNAP GLOBAL VOL TO 0
                 CALL    MUSFADE
-                LD      HL,MOGSHRINE.HEADER
+                LD      HL,SHALOMCASTLE.HEADER
                 CALL    .PLAY
                 LD      A,255           ; TARGET = FULL VOLUME
                 LD      H,3             ; SPEED = 3 (~85 FRAMES)
@@ -300,7 +300,7 @@ POLLKEY         ; --- PROCESS ROW 0 ---
 
 ; --- COMPILED SONG DATA                ----------------------------------------
 
-                INCLUDE "TMP/mogshrine.Z8A"
+                INCLUDE "TMP/shalomcastle.Z8A"
                 INCLUDE "TMP/adsr_test.Z8A"
                 INCLUDE "TMP/lfo_test.Z8A"
                 INCLUDE "TMP/sfx_priority_test.Z8A"

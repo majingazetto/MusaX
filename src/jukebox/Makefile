@@ -22,8 +22,8 @@ SRC_FILE    = $(SRC_DIR)/test.Z8A
 # Test files lists
 MSL_TESTS   = $(wildcard $(SRC_DIR)/TESTS/*.msl)
 Z8A_TESTS   = $(patsubst $(SRC_DIR)/TESTS/%.msl,$(TMP_DIR)/%.Z8A,$(MSL_TESTS))
-MOG_MSL     = $(MUSAX_DIR)/examples/msl/mogshrine.msl
-MOG_Z8A     = $(TMP_DIR)/mogshrine.Z8A
+MOG_MSL     = $(MUSAX_DIR)/examples/msl/shalomcastle.msl
+MOG_Z8A     = $(TMP_DIR)/shalomcastle.Z8A
 
 ALL_Z8A     = $(MOG_Z8A) $(Z8A_TESTS)
 
