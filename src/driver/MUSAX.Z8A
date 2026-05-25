@@ -1882,16 +1882,20 @@ CALCPER         LD      A,(IX + CHIDX)
                 JR      C,.POSOK
                 LD      A,95
 .POSOK          LD      E,A             ; E = NOTE
-                INC     A               ; A = NOTE + 1
-                LD      D,A             ; D = NEXT NOTE
+                CP      95
+                JR      Z,.POSMAX
+                INC     A
+.POSMAX         LD      D,A             ; D = NEXT NOTE
                 
                 ; LOOKUP P0 (IN HL)
                 LD      A,E
                 LD      H,0
                 LD      L,A
                 ADD     HL,HL
+                PUSH    BC              ; SAVE CENTS
                 LD      BC,FREQ_TBL
                 ADD     HL,BC
+                POP     BC              ; RESTORE CENTS
                 LD      A,(HL)
                 INC     HL
                 LD      H,(HL)
@@ -1903,8 +1907,10 @@ CALCPER         LD      A,(IX + CHIDX)
                 LD      H,0
                 LD      L,A
                 ADD     HL,HL
+                PUSH    BC              ; SAVE CENTS
                 LD      BC,FREQ_TBL
                 ADD     HL,BC
+                POP     BC              ; RESTORE CENTS
                 LD      A,(HL)
                 INC     HL
                 LD      H,(HL)
@@ -1948,18 +1954,23 @@ CALCPER         LD      A,(IX + CHIDX)
                 LD      A,(IX + CHNOTE)
                 OR      A
                 JR      NZ,.NEGOK
-                LD      A,0
+                XOR     A
+                LD      E,A             ; E = 0
+                LD      D,A             ; D = 0
+                JR      .NEGMIN
 .NEGOK          LD      E,A             ; E = NOTE
                 DEC     A               ; A = NOTE - 1
                 LD      D,A             ; D = PREV NOTE
-                
+.NEGMIN         
                 ; LOOKUP P0 (IN HL)
                 LD      A,E
                 LD      H,0
                 LD      L,A
                 ADD     HL,HL
+                PUSH    BC              ; SAVE CENTS
                 LD      BC,FREQ_TBL
                 ADD     HL,BC
+                POP     BC              ; RESTORE CENTS
                 LD      A,(HL)
                 INC     HL
                 LD      H,(HL)
@@ -1971,8 +1982,10 @@ CALCPER         LD      A,(IX + CHIDX)
                 LD      H,0
                 LD      L,A
                 ADD     HL,HL
+                PUSH    BC              ; SAVE CENTS
                 LD      BC,FREQ_TBL
                 ADD     HL,BC
+                POP     BC              ; RESTORE CENTS
                 LD      A,(HL)
                 INC     HL
                 LD      H,(HL)
