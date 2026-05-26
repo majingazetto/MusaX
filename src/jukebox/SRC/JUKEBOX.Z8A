@@ -135,6 +135,10 @@ ROMINIT         DI
                 LD      (KEYPREV + 2),A
                 LD      (KEYPREV + 3),A
 
+                ; INITIALIZE MUTEMSK TO 0 (ALL UNMUTED)
+                XOR     A
+                LD      (MUTEMSK),A
+
                 ; INITIALIZE MUSAX AUDIO ENGINE
                 CALL    MUSINIT
 
@@ -184,6 +188,75 @@ ROMINIT         DI
                 JP      .LOOP
 
 
+; - APPLYMUTE --------------------------
+; - OVERRIDE PSG REGISTERS FOR MUTED CHANNELS
+; - IN: NONE
+; - OUT: NONE
+; - CLOBBERS: NONE
+; -
+
+APPLYMUTE       PUSH    AF
+                PUSH    BC
+                PUSH    DE
+                PUSH    HL
+
+                LD      A,(SFXMSK)
+                LD      C,A             ; C = SFXMSK
+                LD      A,(MUTEMSK)
+                LD      B,A             ; B = MUTEMSK
+
+                ; --- CHANNEL A ---
+                BIT     0,C             ; IS FX A ACTIVE?
+                JR      NZ,.CHAFX
+                ; MUSIC A
+                BIT     0,B             ; IS MUSIC A MUTED?
+                JR      Z,.CHB
+                JR      .MUTEA
+.CHAFX          BIT     3,B             ; IS FX A MUTED?
+                JR      Z,.CHB
+.MUTEA          XOR     A
+                LD      (PSGREG + 8),A  ; VOL A = 0
+                LD      A,(PSGREG + 7)
+                OR      9               ; DISABLE TONE A AND NOISE A
+                LD      (PSGREG + 7),A
+
+                ; --- CHANNEL B ---
+.CHB            BIT     1,C             ; IS FX B ACTIVE?
+                JR      NZ,.CHBFX
+                ; MUSIC B
+                BIT     1,B             ; IS MUSIC B MUTED?
+                JR      Z,.CHC
+                JR      .MUTEB
+.CHBFX          BIT     4,B             ; IS FX B MUTED?
+                JR      Z,.CHC
+.MUTEB          XOR     A
+                LD      (PSGREG + 9),A  ; VOL B = 0
+                LD      A,(PSGREG + 7)
+                OR      #12             ; DISABLE TONE B AND NOISE B
+                LD      (PSGREG + 7),A
+
+                ; --- CHANNEL C ---
+.CHC            BIT     2,C             ; IS FX C ACTIVE?
+                JR      NZ,.CHCFX
+                ; MUSIC C
+                BIT     2,B             ; IS MUSIC C MUTED?
+                JR      Z,.DONE
+                JR      .MUTEC
+.CHCFX          BIT     5,B             ; IS FX C MUTED?
+                JR      Z,.DONE
+.MUTEC          XOR     A
+                LD      (PSGREG + 10),A ; VOL C = 0
+                LD      A,(PSGREG + 7)
+                OR      #24             ; DISABLE TONE C AND NOISE C
+                LD      (PSGREG + 7),A
+
+.DONE           POP     HL
+                POP     DE
+                POP     BC
+                POP     AF
+                RET
+
+
 ; - IRQINT -----------------------------
 ; - VBLANK IRQ HANDLER FOR MUSAX UPDATE
 ; - IN: NONE
@@ -192,6 +265,7 @@ ROMINIT         DI
 ; -
 
 IRQINT          CALL    MUSUPDAT        ; UPDATE ENGINE SEQUENCER
+                CALL    APPLYMUTE       ; OVERRIDE MUTED CHANNELS IN PSGREG
                 CALL    MUSCOMM         ; COMMIT REGISTERS TO PHYSICAL PSG
                 RET
 
@@ -299,9 +373,36 @@ POLLKEY         ; --- PROCESS ROW 0 ---
                 LD      (KEYPREV + 2),A ; SAVE CURRENT ROW 5
 
                 BIT     0,D             ; 'S' (BIT 0) - STOP
-                JR      Z,.ROW3
+                JR      Z,.NOTS
                 CALL    MUSSTOP
                 CALL    RESETUI
+                JR      .ROW3
+
+.NOTS           ; CHECK 'T' (BIT 1) - MUTE MUSIC A
+                BIT     1,D
+                JR      Z,.NOTT
+                LD      A,(MUTEMSK)
+                XOR     %00000001
+                LD      (MUTEMSK),A
+                CALL    .MUTEDN
+                JR      .ROW3
+
+.NOTT           ; CHECK 'U' (BIT 2) - MUTE MUSIC C
+                BIT     2,D
+                JR      Z,.NOTU
+                LD      A,(MUTEMSK)
+                XOR     %00000100
+                LD      (MUTEMSK),A
+                CALL    .MUTEDN
+                JR      .ROW3
+
+.NOTU           ; CHECK 'Y' (BIT 6) - MUTE MUSIC B
+                BIT     6,D
+                JR      Z,.ROW3
+                LD      A,(MUTEMSK)
+                XOR     %00000010
+                LD      (MUTEMSK),A
+                CALL    .MUTEDN
 
 .ROW3           ; --- PROCESS ROW 3 ---
                 LD      A,(KEYPREV + 3)
@@ -341,7 +442,7 @@ POLLKEY         ; --- PROCESS ROW 0 ---
                 JR      .RROW3
 
 .NOTFD          BIT     6,D             ; 'I' (BIT 6) - FADE IN
-                JR      Z,.RROW3
+                JR      Z,.NOTFI
                 XOR     A               ; TARGET = 0 (SILENCE)
                 LD      H,255           ; SNAP GLOBAL VOL TO 0
                 CALL    MUSFADE
@@ -350,8 +451,41 @@ POLLKEY         ; --- PROCESS ROW 0 ---
                 LD      A,255           ; TARGET = FULL VOLUME
                 LD      H,3             ; SPEED = 3 (~85 FRAMES)
                 CALL    MUSFADE
+                JR      .RROW3
+
+.NOTFI          ; CHECK 'G' (BIT 4) - MUTE FX A
+                BIT     4,D
+                JR      Z,.NOTG
+                LD      A,(MUTEMSK)
+                XOR     %00001000
+                LD      (MUTEMSK),A
+                CALL    .MUTEDN
+                JR      .RROW3
+
+.NOTG           ; CHECK 'H' (BIT 5) - MUTE FX B
+                BIT     5,D
+                JR      Z,.NOTH
+                LD      A,(MUTEMSK)
+                XOR     %00010000
+                LD      (MUTEMSK),A
+                CALL    .MUTEDN
+                JR      .RROW3
+
+.NOTH           ; CHECK 'J' (BIT 7) - MUTE FX C
+                BIT     7,D
+                JR      Z,.RROW3
+                LD      A,(MUTEMSK)
+                XOR     %00100000
+                LD      (MUTEMSK),A
+                CALL    .MUTEDN
 
 .RROW3          RET
+
+
+.MUTEDN         CALL    CLRUI
+                LD      A,1
+                LD      (SCRDIRTY),A
+                RET
 
 
 .PLAY           PUSH    HL
@@ -726,7 +860,27 @@ DRAWUI          ; 0. FRAME THROTTLE: ONLY DRAW EVERY 2 FRAMES
                 LD      (TMPNOTE),A
 
                 LD      C,(IX+CHIDX)
-                LD      A,C
+
+                ; CHECK IF CHANNEL IS MUTED
+                LD      A,(MUTEMSK)
+                LD      E,C             ; E = CHIDX (0..5)
+                INC     E
+.MTSHFT         SRL     A
+                DEC     E
+                JR      NZ,.MTSHFT
+                JR      NC,.NOTMUT
+
+                ; MUTED STATE FOR THIS CHANNEL
+                LD      A,3             ; STATUS CODE 3 (MUTE)
+                LD      (TMPSTAT),A
+                XOR     A
+                LD      (TMPVOL),A
+                LD      A,255
+                LD      (TMPNOTE),A
+                LD      HL,.SMUTE
+                JP      .CHSTATD
+
+.NOTMUT         LD      A,C
                 CP      3
                 JR      NC,.CHSFX
 
@@ -1110,6 +1264,7 @@ DRAWUI          ; 0. FRAME THROTTLE: ONLY DRAW EVERY 2 FRAMES
 .SOFF           DEFB    "OFF ", 0
 .SGHST          DEFB    "GHST", 0
 .SPLAY2         DEFB    "PLAY", 0
+.SMUTE          DEFB    "MUTE", 0
 
 .SNONE          DEFB    "NONE  ", 0
 .SSTOP          DEFB    "STOP  ", 0
@@ -1454,10 +1609,10 @@ STRCH3          DEFB    "3A FX ", 0
 STRCH4          DEFB    "4B FX ", 0
 STRCH5          DEFB    "5C FX ", 0
 STRSFX          DEFB    " sfx: ", #A7, ":LO  ", #A8, ":HI  ", #A9, ":FAN  ", #A0, ":TRI  ", 0
-STRKEY1         DEFB    " keys: ", #A1, "-", #A6, " PLAY   ", #80, " s STOP ALL   ", 0
-STRKEY2         DEFB    "       c PORTA    ", #80, " f FADE OUT   ", 0
-STRKEY3         DEFB    "       e CHORUS   ", #80, " i FADE IN    ", 0
-STRKEY4         DEFB    "                  ", #80, " d DETUNE     ", 0
+STRKEY1         DEFB    " keys: ", #A1, "-", #A6, " PLAY   ", #80, " s STOP ALL  ", 0
+STRKEY2         DEFB    "       c PORTA    ", #80, " f/i FADE O/I", 0
+STRKEY3         DEFB    "       e CHORUS   ", #80, " t,y,u MUT MU", 0
+STRKEY4         DEFB    "       d DETUNE   ", #80, " g,h,j MUT FX", 0
 
 ; --- LAYOUT TABLE
 LAYTBL          DEFW    #1800, STRTITLE
@@ -1578,3 +1733,4 @@ CHCACHE         DEFS    36
 BUFADR          DEFS    2
 SCRBUFF         DEFS    768
 SCRDIRTY        DEFS    1
+MUTEMSK         DEFS    1
