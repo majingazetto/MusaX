@@ -170,24 +170,7 @@ ROMINIT         DI
 .LOOP           HALT
                 DI
                 CALL    POLLKEY         ; POLL KEYBOARD FOR ACTIONS
-                EI
                 CALL    DRAWUI          ; DRAW GRAPHICAL DASHBOARD
-
-                ; CHECK IF SCREEN BUFFER IS DIRTY
-                LD      A,(SCRDIRTY)
-                OR      A
-                JR      Z,.LOOP
-
-                ; DUMP SCREEN BUFFER TO VRAM
-                DI
-                LD      HL,SCRBUFF
-                LD      DE,#1800
-                LD      BC,768
-                CALL    LDIRVM
-
-                ; CLEAR DIRTY FLAG
-                XOR     A
-                LD      (SCRDIRTY),A
                 EI
                 JP      .LOOP
 
@@ -345,10 +328,25 @@ APPLYMUTE       PUSH    AF
 ; - CLOBBERS: NONE
 ; -
 
-IRQINT          CALL    MUSUPDAT        ; UPDATE ENGINE SEQUENCER
+IRQINT          ; CHECK IF SCREEN BUFFER IS DIRTY
+                LD      A,(SCRDIRTY)
+                OR      A
+                JR      Z,.CONT
+
+                ; DUMP SCREEN BUFFER TO VRAM
+
+                LD      HL,SCRBUFF
+                LD      DE,#1800
+                LD      BC,768
+                CALL    LDIRVM
+
+                ; CLEAR DIRTY FLAG
+                XOR     A
+                LD      (SCRDIRTY),A
+       
+.CONT           CALL    MUSUPDAT        ; UPDATE ENGINE SEQUENCER
                 CALL    APPLYMUTE       ; OVERRIDE MUTED CHANNELS IN PSGREG
-                CALL    MUSCOMM         ; COMMIT REGISTERS TO PHYSICAL PSG
-                RET
+                JP      MUSCOMM         ; COMMIT REGISTERS TO PHYSICAL PSG
 
 
 ; - POLLKEY ----------------------------
