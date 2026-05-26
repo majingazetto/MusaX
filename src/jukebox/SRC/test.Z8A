@@ -98,6 +98,17 @@ ROMINIT         DI
                 ; SHOW LOGO AND WAIT BEFORE PLAYBACK
                 CALL    LOGO
 
+                CALL    CLS             ; CLEAR LOGO
+
+                ; INITIALIZE SCREEN 1 COLORS (#2000)
+                LD      HL,COLORDAT
+                LD      DE,#2000
+                LD      BC,32
+                CALL    LDIRVM
+
+                ; INITIALIZE GRAPHICAL LAYOUT SKELETON
+                CALL    INITLAY
+
                 ; CLEAR RAM VARIABLES AREA (LDIR)
                 LD      HL,#E000
                 LD      DE,#E001
@@ -369,6 +380,51 @@ SETWRT          LD      A,L
                 RET
 
 
+; - INITLAY ----------------------------
+; - INITIALIZE GRAPHICAL LAYOUT ON SCREEN
+; - IN: NONE
+; - OUT: NONE
+; - CLOBBERS: ALL
+; -
+
+INITLAY         ; DRAW HORIZONTAL DIVIDER LINES AT ROWS 1, 9, 17, 19
+                LD      HL,#1820        ; ROW 1
+                CALL    .DRAWLN
+                LD      HL,#1920        ; ROW 9
+                CALL    .DRAWLN
+                LD      HL,#1A20        ; ROW 17
+                CALL    .DRAWLN
+                LD      HL,#1A60        ; ROW 19
+                CALL    .DRAWLN
+
+                ; RENDER STATIC LAYOUT STRINGS FROM TABLE
+                LD      IX,LAYTBL
+.LOOP           LD      E,(IX+0)
+                LD      D,(IX+1)        ; DE = VRAM ADDRESS
+                LD      A,D
+                OR      E
+                RET     Z               ; END OF TABLE
+                
+                LD      L,(IX+2)
+                LD      H,(IX+3)        ; HL = STRING POINTER
+                
+                PUSH    IX
+                CALL    PUTSTR          ; DRAW STRING AT VRAM DE
+                POP     IX
+                
+                LD      DE,4
+                ADD     IX,DE           ; ADVANCE TO NEXT ENTRY
+                JP      .LOOP
+
+.DRAWLN         ; HL = VRAM ADDRESS
+                CALL    SETWRT
+                LD      B,32            ; LINE LENGTH
+                LD      A,#81           ; HORIZONTAL DIVIDER CHAR
+.L1             OUT     (#98),A
+                DJNZ    .L1
+                RET
+
+
 ; --- INCLUDES                          ----------------------------------------
 
 
@@ -392,6 +448,60 @@ SETWRT          LD      A,L
                 INCLUDE "TMP/porta_test.Z8A"
                 INCLUDE "TMP/detune_test.Z8A"
                 INCLUDE "TMP/chorus_test.Z8A"
+
+
+COLORDAT        DEFB    #F1, #F1, #F1, #F1, #F1, #F1, #F1, #F1 ; GROUPS 0-7: WHITE ON BLACK
+                DEFB    #F1, #F1, #F1, #F1                     ; GROUPS 8-11: WHITE ON BLACK (UPPERCASE)
+                DEFB    #71, #71, #71, #71                     ; GROUPS 12-15: CYAN ON BLACK (LOWERCASE / HIGHLIGHT)
+                DEFB    #F1, #F1, #F1, #F1, #71, #71, #F1, #F1 ; GROUPS 16-23: GROUPS 20-21 CYAN (CUSTOM DIGITS)
+                DEFB    #F1, #F1, #F1, #F1                     ; GROUPS 24-27: WHITE ON BLACK
+                DEFB    #31, #31                               ; GROUPS 28-29: LIGHT GREEN ON BLACK (MUSIC BARS)
+                DEFB    #B1, #B1                               ; GROUPS 30-31: LIGHT YELLOW ON BLACK (SFX BARS)
+
+; --- LAYOUT STRINGS
+STRTITLE        DEFB    " MUSAX GRAPHICAL JUKEBOX v1.9   ", 0
+STRSUB          DEFB    " PLAYLIST         PLAYBACK INFO ", 0
+STRPLAY1        DEFB    " ", #A1, ".SHALOMCASTLE   SONG: ", 0
+STRPLAY2        DEFB    " ", #A2, ".ADSR_TEST      BPM : ", 0
+STRPLAY3        DEFB    " ", #A3, ".LFO_TEST       VOL : ", 0
+STRPLAY4        DEFB    " ", #A4, ".SEQ_TEST       LOOP: ", 0
+STRPLAY5        DEFB    " ", #A5, ".MOD_TEST       STAT: ", 0
+STRPLAY6        DEFB    " ", #A6, ".SFX_PRIORITY   FADE: ", 0
+STRCHHDR        DEFB    "CH TY VOL   NOTE INS  PER  STAT ", 0
+STRCH0          DEFB    "0A MU ", 0
+STRCH1          DEFB    "1B MU ", 0
+STRCH2          DEFB    "2C MU ", 0
+STRCH3          DEFB    "3A FX ", 0
+STRCH4          DEFB    "4B FX ", 0
+STRCH5          DEFB    "5C FX ", 0
+STRSFX          DEFB    " sfx: ", #A7, ":LO  ", #A8, ":HI  ", #A9, ":FAN  ", #A0, ":TRI  ", 0
+STRKEY1         DEFB    " keys: ", #A1, "-", #A6, " PLAY   ", #80, " s STOP ALL   ", 0
+STRKEY2         DEFB    "       c PORTA    ", #80, " f FADE OUT   ", 0
+STRKEY3         DEFB    "       e CHORUS   ", #80, " i FADE IN    ", 0
+STRKEY4         DEFB    "                  ", #80, " d DETUNE     ", 0
+
+; --- LAYOUT TABLE
+LAYTBL          DEFW    #1800, STRTITLE
+                DEFW    #1840, STRSUB
+                DEFW    #1860, STRPLAY1
+                DEFW    #1880, STRPLAY2
+                DEFW    #18A0, STRPLAY3
+                DEFW    #18C0, STRPLAY4
+                DEFW    #18E0, STRPLAY5
+                DEFW    #1900, STRPLAY6
+                DEFW    #1940, STRCHHDR
+                DEFW    #1960, STRCH0
+                DEFW    #1980, STRCH1
+                DEFW    #19A0, STRCH2
+                DEFW    #19C0, STRCH3
+                DEFW    #19E0, STRCH4
+                DEFW    #1A00, STRCH5
+                DEFW    #1A40, STRSFX
+                DEFW    #1A80, STRKEY1
+                DEFW    #1AA0, STRKEY2
+                DEFW    #1AC0, STRKEY3
+                DEFW    #1AE0, STRKEY4
+                DEFW    0               ; END OF TABLE MARKER
 
 
 SPLASH          DEFB    "MusaX Jukebox v1.9", 0
