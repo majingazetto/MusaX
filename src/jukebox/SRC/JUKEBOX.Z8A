@@ -189,13 +189,13 @@ ROMINIT         DI
 
 .LOOP           HALT
                 CALL    POLLKEY         ; POLL KEYBOARD FOR ACTIONS
-                ;BORD    7
+                BORD    7
                 CALL    MUSUPDAT        ; UPDATE AUDIO SEQUENCE
-                ;BORD    6
+                BORD    6
                 CALL    APPLYMUTE       ; OVERRIDE MUTED CHANNELS IN PSGREG
-                ;BORD    11
+                BORD    11
                 CALL    DRAWUI          ; DRAW GRAPHICAL DASHBOARD
-                ;BORD    0
+                BORD    0
                 JP      .LOOP
 
 
@@ -348,17 +348,34 @@ IRQINT          ; CHECK IF SCREEN BUFFER IS DIRTY
                 OR      A
                 JR      Z,.CONT
 
-                ; DUMP SCREEN BUFFER TO VRAM
+                ; FAST VBLANK DUMP: SCRBUFF → VRAM #1800, 768 BYTES.
+                ; SAFE BECAUSE WE ARE INSIDE VBL (~16K T-STATES BUDGET).
+                ; UNROLLED ×32 OUTI BLOCKS + DEC/JP NZ OUTER LOOP.
+                ; TIMING: 24 × (32×18 + 14) = 14,160 T-STATES TOTAL.
 
+                ; SET VRAM WRITE ADDRESS = #1800
+                LD      A,(VDPWCTRL)
+                LD      C,A
+                LD      A,#00           ; LOW BYTE OF #1800
+                OUT     (C),A
+                LD      A,#58           ; HIGH BYTE #18 | BIT 6 (WRITE)
+                OUT     (C),A
+
+                ; STREAM 24 × 32 = 768 BYTES VIA UNROLLED OUTI
                 LD      HL,SCRBUFF
-                LD      DE,#1800
-                LD      BC,768
-                CALL    LDIRVM
+                LD      A,(VDPWDATA)
+                LD      C,A
+                LD      E,24            ; OUTER BLOCK COUNTER
+.DLP            DUP     32
+                OUTI
+                EDUP
+                DEC     E
+                JP      NZ,.DLP
 
                 ; CLEAR DIRTY FLAG
                 XOR     A
                 LD      (SCRDIRTY),A
-       
+
 .CONT           JP      MUSCOMM         ; COMMIT REGISTERS TO PHYSICAL PSG
 
 
@@ -730,18 +747,23 @@ INITLAY         ; DRAW HORIZONTAL DIVIDER LINES AT ROWS 1, 9, 17, 19
 ; - CLOBBERS: ALL
 ; -
 
-DRAWUI          ; 0. FRAME THROTTLE: ONLY DRAW EVERY 2 FRAMES
-                LD      HL,FRAMECNT
-                INC     (HL)
-                LD      A,(HL)
-                BIT     0,A
-                RET     NZ
+DRAWUI          ; 1. DRAW SONG NAME (CACHED)
+                ; LOGICAL KEY: SONGPTR IF PLAYING, ELSE 0 (STOPPED → "NONE")
+                LD      DE,(SONGPTR)
+                LD      A,(MUSSTAT)
+                OR      A
+                JR      NZ,.NMKOK
+                LD      DE,0
+.NMKOK          LD      HL,(NAMEPRV)
+                OR      A
+                SBC     HL,DE
+                JR      Z,.NMSKP        ; CACHE HIT → SKIP SEARCH+PUTSTR
+                LD      (NAMEPRV),DE
 
-                ; 1. DRAW SONG NAME
                 LD      A,(MUSSTAT)
                 OR      A
                 JR      Z,.NONE
-                
+
                 LD      HL,(SONGPTR)
                 LD      IX,SNGNAMTB
 .SRCH           LD      E,(IX+0)
@@ -749,7 +771,7 @@ DRAWUI          ; 0. FRAME THROTTLE: ONLY DRAW EVERY 2 FRAMES
                 LD      A,D
                 OR      E
                 JR      Z,.NONE         ; NOT FOUND
-                
+
                 LD      A,L
                 CP      E
                 JR      NZ,.NEXT
@@ -765,6 +787,7 @@ DRAWUI          ; 0. FRAME THROTTLE: ONLY DRAW EVERY 2 FRAMES
                 LD      H,(IX+3)
 .PRTSNG         LD      DE,#1877
                 CALL    PUTSTR
+.NMSKP
 
                 ; 2. DRAW BPM
                 CALL    GETBPM          ; A = BPM
@@ -786,12 +809,17 @@ DRAWUI          ; 0. FRAME THROTTLE: ONLY DRAW EVERY 2 FRAMES
                 LD      HL,#18B7
                 CALL    SETWRT
                 CALL    PRN2DEC         ; PRINTS 2 DIGITS
+                LD      DE,(BUFADR)
                 LD      A,"/"
-                CALL    WRTCHR
+                LD      (DE),A
+                INC     DE
                 LD      A,"1"
-                CALL    WRTCHR
+                LD      (DE),A
+                INC     DE
                 LD      A,"5"
-                CALL    WRTCHR
+                LD      (DE),A
+                INC     DE
+                LD      (BUFADR),DE
 .VOLSKP
 
                 ; 4. DRAW LOOP COUNTER
@@ -950,14 +978,14 @@ DRAWUI          ; 0. FRAME THROTTLE: ONLY DRAW EVERY 2 FRAMES
 
                 LD      C,(IX+CHIDX)
 
-                ; CHECK IF CHANNEL IS MUTED
+                ; CHECK IF CHANNEL IS MUTED (TABLE LOOKUP)
+                LD      HL,MUTEBIT
+                LD      E,C             ; DE = CHIDX (0..5)
+                LD      D,0
+                ADD     HL,DE
                 LD      A,(MUTEMSK)
-                LD      E,C             ; E = CHIDX (0..5)
-                INC     E
-.MTSHFT         SRL     A
-                DEC     E
-                JR      NZ,.MTSHFT
-                JR      NC,.NOTMUT
+                AND     (HL)
+                JR      Z,.NOTMUT
 
                 ; MUTED STATE FOR THIS CHANNEL
                 LD      A,3             ; STATUS CODE 3 (MUTE)
@@ -1056,14 +1084,13 @@ DRAWUI          ; 0. FRAME THROTTLE: ONLY DRAW EVERY 2 FRAMES
                 LD      DE,PSGSFX
                 ADD     HL,DE
                 
-.RDPD           LD      A,(HL)
-                LD      (TMPPERL),A
+.RDPD           LD      C,(HL)          ; C = PERIOD LOW
                 INC     HL
-                LD      A,(HL)
+                LD      B,(HL)          ; B = PERIOD HIGH (BC = PERIOD)
+                LD      A,C
+                LD      (TMPPERL),A
+                LD      A,B
                 LD      (TMPPERH),A
-                LD      B,A
-                LD      A,(TMPPERL)
-                LD      C,A             ; BC = PERIOD
 
                 ; IF NOT PLAYING, FORCE PERIOD TO 0 (FOR CACHE STABILITY)
                 LD      A,(TMPSTAT)
@@ -1856,6 +1883,10 @@ SNGNAMTB        DEFW    SHALOMCASTLE.HEADER, .SSHAL
 .SCHOR          DEFB    "CHORUS", 0
 
 
+; --- CHANNEL BIT MASK TABLE (FOR MUTEMSK / SFXMSK INDEXING)
+MUTEBIT         DEFB    #01, #02, #04, #08, #10, #20
+
+
 SPLASH          DEFB    "MUSAX JUKEBOX V1.9", 0
 
 VRAMDATA        INCBIN  "VRAM.BIN"
@@ -1874,6 +1905,7 @@ VRAMDATA        INCBIN  "VRAM.BIN"
                 INCLUDE "../../driver/VARS.Z8A"
 KEYPREV         DEFS    4
 SONGPREV        DEFS    2
+NAMEPRV         DEFS    2
 STATPREV        DEFS    1
 MSTFLPRV       DEFS    1
 FRAMECNT        DEFS    1
