@@ -16,8 +16,8 @@ PYTHON      = python3
 MUSAX_COMP  = $(PYTHON) $(MUSAX_DIR)/tools/musax.py
 
 # --- SOURCE AND OUTPUT FILES
-ROM_OUTPUT  = $(ROM_DIR)/test.rom
-SRC_FILE    = $(SRC_DIR)/test.Z8A
+ROM_OUTPUT  = $(ROM_DIR)/JUKEBOX.ROM
+SRC_FILE    = $(SRC_DIR)/JUKEBOX.Z8A
 
 # Test files lists
 MSL_TESTS   = $(wildcard $(SRC_DIR)/TESTS/*.msl)
@@ -51,7 +51,7 @@ $(MOG_Z8A): $(MOG_MSL) | $(TMP_DIR)
 $(ROM_OUTPUT): $(SRC_FILE) $(ALL_Z8A) | $(ROM_DIR)
 	@echo "Assembling Minimal Test ROM..."
 	@$(ASM) $(SJASM_OPTS) $(SRC_FILE)
-	@cp $(TMP_DIR)/test.raw $(ROM_OUTPUT)
+	@cp $(TMP_DIR)/JUKEBOX.raw $(ROM_OUTPUT)
 
 # --- BUILD
 build: $(ROM_OUTPUT)
