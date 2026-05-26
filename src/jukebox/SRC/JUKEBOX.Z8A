@@ -136,9 +136,9 @@ ROMINIT         DI
                 LD      HL,IRQINT
                 LD      (HTIMI + 1),HL
 
-                ; START COMPILATION OF SHALOMCASTLE SONG
+                ; START PLAYBACK OF SHALOMCASTLE SONG
                 LD      HL,SHALOMCASTLE.HEADER
-                LD      A,0             ; INFINITE LOOPING LIMIT
+                XOR     A               ; INFINITE LOOPING LIMIT
                 CALL    MUSPLAY         ; PLAY SONG!
 
                 EI                      ; ENABLE INTERRUPTS!
@@ -222,7 +222,7 @@ POLLKEY         ; --- PROCESS ROW 0 ---
 
 .NOT6           BIT     7,D
                 JR      Z,.NOT7
-                LD      A,0             ; FX_LO (ID 0)
+                XOR     A               ; FX_LO (ID 0)
                 CALL    FXPLAY
                 JR      .ROW1
 
@@ -302,14 +302,14 @@ POLLKEY         ; --- PROCESS ROW 0 ---
 
 .NOTRE          BIT     3,D             ; 'F' (BIT 3) - FADE OUT
                 JR      Z,.NOTFD
-                LD      A,0             ; TARGET = 0 (SILENCE)
+                XOR     A               ; TARGET = 0 (SILENCE)
                 LD      H,3             ; SPEED = 3 (~85 FRAMES)
                 CALL    MUSFADE
                 JR      .RROW3
 
 .NOTFD          BIT     6,D             ; 'I' (BIT 6) - FADE IN
                 JR      Z,.RROW3
-                LD      A,0
+                XOR     A               ; TARGET = 0 (SILENCE)
                 LD      H,255           ; SNAP GLOBAL VOL TO 0
                 CALL    MUSFADE
                 LD      HL,SHALOMCASTLE.HEADER
@@ -324,7 +324,7 @@ POLLKEY         ; --- PROCESS ROW 0 ---
 .PLAY           PUSH    HL
                 CALL    MUSSTOP
                 POP     HL
-                LD      A,0             ; loop limit
+                XOR     A               ; INFINITE LOOPING LIMIT
                 CALL    MUSPLAY
                 RET
 
@@ -507,13 +507,13 @@ DRAWUI          ; 0. FRAME THROTTLE: ONLY DRAW EVERY 2 FRAMES
                 CP      (HL)
                 JR      NZ,.LPRDRW
                 LD      A,(SONGLMT)
-                LD      HL,LIMITPREV
+                LD      HL,LMTPREV
                 CP      (HL)
                 JR      Z,.LPSKP
 .LPRDRW         LD      A,(SONGLOP)
                 LD      (LOOPPREV),A
                 LD      A,(SONGLMT)
-                LD      (LIMITPREV),A
+                LD      (LMTPREV),A
                 
                 LD      HL,#18D7
                 CALL    SETWRT
@@ -539,7 +539,7 @@ DRAWUI          ; 0. FRAME THROTTLE: ONLY DRAW EVERY 2 FRAMES
 
                 ; 5. DRAW STATUS
                 LD      A,(MUSSTAT)
-                LD      HL,MSTFLDPRV
+                LD      HL,MSTFLPRV
                 CP      (HL)
                 JR      Z,.STSKP
                 LD      (HL),A          ; UPDATE CACHE
@@ -557,496 +557,485 @@ DRAWUI          ; 0. FRAME THROTTLE: ONLY DRAW EVERY 2 FRAMES
                 CALL    PUTSTR
 .STSKP
 
-                 ; 6. DRAW FADE
-                 LD      A,(GLBFADSP)
-                 LD      HL,FADSPPREV
-                 CP      (HL)
-                 JR      NZ,.FDRDRW
-                 LD      A,(GLBFADVL)
-                 LD      HL,FADVLPREV
-                 CP      (HL)
-                 JR      Z,.FDSKP
+                ; 6. DRAW FADE
+                LD      A,(GLBFADSP)
+                LD      HL,FADSPPRV
+                CP      (HL)
+                JR      NZ,.FDRDRW
+                LD      A,(GLBFADVL)
+                LD      HL,FADVLPRV
+                CP      (HL)
+                JR      Z,.FDSKP
 .FDRDRW          LD      A,(GLBFADSP)
-                 LD      (FADSPPREV),A
-                 LD      A,(GLBFADVL)
-                 LD      (FADVLPREV),A
-                 
-                 LD      A,(GLBFADSP)
-                 OR      A
-                 JR      NZ,.FADAC
-                 LD      HL,.SIACT
-                 LD      DE,#1917
-                 CALL    PUTSTR
-                 JR      .FDSKP
+                LD      (FADSPPRV),A
+                LD      C,A             ; SAVE GLBFADSP IN C
+                LD      A,(GLBFADVL)
+                LD      (FADVLPRV),A
+                LD      B,A             ; SAVE GLBFADVL IN B
+                LD      A,C             ; RESTORE GLBFADSP
+                OR      A
+                JR      NZ,.FADAC
+                LD      HL,.SIACT
+                LD      DE,#1917
+                CALL    PUTSTR
+                JR      .FDSKP
 .FADAC          LD      HL,#1917
-                 CALL    SETWRT
-                 LD      A,(GLBFADVL)
-                 CALL    DEC2STR
-                 LD      A,"/"
-                 OUT     (#98),A
-                 LD      A,"2"
-                 OUT     (#98),A
-                 LD      A,"5"
-                 OUT     (#98),A
+                CALL    SETWRT
+                LD      A,B             ; GLBFADVL (SAVED ABOVE)
+                CALL    DEC2STR
+                LD      A,"/"
+                OUT     (#98),A
+                LD      A,"2"
+                OUT     (#98),A
+                LD      A,"5"
+                OUT     (#98),A
 .FDSKP
 .DRPL           ; 7. DRAW PLAYLIST
-                 ; CHECK IF SONGPTR OR MUSSTAT CHANGED
-                 LD      HL,(SONGPTR)
-                 LD      DE,(SONGPREV)
-                 OR      A
-                 SBC     HL,DE
-                 JR      NZ,.PLREDRAW
-                 
-                 LD      A,(MUSSTAT)
-                 LD      HL,STATPREV
-                 CP      (HL)
-                 JR      Z,.PLSKIP       ; IF UNCHANGED, SKIP PLAYLIST RENDER!
-                 
+                ; CHECK IF SONGPTR OR MUSSTAT CHANGED
+                LD      HL,(SONGPTR)
+                LD      DE,(SONGPREV)
+                OR      A
+                SBC     HL,DE
+                JR      NZ,.PLREDRAW
+                
+                LD      A,(MUSSTAT)
+                LD      HL,STATPREV
+                CP      (HL)
+                JR      Z,.PLSKIP       ; IF UNCHANGED, SKIP PLAYLIST RENDER!
+                
 .PLREDRAW        ; UPDATE CACHE
-                 LD      HL,(SONGPTR)
-                 LD      (SONGPREV),HL
-                 LD      A,(MUSSTAT)
-                 LD      (STATPREV),A
-
-                 LD      DE,(SONGPTR)
-                 LD      A,(MUSSTAT)
-                 OR      A
-                 JR      NZ,.ACTOK
-                 LD      DE,0            ; IF MUSIC STOPPED, NO HIGHLIGHT
+                LD      HL,(SONGPTR)
+                LD      (SONGPREV),HL
+                EX      DE,HL           ; DE = SONGPTR (NO SECOND READ NEEDED)
+                LD      A,(MUSSTAT)
+                LD      (STATPREV),A
+                OR      A
+                JR      NZ,.ACTOK
+                LD      DE,0            ; IF MUSIC STOPPED, NO HIGHLIGHT
 .ACTOK          LD      IX,PLAYLSTB
 .PLLP           LD      L,(IX+0)
-                 LD      H,(IX+1)
-                 LD      A,H
-                 OR      L
-                 JR      Z,.PLDN         ; END OF TABLE
+                LD      H,(IX+1)
+                LD      A,H
+                OR      L
+                JR      Z,.PLDN         ; END OF TABLE
 
-                 PUSH    DE              ; SAVE ACTIVE POINTER
-                 OR      A
-                 SBC     HL,DE
-                 JR      NZ,.UNSEL
-                 
-                 ; SELECTED
-                 LD      L,(IX+2)
-                 LD      H,(IX+3)
-                 JR      .PLDR
-                 
+                PUSH    DE              ; SAVE ACTIVE POINTER
+                OR      A
+                SBC     HL,DE
+                JR      NZ,.UNSEL
+                
+                ; SELECTED
+                LD      L,(IX+2)
+                LD      H,(IX+3)
+                JR      .PLDR
+                
 .UNSEL          LD      L,(IX+4)
-                 LD      H,(IX+5)
-                 
+                LD      H,(IX+5)
+                
 .PLDR           LD      E,(IX+6)
-                 LD      D,(IX+7)
-                 PUSH    IX
-                 CALL    PUTSTR
-                 POP     IX
-                 POP     DE
-                 
-                 LD      BC,8
-                 ADD     IX,BC
-                 JP      .PLLP
+                LD      D,(IX+7)
+                PUSH    IX
+                CALL    PUTSTR
+                POP     IX
+                POP     DE
+                
+                LD      BC,8
+                ADD     IX,BC
+                JP      .PLLP
 .PLDN           
 
 .PLSKIP                 ; 8. DRAW CHANNEL GRID
-                 LD      IX,CHANNELS
-                 LD      IY,#1960        ; START VRAM ROW ADDRESS
-                 LD      B,6             ; 6 CHANNELS
+                LD      IX,CHANNELS
+                LD      IY,#1960        ; START VRAM ROW ADDRESS
+                LD      B,6             ; 6 CHANNELS
 .CHLP           PUSH    BC
-                 PUSH    IY
+                PUSH    IY
 
-                 ; DETERMINE STAT, TMPVOL, AND TMPSTAT
-                 LD      A,(IX+CHNOTE)
-                 LD      (TMPNOTE),A
+                ; DETERMINE STAT, TMPVOL, AND TMPSTAT
+                LD      A,(IX+CHNOTE)
+                LD      (TMPNOTE),A
 
-                 LD      C,(IX+CHIDX)
-                 LD      A,C
-                 CP      3
-                 JR      NC,.CHSFX
+                LD      C,(IX+CHIDX)
+                LD      A,C
+                CP      3
+                JR      NC,.CHSFX
 
-                 ; MUSIC CHANNEL
-                 LD      A,(MUSSTAT)
-                 OR      A
-                 JR      Z,.CHOFF
-                 
-                 LD      A,(IX+CHPC)
-                 LD      H,(IX+CHPC+1)
-                 OR      H
-                 JR      Z,.CHOFF
+                ; MUSIC CHANNEL
+                LD      A,(MUSSTAT)
+                OR      A
+                JR      Z,.CHOFF
+                
+                LD      A,(IX+CHPC)
+                LD      H,(IX+CHPC+1)
+                OR      H
+                JR      Z,.CHOFF
 
-                 ; CHECK SFX OVERRIDE
-                 LD      A,(SFXMSK)
-                 LD      H,A
-                 LD      A,C
-                 OR      A
-                 JR      NZ,.NOT0
-                 BIT     0,H
-                 JR      NZ,.GHST
-                 JR      .CHPLAY
+                ; CHECK SFX OVERRIDE
+                LD      A,(SFXMSK)
+                LD      H,A
+                LD      A,C
+                OR      A
+                JR      NZ,.NOT0
+                BIT     0,H
+                JR      NZ,.GHST
+                JR      .CHPLAY
 .NOT0           DEC     A
-                 JR      NZ,.NOT1
-                 BIT     1,H
-                 JR      NZ,.GHST
-                 JR      .CHPLAY
+                JR      NZ,.NOT1
+                BIT     1,H
+                JR      NZ,.GHST
+                JR      .CHPLAY
 .NOT1           BIT     2,H
-                 JR      NZ,.GHST
-                 JR      .CHPLAY
+                JR      NZ,.GHST
+                JR      .CHPLAY
 .GHST           LD      A,2             ; STATUS CODE 2 (GHST)
-                 LD      (TMPSTAT),A
-                 XOR     A               ; VOLUME 0
-                 LD      (TMPVOL),A
-                 LD      HL,.SGHST
-                 JR      .CHSTATD
+                LD      (TMPSTAT),A
+                XOR     A               ; VOLUME 0
+                LD      (TMPVOL),A
+                LD      HL,.SGHST
+                JR      .CHSTATD
 
 .CHSFX          ; SFX CHANNEL
-                 LD      A,(IX+CHPC)
-                 LD      H,(IX+CHPC+1)
-                 OR      H
-                 JR      NZ,.CHPLAY
+                LD      A,(IX+CHPC)
+                LD      H,(IX+CHPC+1)
+                OR      H
+                JR      NZ,.CHPLAY
 
-.CHOFF          LD      A,0             ; STATUS CODE 0 (OFF)
-                 LD      (TMPSTAT),A
-                 XOR     A               ; VOLUME 0
-                 LD      (TMPVOL),A
-                 LD      HL,.SOFF
-                 JR      .CHSTATD
+.CHOFF          XOR     A
+                LD      (TMPSTAT),A     ; STATUS CODE 0 (OFF)
+                LD      (TMPVOL),A      ; VOLUME 0
+                LD      HL,.SOFF
+                JR      .CHSTATD
 
 .CHPLAY         LD      A,1             ; STATUS CODE 1 (PLAY)
-                 LD      (TMPSTAT),A
-                 LD      A,(IX+CHVOL)
-                 LD      (TMPVOL),A
-                 LD      HL,.SPLAY2
+                LD      (TMPSTAT),A
+                LD      A,(IX+CHVOL)
+                LD      (TMPVOL),A
+                LD      HL,.SPLAY2
 
 .CHSTATD        ; HL = STAT STR PTR
-                 PUSH    HL              ; SAVE STATUS STRING POINTER
+                PUSH    HL              ; SAVE STATUS STRING POINTER
 
-                 ; OVERRIDE NOTE IF NOT PLAYING (TMPSTAT != 1)
-                 LD      A,(TMPSTAT)
-                 CP      1
-                 JR      Z,.NTOK
-                 LD      A,255
-                 LD      (TMPNOTE),A
+                ; OVERRIDE NOTE IF NOT PLAYING (TMPSTAT != 1)
+                LD      A,(TMPSTAT)
+                CP      1
+                JR      Z,.NTOK
+                LD      A,255
+                LD      (TMPNOTE),A
 .NTOK
 
-                 ; GET PERIOD AND STORE IN BC (VIA TMPPERL / TMPPERH)
-                 LD      C,(IX+CHIDX)
-                 LD      A,C
-                 CP      3
-                 JR      NC,.RDPSGSFX
-                 
-                 LD      L,C
-                 LD      H,0
-                 ADD     HL,HL
-                 LD      DE,PSGMUS
-                 ADD     HL,DE
-                 JR      .RDPD
-                 
+                ; GET PERIOD AND STORE IN BC (VIA TMPPERL / TMPPERH)
+                LD      C,(IX+CHIDX)
+                LD      A,C
+                CP      3
+                JR      NC,.RDPSGSFX
+                
+                LD      L,C
+                LD      H,0
+                ADD     HL,HL
+                LD      DE,PSGMUS
+                ADD     HL,DE
+                JR      .RDPD
+                
 .RDPSGSFX       SUB     3
-                 LD      L,A
-                 LD      H,0
-                 ADD     HL,HL
-                 LD      DE,PSGSFX
-                 ADD     HL,DE
-                 
+                LD      L,A
+                LD      H,0
+                ADD     HL,HL
+                LD      DE,PSGSFX
+                ADD     HL,DE
+                
 .RDPD           LD      A,(HL)
-                 LD      (TMPPERL),A
-                 INC     HL
-                 LD      A,(HL)
-                 LD      (TMPPERH),A
-                 LD      B,A
-                 LD      A,(TMPPERL)
-                 LD      C,A             ; BC = PERIOD
+                LD      (TMPPERL),A
+                INC     HL
+                LD      A,(HL)
+                LD      (TMPPERH),A
+                LD      B,A
+                LD      A,(TMPPERL)
+                LD      C,A             ; BC = PERIOD
 
-                 ; IF NOT PLAYING, FORCE PERIOD TO 0 (FOR CACHE STABILITY)
-                 LD      A,(TMPSTAT)
-                 CP      1
-                 JR      Z,.PEROK
-                 LD      BC,0
+                ; IF NOT PLAYING, FORCE PERIOD TO 0 (FOR CACHE STABILITY)
+                LD      A,(TMPSTAT)
+                CP      1
+                JR      Z,.PEROK
+                LD      BC,0
 .PEROK
 
-                 ; COMPARE CURRENT WITH CACHE
-                 LD      A,(IX+CHIDX)
-                 LD      L,A
-                 LD      H,0
-                 LD      D,H
-                 LD      E,L             ; DE = C
-                 ADD     HL,HL           ; C * 2
-                 LD      D,H
-                 LD      E,L             ; DE = C * 2
-                 ADD     HL,HL           ; C * 4
-                 ADD     HL,DE           ; C * 6
-                 LD      DE,CHCACHE
-                 ADD     HL,DE           ; HL = CHCACHE + C * 6
+                ; COMPARE CURRENT WITH CACHE
+                LD      A,(IX+CHIDX)
+                CALL    CHCADDR         ; HL = CHCACHE + A * 6
 
-                 ; COMPARE VOLUME
-                 LD      A,(TMPVOL)
-                 CP      (HL)
-                 JR      NZ,.DIRTY
-                 INC     HL
+                ; COMPARE VOLUME
+                LD      A,(TMPVOL)
+                CP      (HL)
+                JR      NZ,.DIRTY
+                INC     HL
 
-                 ; COMPARE NOTE
-                 LD      A,(TMPNOTE)
-                 CP      (HL)
-                 JR      NZ,.DIRTY
-                 INC     HL
+                ; COMPARE NOTE
+                LD      A,(TMPNOTE)
+                CP      (HL)
+                JR      NZ,.DIRTY
+                INC     HL
 
-                 ; COMPARE PERIOD LOW
-                 LD      A,C
-                 CP      (HL)
-                 JR      NZ,.DIRTY
-                 INC     HL
+                ; COMPARE PERIOD LOW
+                LD      A,C
+                CP      (HL)
+                JR      NZ,.DIRTY
+                INC     HL
 
-                 ; COMPARE PERIOD HIGH
-                 LD      A,B
-                 CP      (HL)
-                 JR      NZ,.DIRTY
-                 INC     HL
+                ; COMPARE PERIOD HIGH
+                LD      A,B
+                CP      (HL)
+                JR      NZ,.DIRTY
+                INC     HL
 
-                 ; COMPARE STATUS CODE
-                 LD      A,(TMPSTAT)
-                 CP      (HL)
-                 JR      NZ,.DIRTY
+                ; COMPARE STATUS CODE
+                LD      A,(TMPSTAT)
+                CP      (HL)
+                JR      NZ,.DIRTY
 
-                 ; CACHE HIT! SKIP DRAWING
-                 POP     HL              ; BALANCE STAT STR POINTER
-                 POP     IY
-                 POP     BC
-                 JP      .CHADV
+                ; CACHE HIT! SKIP DRAWING
+                POP     HL              ; BALANCE STAT STR POINTER
+                POP     IY
+                POP     BC
+                JP      .CHADV
 
 .DIRTY           ; CACHE MISS! DRAW ROW
-                 ; VRAM ADDRESS SET TO IY + 6
-                 PUSH    IY
-                 POP     HL              ; HL = IY
-                 LD      DE,6
-                 ADD     HL,DE           ; HL = IY + 6
-                 CALL    SETWRT
-                 
-                 ; 1. DRAW VOLUME BAR (5 CHARS)
-                 LD      A,(TMPVOL)
-                 LD      C,(IX+CHIDX)
-                 LD      B,#E0           ; BASE FOR MUSIC
-                 LD      H,C
-                 LD      L,3
-                 LD      A,H
-                 CP      L
-                 JR      C,.BAROK
-                 LD      B,#F0           ; BASE FOR SFX
+                ; VRAM ADDRESS SET TO IY + 6
+                PUSH    IY
+                POP     HL              ; HL = IY
+                LD      DE,6
+                ADD     HL,DE           ; HL = IY + 6
+                CALL    SETWRT
+                
+                ; 1. DRAW VOLUME BAR (5 CHARS)
+                LD      C,(IX+CHIDX)
+                LD      B,#E0           ; BASE FOR MUSIC
+                LD      A,C
+                CP      3
+                JR      C,.BAROK
+                LD      B,#F0           ; BASE FOR SFX
 .BAROK          LD      A,(TMPVOL)
-                 CALL    DRAWBAR         ; WRITES 5 CHARS
-                 
-                 ; 2. WRITE 1 SPACE
-                 LD      A," "
-                 OUT     (#98),A
-                 
-                 ; 3. DRAW NOTE NAME (3 CHARS)
-                 LD      A,(TMPNOTE)
-                 CP      255
-                 JR      NZ,.PRTNOTE
-                 LD      A,"-"
-                 OUT     (#98),A
-                 OUT     (#98),A
-                 OUT     (#98),A
-                 JR      .NOTEDN
+                CALL    DRAWBAR         ; WRITES 5 CHARS
+                
+                ; 2. WRITE 1 SPACE
+                LD      A," "
+                OUT     (#98),A
+                
+                ; 3. DRAW NOTE NAME (3 CHARS)
+                LD      A,(TMPNOTE)
+                CP      255
+                JR      NZ,.PRTNOTE
+                LD      A,"-"
+                OUT     (#98),A
+                OUT     (#98),A
+                OUT     (#98),A
+                JR      .NOTEDN
 .PRTNOTE        LD      L,A
-                 LD      H,0
-                 LD      D,H
-                 LD      E,L
-                 ADD     HL,HL
-                 ADD     HL,DE           ; HL = A * 3
-                 LD      DE,NOTENAM
-                 ADD     HL,DE
-                 LD      A,(HL)
-                 OUT     (#98),A
-                 INC     HL
-                 LD      A,(HL)
-                 OUT     (#98),A
-                 INC     HL
-                 LD      A,(HL)
-                 OUT     (#98),A
+                LD      H,0
+                LD      D,H
+                LD      E,L
+                ADD     HL,HL
+                ADD     HL,DE           ; HL = A * 3
+                LD      DE,NOTENAM
+                ADD     HL,DE
+                LD      A,(HL)
+                OUT     (#98),A
+                INC     HL
+                LD      A,(HL)
+                OUT     (#98),A
+                INC     HL
+                LD      A,(HL)
+                OUT     (#98),A
 .NOTEDN
 
-                 ; 4. WRITE 2 SPACES
-                 LD      A," "
-                 OUT     (#98),A
-                 OUT     (#98),A
-                 
-                 ; 5. DRAW INSTRUMENT ID (2 CHARS)
-                 LD      A,(TMPSTAT)
-                 CP      1
-                 JR      Z,.INSCHK
-                 
-                 LD      A,255
-                 JR      .INSVAL
-                 
+                ; 4. WRITE 2 SPACES
+                LD      A," "
+                OUT     (#98),A
+                OUT     (#98),A
+                
+                ; 5. DRAW INSTRUMENT ID (2 CHARS)
+                LD      A,(TMPSTAT)
+                CP      1
+                JR      Z,.INSCHK
+                
+                LD      A,255
+                JR      .INSVAL
+                
 .INSCHK          LD      L,(IX+CHINST)
-                 LD      H,(IX+CHINST+1) ; HL = CURRENT POINTER
-                 LD      C,(IX+CHIDX)    ; C = CHANNEL INDEX
-                 
-                 ; COMPARE HL WITH CACHED POINTER AT INSTPTRS + C * 2
-                 LD      A,C
-                 ADD     A,A             ; A = C * 2
-                 LD      E,A
-                 LD      D,0
-                 
-                 PUSH    HL              ; SAVE CURRENT POINTER HL
-                 LD      HL,INSTPTRS
-                 ADD     HL,DE           ; HL = CACHED POINTER ADDR
-                 LD      A,(HL)
-                 INC     HL
-                 LD      H,(HL)
-                 LD      L,A             ; HL = CACHED POINTER
-                 
-                 POP     DE              ; DE = CURRENT POINTER
-                 OR      A
-                 SBC     HL,DE           ; COMPARE
-                 JR      NZ,.MIS
-                 
-                 ; CACHE HIT
-                 LD      E,C
-                 LD      D,0
-                 LD      HL,INSCACHE
-                 ADD     HL,DE
-                 LD      A,(HL)          ; A = CACHED ID
-                 JR      .INSVAL
-                 
+                LD      H,(IX+CHINST+1) ; HL = CURRENT POINTER
+                LD      C,(IX+CHIDX)    ; C = CHANNEL INDEX
+                
+                ; COMPARE HL WITH CACHED POINTER AT INSTPTRS + C * 2
+                LD      A,C
+                ADD     A,A             ; A = C * 2
+                LD      E,A
+                LD      D,0
+                
+                PUSH    HL              ; SAVE CURRENT POINTER HL
+                LD      HL,INSTPTRS
+                ADD     HL,DE           ; HL = CACHED POINTER ADDR
+                LD      A,(HL)
+                INC     HL
+                LD      H,(HL)
+                LD      L,A             ; HL = CACHED POINTER
+                
+                POP     DE              ; DE = CURRENT POINTER
+                OR      A
+                SBC     HL,DE           ; COMPARE
+                JR      NZ,.MIS
+                
+                ; CACHE HIT
+                LD      E,C
+                LD      D,0
+                LD      HL,INSCACHE
+                ADD     HL,DE
+                LD      A,(HL)          ; A = CACHED ID
+                JR      .INSVAL
+                
 .MIS             ; CACHE MISS
-                 LD      L,E
-                 LD      H,D             ; HL = CURRENT POINTER
-                 PUSH    BC              ; PRESERVE BC (C = CHANNEL INDEX)
-                 PUSH    DE              ; SAVE CURRENT POINTER
-                 CALL    GETINSID
-                 POP     DE
-                 POP     BC              ; RESTORE BC (C = CHANNEL INDEX)
-                 
-                 ; UPDATE CACHE
-                 PUSH    AF              ; SAVE RESOLVED ID
-                 LD      A,C
-                 ADD     A,A             ; A = C * 2
-                 LD      L,A
-                 LD      H,0
-                 LD      BC,INSTPTRS
-                 ADD     HL,BC
-                 LD      (HL),E
-                 INC     HL
-                 LD      (HL),D
-                 
-                 LD      C,(IX+CHIDX)    ; RESTORE CHANNEL INDEX IN C
-                 LD      E,C
-                 LD      D,0
-                 LD      HL,INSCACHE
-                 ADD     HL,DE
-                 POP     AF              ; RESTORE ID
-                 LD      (HL),A          ; UPDATE CACHED ID
-                 
+                LD      L,E
+                LD      H,D             ; HL = CURRENT POINTER (FROM DE)
+                PUSH    BC              ; PRESERVE C = CHANNEL INDEX
+                CALL    GETINSID        ; A = RESOLVED ID (CLOBBERS BC, DE, HL)
+                POP     BC              ; C = CHANNEL INDEX RESTORED
+
+                ; UPDATE CACHE (RE-READ IX+CHINST, AVOIDS PUSH/POP DE)
+                PUSH    AF              ; SAVE RESOLVED ID
+                LD      A,C
+                ADD     A,A             ; A = C * 2
+                LD      L,A
+                LD      H,0
+                LD      DE,INSTPTRS     ; DE = BASE (C NOT CLOBBERED)
+                ADD     HL,DE           ; HL = INSTPTRS + C*2
+                LD      A,(IX+CHINST)
+                LD      (HL),A          ; LOW BYTE OF CURRENT PTR
+                INC     HL
+                LD      A,(IX+CHINST+1)
+                LD      (HL),A          ; HIGH BYTE OF CURRENT PTR
+
+                LD      E,C
+                LD      D,0
+                LD      HL,INSCACHE
+                ADD     HL,DE
+                POP     AF
+                LD      (HL),A          ; UPDATE CACHED ID
+                
 .INSVAL          CP      255
-                 JR      NZ,.PRTINS
-                 LD      A,"-"
-                 OUT     (#98),A
-                 OUT     (#98),A
-                 JR      .INSDN
-.PRTINS          CALL    PRN2DEC
+                JR      NZ,.PRTINS
+                LD      A,"-"
+                OUT     (#98),A
+                OUT     (#98),A
+                JR      .INSDN
+.PRTINS          CP      10              ; SINGLE DIGIT (0..9)?
+                JR      NC,.DDIG
+                ADD     A,"0"           ; LEFT-JUSTIFY: DIGIT FIRST
+                OUT     (#98),A
+                LD      A," "
+                OUT     (#98),A
+                JR      .INSDN
+.DDIG           PUSH    AF              ; DOUBLE DIGIT (10..15)
+                LD      A,"1"
+                OUT     (#98),A
+                POP     AF
+                SUB     10
+                ADD     A,"0"
+                OUT     (#98),A
 .INSDN
 
-                 ; 6. WRITE 3 SPACES
-                 LD      A," "
-                 OUT     (#98),A
-                 OUT     (#98),A
-                 OUT     (#98),A
-                 
-                 ; 7. DRAW PERIOD (3 CHARS)
-                 LD      A,(TMPSTAT)
-                 CP      1               ; 1 = PLAYING
-                 JR      Z,.PRTPER
-                 
-                 ; INACTIVE / OVERRIDDEN: PRINT "---"
-                 LD      A,"-"
-                 OUT     (#98),A
-                 OUT     (#98),A
-                 OUT     (#98),A
-                 JR      .PERDN
-                 
+                ; 6. WRITE 3 SPACES
+                LD      A," "
+                OUT     (#98),A
+                OUT     (#98),A
+                OUT     (#98),A
+                
+                ; 7. DRAW PERIOD (3 CHARS)
+                LD      A,(TMPSTAT)
+                CP      1               ; 1 = PLAYING
+                JR      Z,.PRTPER
+                
+                ; INACTIVE / OVERRIDDEN: PRINT "---"
+                LD      A,"-"
+                OUT     (#98),A
+                OUT     (#98),A
+                OUT     (#98),A
+                JR      .PERDN
+                
 .PRTPER          LD      A,(TMPPERL)
-                 LD      L,A
-                 LD      A,(TMPPERH)
-                 LD      H,A
-                 CALL    PRNHEX12
+                LD      L,A
+                LD      A,(TMPPERH)
+                LD      H,A
+                CALL    PRNHEX12
 .PERDN
 
-                 ; 8. WRITE 2 SPACES
-                 LD      A," "
-                 OUT     (#98),A
-                 OUT     (#98),A
-                 
-                 ; 9. DRAW STATUS (4 CHARS)
-                 POP     HL              ; HL = STATUS STRING POINTER
-                 LD      A,(HL)
-                 OUT     (#98),A
-                 INC     HL
-                 LD      A,(HL)
-                 OUT     (#98),A
-                 INC     HL
-                 LD      A,(HL)
-                 OUT     (#98),A
-                 INC     HL
-                 LD      A,(HL)
-                 OUT     (#98),A
+                ; 8. WRITE 2 SPACES
+                LD      A," "
+                OUT     (#98),A
+                OUT     (#98),A
+                
+                ; 9. DRAW STATUS (4 CHARS)
+                POP     HL              ; HL = STATUS STRING POINTER
+                LD      A,(HL)
+                OUT     (#98),A
+                INC     HL
+                LD      A,(HL)
+                OUT     (#98),A
+                INC     HL
+                LD      A,(HL)
+                OUT     (#98),A
+                INC     HL
+                LD      A,(HL)
+                OUT     (#98),A
 
-                 ; UPDATE CACHE WITH CURRENT VALUES
-                 LD      A,(IX+CHIDX)
-                 LD      L,A
-                 LD      H,0
-                 LD      D,H
-                 LD      E,L
-                 ADD     HL,HL           ; C * 2
-                 LD      D,H
-                 LD      E,L
-                 ADD     HL,HL           ; C * 4
-                 ADD     HL,DE           ; C * 6
-                 LD      DE,CHCACHE
-                 ADD     HL,DE           ; HL = CHCACHE + C * 6
+                ; UPDATE CACHE WITH CURRENT VALUES
+                LD      A,(IX+CHIDX)
+                CALL    CHCADDR         ; HL = CHCACHE + A * 6
+                LD      A,(TMPSTAT)
+                LD      C,A             ; C = TMPSTAT (SAVE FOR REUSE)
 
-                 ; VOLUME
-                 LD      A,(TMPVOL)
-                 LD      (HL),A
-                 INC     HL
+                ; VOLUME
+                LD      A,(TMPVOL)
+                LD      (HL),A
+                INC     HL
 
-                 ; NOTE
-                 LD      A,(TMPNOTE)
-                 LD      (HL),A
-                 INC     HL
+                ; NOTE
+                LD      A,(TMPNOTE)
+                LD      (HL),A
+                INC     HL
 
-                 ; PERIOD LOW
-                 LD      A,(TMPSTAT)
-                 CP      1
-                 LD      A,(TMPPERL)
-                 JR      Z,.WRPEL
-                 XOR     A
+                ; PERIOD LOW
+                LD      A,C
+                CP      1
+                LD      A,(TMPPERL)
+                JR      Z,.WRPEL
+                XOR     A
 .WRPEL           LD      (HL),A
-                 INC     HL
- 
-                 ; PERIOD HIGH
-                 LD      A,(TMPSTAT)
-                 CP      1
-                 LD      A,(TMPPERH)
-                 JR      Z,.WRPEH
-                 XOR     A
-.WRPEH           LD      (HL),A
-                 INC     HL
- 
-                 ; STATUS CODE
-                 LD      A,(TMPSTAT)
-                 LD      (HL),A
+                INC     HL
 
-                 POP     IY
-                 POP     BC
+                ; PERIOD HIGH
+                LD      A,C
+                CP      1
+                LD      A,(TMPPERH)
+                JR      Z,.WRPEH
+                XOR     A
+.WRPEH           LD      (HL),A
+                INC     HL
+
+                ; STATUS CODE
+                LD      A,C
+                LD      (HL),A
+
+                POP     IY
+                POP     BC
 
 .CHADV           LD      DE,#20
-                 ADD     IY,DE           ; NEXT VRAM ROW
-                 LD      DE,CHSIZE
-                 ADD     IX,DE           ; NEXT CHANNEL STATE
-                 
-                 DEC     B
-                 JP      NZ,.CHLP
-                 
+                ADD     IY,DE           ; NEXT VRAM ROW
+                LD      DE,CHSIZE
+                ADD     IX,DE           ; NEXT CHANNEL STATE
+                
+                DEC     B
+                JP      NZ,.CHLP
+                
 .DONE           EI                      ; RE-ENABLE INTERRUPTS
-                 RET
+                RET
 
 .SOFF           DEFB    "OFF ", 0
 .SGHST          DEFB    "GHST", 0
@@ -1074,14 +1063,14 @@ GETBPM          LD      HL,(CHANNELS + CHBPM)
                 DJNZ    .S1
                 
                 ; MULTIPLY HL BY 75
-                LD      DE,0
+                LD      D,H
+                LD      E,L             ; DE = BPM_STEP INT
+                LD      HL,0
                 LD      B,75
-.M1             EX      HL,DE
-                ADD     HL,DE
-                EX      HL,DE
+.M1             ADD     HL,DE
                 DJNZ    .M1
-                
-                LD      A,D             ; A = DE / 256
+
+                LD      A,H             ; A = HIGH BYTE = APPROX BPM
                 RET
 
 
@@ -1260,7 +1249,7 @@ GETINSID        LD      A,H
 ; - IN: HL = 12-BIT VALUE
 ; -     VRAM TARGET ADDRESS SET PRIOR
 ; - OUT: NONE
-; - CLOBBERS: A, B
+; - CLOBBERS: A
 ; -
 
 PRNHEX12        ; FIRST DIGIT: LOWER 4 BITS OF H
@@ -1289,6 +1278,27 @@ PRNHEX12        ; FIRST DIGIT: LOWER 4 BITS OF H
                 RET
 .DIGIT          ADD     A,"0"
                 OUT     (#98),A
+                RET
+
+
+; - CHCADDR ---------------------------
+; - COMPUTE CHCACHE ENTRY ADDRESS FOR CHANNEL INDEX
+; - IN: A = CHANNEL INDEX (0..5)
+; - OUT: HL = CHCACHE + A*6
+; - CLOBBERS: DE, HL
+; -
+
+CHCADDR         LD      L,A
+                LD      H,0
+                LD      D,H
+                LD      E,L             ; DE = A
+                ADD     HL,HL           ; A * 2
+                LD      D,H
+                LD      E,L             ; DE = A * 2
+                ADD     HL,HL           ; A * 4
+                ADD     HL,DE           ; A * 6
+                LD      DE,CHCACHE
+                ADD     HL,DE           ; HL = CHCACHE + A * 6
                 RET
 
 
@@ -1334,7 +1344,7 @@ STRPLAY3        DEFB    "                  VOL : ", 0
 STRPLAY4        DEFB    "                  LOOP: ", 0
 STRPLAY5        DEFB    "                  STAT: ", 0
 STRPLAY6        DEFB    "                  FADE: ", 0
-STRCHHDR        DEFB    "CH TY VOL   NOTE INS  PER  STAT ", 0
+STRCHHDR        DEFB    "CH TY VOL   NOT  IN   PER  STAT ", 0
 STRCH0          DEFB    "0A MU ", 0
 STRCH1          DEFB    "1B MU ", 0
 STRCH2          DEFB    "2C MU ", 0
@@ -1447,7 +1457,7 @@ VRAMDATA        INCBIN  "VRAM.BIN"
 KEYPREV         DEFS    4
 SONGPREV        DEFS    2
 STATPREV        DEFS    1
-MSTFLDPRV       DEFS    1
+MSTFLPRV       DEFS    1
 FRAMECNT        DEFS    1
 INSCACHE        DEFS    6
 INSTPTRS        DEFS    12
@@ -1459,7 +1469,7 @@ TMPPERH         DEFS    1
 BPMPREV         DEFS    1
 VOLPREV         DEFS    1
 LOOPPREV        DEFS    1
-LIMITPREV       DEFS    1
-FADSPPREV       DEFS    1
-FADVLPREV       DEFS    1
+LMTPREV       DEFS    1
+FADSPPRV       DEFS    1
+FADVLPRV       DEFS    1
 CHCACHE         DEFS    36
