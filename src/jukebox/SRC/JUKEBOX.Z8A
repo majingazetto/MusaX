@@ -170,8 +170,10 @@ ROMINIT         DI
 .LOOP           HALT
                 DI
                 CALL    POLLKEY         ; POLL KEYBOARD FOR ACTIONS
-                CALL    DRAWUI          ; DRAW GRAPHICAL DASHBOARD
+                CALL    MUSUPDAT        ; UPDATE AUDIO SEQUENCE
+                CALL    APPLYMUTE       ; OVERRIDE MUTED CHANNELS IN PSGREG
                 EI
+                CALL    DRAWUI          ; DRAW GRAPHICAL DASHBOARD
                 JP      .LOOP
 
 
@@ -256,15 +258,10 @@ LDIRVM          PUSH    BC
 ; - OVERRIDE PSG REGISTERS FOR MUTED CHANNELS
 ; - IN: NONE
 ; - OUT: NONE
-; - CLOBBERS: NONE
+; - CLOBBERS: ALL
 ; -
 
-APPLYMUTE       PUSH    AF
-                PUSH    BC
-                PUSH    DE
-                PUSH    HL
-
-                LD      A,(SFXMSK)
+APPLYMUTE       LD      A,(SFXMSK)
                 LD      C,A             ; C = SFXMSK
                 LD      A,(MUTEMSK)
                 LD      B,A             ; B = MUTEMSK
@@ -314,15 +311,11 @@ APPLYMUTE       PUSH    AF
                 OR      #24             ; DISABLE TONE C AND NOISE C
                 LD      (PSGREG + 7),A
 
-.DONE           POP     HL
-                POP     DE
-                POP     BC
-                POP     AF
-                RET
+.DONE           RET
 
 
 ; - IRQINT -----------------------------
-; - VBLANK IRQ HANDLER FOR MUSAX UPDATE
+; - VBLANK IRQ HANDLER FOR VRAM DUMP AND PSG COMMIT
 ; - IN: NONE
 ; - OUT: NONE
 ; - CLOBBERS: NONE
@@ -344,9 +337,7 @@ IRQINT          ; CHECK IF SCREEN BUFFER IS DIRTY
                 XOR     A
                 LD      (SCRDIRTY),A
        
-.CONT           CALL    MUSUPDAT        ; UPDATE ENGINE SEQUENCER
-                CALL    APPLYMUTE       ; OVERRIDE MUTED CHANNELS IN PSGREG
-                JP      MUSCOMM         ; COMMIT REGISTERS TO PHYSICAL PSG
+.CONT           JP      MUSCOMM         ; COMMIT REGISTERS TO PHYSICAL PSG
 
 
 ; - POLLKEY ----------------------------
@@ -612,15 +603,21 @@ LOGO            ; DRAW SPLASH TEXT
 ; - CLOBBERS: A, HL, DE
 ; -
 
-PUTSTR          EX      DE,HL
-                CALL    SETWRT
-                EX      DE,HL
+PUTSTR          EX      DE,HL           ; DE = STR, HL = VRAM ADDR
+                CALL    SETWRT          ; Sets (BUFADR)
+                EX      DE,HL           ; HL = STR, DE = VRAM ADDR
+                PUSH    BC
+                LD      DE,(BUFADR)     ; DE = RAM buffer pointer
 .LOOP           LD      A,(HL)
                 OR      A
-                RET     Z
-                CALL    WRTCHR
+                JR      Z,.DONE
+                LD      (DE),A
+                INC     DE
                 INC     HL
-                JP      .LOOP
+                JR      .LOOP
+.DONE           LD      (BUFADR),DE
+                POP     BC
+                RET
 
 
 ; - SETWRT -----------------------------
@@ -655,13 +652,6 @@ WRTCHR          PUSH    HL
                 LD      (HL),A
                 INC     HL
                 LD      (BUFADR),HL
-
-                ; SET SCREEN BUFFER DIRTY FLAG
-                PUSH    AF
-                LD      A,1
-                LD      (SCRDIRTY),A
-                POP     AF
-
                 POP     HL
                 RET
 
@@ -724,8 +714,6 @@ DRAWUI          ; 0. FRAME THROTTLE: ONLY DRAW EVERY 2 FRAMES
                 LD      A,(HL)
                 BIT     0,A
                 RET     NZ
-
-                DI              ; DISABLE INTERRUPTS DURING VRAM WRITES
 
                 ; 1. DRAW SONG NAME
                 LD      A,(MUSSTAT)
@@ -1120,17 +1108,23 @@ DRAWUI          ; 0. FRAME THROTTLE: ONLY DRAW EVERY 2 FRAMES
                 CALL    DRAWBAR         ; WRITES 5 CHARS
                 
                 ; 2. WRITE 1 SPACE
-                LD      A," "
-                CALL    WRTCHR
+                LD      HL,(BUFADR)
+                LD      (HL)," "
+                INC     HL
+                LD      (BUFADR),HL
                 
                 ; 3. DRAW NOTE NAME (3 CHARS)
                 LD      A,(TMPNOTE)
                 CP      255
                 JR      NZ,.PRTNOTE
-                LD      A,"-"
-                CALL    WRTCHR
-                CALL    WRTCHR
-                CALL    WRTCHR
+                LD      HL,(BUFADR)
+                LD      (HL),"-"
+                INC     HL
+                LD      (HL),"-"
+                INC     HL
+                LD      (HL),"-"
+                INC     HL
+                LD      (BUFADR),HL
                 JR      .NOTEDN
 .PRTNOTE        LD      L,A
                 LD      H,0
@@ -1139,21 +1133,31 @@ DRAWUI          ; 0. FRAME THROTTLE: ONLY DRAW EVERY 2 FRAMES
                 ADD     HL,HL
                 ADD     HL,DE           ; HL = A * 3
                 LD      DE,NOTENAM
-                ADD     HL,DE
+                ADD     HL,DE           ; HL = note name string pointer
+                
+                ; Copy 3 chars directly from HL to BUFADR
+                LD      DE,(BUFADR)
                 LD      A,(HL)
-                CALL    WRTCHR
+                LD      (DE),A
+                INC     DE
                 INC     HL
                 LD      A,(HL)
-                CALL    WRTCHR
+                LD      (DE),A
+                INC     DE
                 INC     HL
                 LD      A,(HL)
-                CALL    WRTCHR
+                LD      (DE),A
+                INC     DE
+                LD      (BUFADR),DE
 .NOTEDN
 
                 ; 4. WRITE 2 SPACES
-                LD      A," "
-                CALL    WRTCHR
-                CALL    WRTCHR
+                LD      HL,(BUFADR)
+                LD      (HL)," "
+                INC     HL
+                LD      (HL)," "
+                INC     HL
+                LD      (BUFADR),HL
                 
                 ; 5. DRAW INSTRUMENT ID (2 CHARS)
                 LD      A,(TMPSTAT)
@@ -1222,33 +1226,47 @@ DRAWUI          ; 0. FRAME THROTTLE: ONLY DRAW EVERY 2 FRAMES
                 POP     AF
                 LD      (HL),A          ; UPDATE CACHED ID
                 
-.INSVAL          CP      255
+.INSVAL          LD      DE,(BUFADR)
+                CP      255
                 JR      NZ,.PRTINS
                 LD      A,"-"
-                CALL    WRTCHR
-                CALL    WRTCHR
+                LD      (DE),A
+                INC     DE
+                LD      (DE),A
+                INC     DE
+                LD      (BUFADR),DE
                 JR      .INSDN
 .PRTINS          CP      10              ; SINGLE DIGIT (0..9)?
                 JR      NC,.DDIG
                 ADD     A,"0"           ; LEFT-JUSTIFY: DIGIT FIRST
-                CALL    WRTCHR
+                LD      (DE),A
+                INC     DE
                 LD      A," "
-                CALL    WRTCHR
+                LD      (DE),A
+                INC     DE
+                LD      (BUFADR),DE
                 JR      .INSDN
-.DDIG           PUSH    AF              ; DOUBLE DIGIT (10..15)
+.DDIG           LD      H,A
                 LD      A,"1"
-                CALL    WRTCHR
-                POP     AF
+                LD      (DE),A
+                INC     DE
+                LD      A,H
                 SUB     10
                 ADD     A,"0"
-                CALL    WRTCHR
+                LD      (DE),A
+                INC     DE
+                LD      (BUFADR),DE
 .INSDN
 
                 ; 6. WRITE 3 SPACES
-                LD      A," "
-                CALL    WRTCHR
-                CALL    WRTCHR
-                CALL    WRTCHR
+                LD      HL,(BUFADR)
+                LD      (HL)," "
+                INC     HL
+                LD      (HL)," "
+                INC     HL
+                LD      (HL)," "
+                INC     HL
+                LD      (BUFADR),HL
                 
                 ; 7. DRAW PERIOD (3 CHARS)
                 LD      A,(TMPSTAT)
@@ -1256,10 +1274,14 @@ DRAWUI          ; 0. FRAME THROTTLE: ONLY DRAW EVERY 2 FRAMES
                 JR      Z,.PRTPER
                 
                 ; INACTIVE / OVERRIDDEN: PRINT "---"
-                LD      A,"-"
-                CALL    WRTCHR
-                CALL    WRTCHR
-                CALL    WRTCHR
+                LD      HL,(BUFADR)
+                LD      (HL),"-"
+                INC     HL
+                LD      (HL),"-"
+                INC     HL
+                LD      (HL),"-"
+                INC     HL
+                LD      (BUFADR),HL
                 JR      .PERDN
                 
 .PRTPER          LD      A,(TMPPERL)
@@ -1270,23 +1292,32 @@ DRAWUI          ; 0. FRAME THROTTLE: ONLY DRAW EVERY 2 FRAMES
 .PERDN
 
                 ; 8. WRITE 2 SPACES
-                LD      A," "
-                CALL    WRTCHR
-                CALL    WRTCHR
+                LD      HL,(BUFADR)
+                LD      (HL)," "
+                INC     HL
+                LD      (HL)," "
+                INC     HL
+                LD      (BUFADR),HL
                 
                 ; 9. DRAW STATUS (4 CHARS)
                 POP     HL              ; HL = STATUS STRING POINTER
+                LD      DE,(BUFADR)
                 LD      A,(HL)
-                CALL    WRTCHR
+                LD      (DE),A
+                INC     DE
                 INC     HL
                 LD      A,(HL)
-                CALL    WRTCHR
+                LD      (DE),A
+                INC     DE
                 INC     HL
                 LD      A,(HL)
-                CALL    WRTCHR
+                LD      (DE),A
+                INC     DE
                 INC     HL
                 LD      A,(HL)
-                CALL    WRTCHR
+                LD      (DE),A
+                INC     DE
+                LD      (BUFADR),DE
 
                 ; UPDATE CACHE WITH CURRENT VALUES
                 LD      A,(IX+CHIDX)
@@ -1337,7 +1368,8 @@ DRAWUI          ; 0. FRAME THROTTLE: ONLY DRAW EVERY 2 FRAMES
                 DEC     B
                 JP      NZ,.CHLP
                 
-.DONE           EI                      ; RE-ENABLE INTERRUPTS
+.DONE           LD      A,1
+                LD      (SCRDIRTY),A
                 RET
 
 .SOFF           DEFB    "OFF ", 0
@@ -1398,10 +1430,21 @@ PRN2DEC         LD      B,0
                 ADD     A,"0"
                 JR      .TNSWR
 .TNSSP          LD      A," "           ; SPACE PADDING FOR TENS
-.TNSWR          CALL    WRTCHR
-                POP     AF
-                ADD     A,"0"
-                CALL    WRTCHR
+.TNSWR          LD      H,A             ; H = TENS CHAR
+                POP     AF              ; A = ONES VALUE
+                ADD     A,"0"           ; A = ONES CHAR
+                LD      L,A             ; L = ONES CHAR
+                
+                PUSH    DE
+                LD      DE,(BUFADR)
+                LD      A,H
+                LD      (DE),A
+                INC     DE
+                LD      A,L
+                LD      (DE),A
+                INC     DE
+                LD      (BUFADR),DE
+                POP     DE
                 RET
 
 
@@ -1468,6 +1511,7 @@ DEC2STR         LD      C,A
 
 DRAWBAR         ADD     A,A             ; A = VOL * 2 (0..30 PIXELS)
                 LD      C,5             ; 5 CHARACTER COLUMNS
+                LD      HL,(BUFADR)
 .LOOP           SUB     8
                 JR      C,.PARTIAL
                 
@@ -1475,7 +1519,8 @@ DRAWBAR         ADD     A,A             ; A = VOL * 2 (0..30 PIXELS)
                 LD      D,A             ; SAVE REMAINDER
                 LD      A,B
                 ADD     A,8             ; BASE + 8 (FULL BLOCK)
-                CALL    WRTCHR
+                LD      (HL),A
+                INC     HL
                 LD      A,D             ; RESTORE REMAINDER
                 DEC     C
                 JR      NZ,.LOOP
@@ -1486,20 +1531,25 @@ DRAWBAR         ADD     A,A             ; A = VOL * 2 (0..30 PIXELS)
                 
                 ; DRAW PARTIAL BLOCK
                 ADD     A,B             ; BASE + REMAINDER
-                CALL    WRTCHR
+                LD      (HL),A
+                INC     HL
                 DEC     C
                 JR      Z,.DONE
-.EMPTYLP        LD      A," "           ; SPACE
-                CALL    WRTCHR
+.EMPTYLP        LD      (HL)," "        ; SPACE
+                INC     HL
                 DEC     C
                 JR      NZ,.EMPTYLP
-.DONE           RET
+.DONE           LD      (BUFADR),HL
+                RET
 
-.EMPTY          LD      A," "           ; SPACE
-                CALL    WRTCHR
+.EMPTY          LD      (HL)," "        ; SPACE
+                INC     HL
                 DEC     C
                 JR      NZ,.EMPTY
+                LD      (BUFADR),HL
                 RET
+
+
 
 
 ; - GETINSID ---------------------------
@@ -1556,10 +1606,15 @@ GETINSID        LD      A,H
 ; - CLOBBERS: A
 ; -
 
-PRNHEX12        ; FIRST DIGIT: LOWER 4 BITS OF H
+PRNHEX12        PUSH    DE
+                LD      DE,(BUFADR)
+                
+                ; FIRST DIGIT: LOWER 4 BITS OF H
                 LD      A,H
                 AND     #0F
-                CALL    .PRNCHAR
+                CALL    .HEXCHAR
+                LD      (DE),A
+                INC     DE
                 
                 ; SECOND DIGIT: UPPER 4 BITS OF L
                 LD      A,L
@@ -1567,21 +1622,26 @@ PRNHEX12        ; FIRST DIGIT: LOWER 4 BITS OF H
                 SRL     A
                 SRL     A
                 SRL     A
-                CALL    .PRNCHAR
+                CALL    .HEXCHAR
+                LD      (DE),A
+                INC     DE
                 
                 ; THIRD DIGIT: LOWER 4 BITS OF L
                 LD      A,L
                 AND     #0F
-                CALL    .PRNCHAR
+                CALL    .HEXCHAR
+                LD      (DE),A
+                INC     DE
+                
+                LD      (BUFADR),DE
+                POP     DE
                 RET
 
-.PRNCHAR        CP      10
+.HEXCHAR        CP      10
                 JR      C,.DIGIT
                 ADD     A,"A" - 10
-                CALL    WRTCHR
                 RET
 .DIGIT          ADD     A,"0"
-                CALL    WRTCHR
                 RET
 
 
