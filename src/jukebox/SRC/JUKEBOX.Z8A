@@ -1102,6 +1102,7 @@ DRAWUI          ; 1. DRAW SONG NAME (CACHED)
                 ; COMPARE CURRENT WITH CACHE
                 LD      A,(IX+CHIDX)
                 CALL    CHCADDR         ; HL = CHCACHE + A * 6
+                LD      (CACHEBP),HL    ; CACHE BASE PTR FOR REUSE AT WRITE-BACK
 
                 ; COMPARE VOLUME
                 LD      A,(TMPVOL)
@@ -1138,184 +1139,112 @@ DRAWUI          ; 1. DRAW SONG NAME (CACHED)
                 POP     BC
                 JP      .CHADV
 
-.DIRTY           ; CACHE MISS! DRAW ROW
-                ; VRAM ADDRESS SET TO IY + 6
+.DIRTY          ; CACHE MISS! DRAW ROW
+                ; COMPUTE PERSISTENT SCRBUFF WRITE POINTER (HL) FROM IY + 6
                 PUSH    IY
-                POP     HL              ; HL = IY
+                POP     HL              ; HL = IY (VRAM ADDR)
                 LD      DE,6
-                ADD     HL,DE           ; HL = IY + 6
-                CALL    SETWRT
-                
+                ADD     HL,DE           ; HL = IY + 6 (VRAM COL 6)
+                LD      DE,#1800
+                OR      A
+                SBC     HL,DE           ; HL = OFFSET FROM #1800
+                LD      DE,SCRBUFF
+                ADD     HL,DE           ; HL = SCRBUFF + OFFSET (PERSISTENT WRITE PTR)
+
                 ; 1. DRAW VOLUME BAR (5 CHARS)
-                LD      C,(IX+CHIDX)
+                LD      A,(IX+CHIDX)
                 LD      B,#E0           ; BASE FOR MUSIC
-                LD      A,C
                 CP      3
                 JR      C,.BAROK
                 LD      B,#F0           ; BASE FOR SFX
 .BAROK          LD      A,(TMPVOL)
-                CALL    DRAWBAR         ; WRITES 5 CHARS
-                
+                CALL    DRAWBAR         ; HL ADVANCES BY 5
+
                 ; 2. WRITE 1 SPACE
-                LD      HL,(BUFADR)
                 LD      (HL)," "
                 INC     HL
-                LD      (BUFADR),HL
                 
                 ; 3. DRAW NOTE NAME (3 CHARS)
                 LD      A,(TMPNOTE)
                 CP      255
                 JR      NZ,.PRTNOTE
-                LD      HL,(BUFADR)
                 LD      (HL),"-"
                 INC     HL
                 LD      (HL),"-"
                 INC     HL
                 LD      (HL),"-"
                 INC     HL
-                LD      (BUFADR),HL
                 JR      .NOTEDN
-.PRTNOTE        LD      L,A
-                LD      H,0
-                LD      D,H
-                LD      E,L
+.PRTNOTE        ; A = NOTE ID. COMPUTE SRC = NOTENAM + A*3; COPY 3 CHARS VIA LDI.
+                LD      C,A
+                LD      B,0
+                EX      DE,HL           ; DE = WRITE PTR; HL FREE FOR SRC CALC
+                LD      L,C
+                LD      H,B
                 ADD     HL,HL
-                ADD     HL,DE           ; HL = A * 3
-                LD      DE,NOTENAM
-                ADD     HL,DE           ; HL = note name string pointer
-                
-                ; Copy 3 chars directly from HL to BUFADR
-                LD      DE,(BUFADR)
-                LD      A,(HL)
-                LD      (DE),A
-                INC     DE
-                INC     HL
-                LD      A,(HL)
-                LD      (DE),A
-                INC     DE
-                INC     HL
-                LD      A,(HL)
-                LD      (DE),A
-                INC     DE
-                LD      (BUFADR),DE
+                ADD     HL,BC           ; HL = A*3
+                LD      BC,NOTENAM
+                ADD     HL,BC           ; HL = NOTENAM + A*3 (SRC)
+                LDI                     ; (DE)<-(HL); HL++; DE++ (BC IRRELEVANT)
+                LDI
+                LDI
+                EX      DE,HL           ; HL = WRITE PTR + 3
 .NOTEDN
 
                 ; 4. WRITE 2 SPACES
-                LD      HL,(BUFADR)
                 LD      (HL)," "
                 INC     HL
                 LD      (HL)," "
                 INC     HL
-                LD      (BUFADR),HL
-                
+
                 ; 5. DRAW INSTRUMENT ID (2 CHARS)
                 LD      A,(TMPSTAT)
                 CP      1
-                JR      Z,.INSCHK
-                
-                LD      A,255
-                JR      .INSVAL
-                
-.INSCHK          LD      L,(IX+CHINST)
-                LD      H,(IX+CHINST+1) ; HL = CURRENT POINTER
-                LD      C,(IX+CHIDX)    ; C = CHANNEL INDEX
-                
-                ; COMPARE HL WITH CACHED POINTER AT INSTPTRS + C * 2
-                LD      A,C
-                ADD     A,A             ; A = C * 2
+                JR      NZ,.INSOFF
+
+                ; READ INSID[CHIDX] (DRIVER-MAINTAINED); HL PRESERVED VIA STACK
+                PUSH    HL
+                LD      A,(IX+CHIDX)
                 LD      E,A
                 LD      D,0
-                
-                PUSH    HL              ; SAVE CURRENT POINTER HL
-                LD      HL,INSTPTRS
-                ADD     HL,DE           ; HL = CACHED POINTER ADDR
+                LD      HL,INSID
+                ADD     HL,DE
                 LD      A,(HL)
-                INC     HL
-                LD      H,(HL)
-                LD      L,A             ; HL = CACHED POINTER
-                
-                POP     DE              ; DE = CURRENT POINTER
-                OR      A
-                SBC     HL,DE           ; COMPARE
-                JR      NZ,.MIS
-                
-                ; CACHE HIT
-                LD      E,C
-                LD      D,0
-                LD      HL,INSCACHE
-                ADD     HL,DE
-                LD      A,(HL)          ; A = CACHED ID
+                POP     HL
                 JR      .INSVAL
-                
-.MIS             ; CACHE MISS
-                LD      L,E
-                LD      H,D             ; HL = CURRENT POINTER (FROM DE)
-                PUSH    BC              ; PRESERVE C = CHANNEL INDEX
-                CALL    GETINSID        ; A = RESOLVED ID (CLOBBERS BC, DE, HL)
-                POP     BC              ; C = CHANNEL INDEX RESTORED
 
-                ; UPDATE CACHE (RE-READ IX+CHINST, AVOIDS PUSH/POP DE)
-                PUSH    AF              ; SAVE RESOLVED ID
-                LD      A,C
-                ADD     A,A             ; A = C * 2
-                LD      L,A
-                LD      H,0
-                LD      DE,INSTPTRS     ; DE = BASE (C NOT CLOBBERED)
-                ADD     HL,DE           ; HL = INSTPTRS + C*2
-                LD      A,(IX+CHINST)
-                LD      (HL),A          ; LOW BYTE OF CURRENT PTR
-                INC     HL
-                LD      A,(IX+CHINST+1)
-                LD      (HL),A          ; HIGH BYTE OF CURRENT PTR
+.INSOFF         LD      A,255
 
-                LD      E,C
-                LD      D,0
-                LD      HL,INSCACHE
-                ADD     HL,DE
-                POP     AF
-                LD      (HL),A          ; UPDATE CACHED ID
-                
-.INSVAL          LD      DE,(BUFADR)
-                CP      255
+.INSVAL         CP      255
                 JR      NZ,.PRTINS
-                LD      A,"-"
-                LD      (DE),A
-                INC     DE
-                LD      (DE),A
-                INC     DE
-                LD      (BUFADR),DE
+                LD      (HL),"-"
+                INC     HL
+                LD      (HL),"-"
+                INC     HL
                 JR      .INSDN
-.PRTINS          CP      10              ; SINGLE DIGIT (0..9)?
+.PRTINS         CP      10              ; SINGLE DIGIT (0..9)?
                 JR      NC,.DDIG
                 ADD     A,"0"           ; LEFT-JUSTIFY: DIGIT FIRST
-                LD      (DE),A
-                INC     DE
-                LD      A," "
-                LD      (DE),A
-                INC     DE
-                LD      (BUFADR),DE
+                LD      (HL),A
+                INC     HL
+                LD      (HL)," "
+                INC     HL
                 JR      .INSDN
-.DDIG           LD      H,A
-                LD      A,"1"
-                LD      (DE),A
-                INC     DE
-                LD      A,H
+.DDIG           LD      (HL),"1"
+                INC     HL
                 SUB     10
                 ADD     A,"0"
-                LD      (DE),A
-                INC     DE
-                LD      (BUFADR),DE
+                LD      (HL),A
+                INC     HL
 .INSDN
 
                 ; 6. WRITE 3 SPACES
-                LD      HL,(BUFADR)
                 LD      (HL)," "
                 INC     HL
                 LD      (HL)," "
                 INC     HL
                 LD      (HL)," "
                 INC     HL
-                LD      (BUFADR),HL
                 
                 ; 7. DRAW PERIOD (3 CHARS)
                 LD      A,(TMPSTAT)
@@ -1323,54 +1252,38 @@ DRAWUI          ; 1. DRAW SONG NAME (CACHED)
                 JR      Z,.PRTPER
                 
                 ; INACTIVE / OVERRIDDEN: PRINT "---"
-                LD      HL,(BUFADR)
                 LD      (HL),"-"
                 INC     HL
                 LD      (HL),"-"
                 INC     HL
                 LD      (HL),"-"
                 INC     HL
-                LD      (BUFADR),HL
                 JR      .PERDN
                 
-.PRTPER          LD      A,(TMPPERL)
-                LD      L,A
+.PRTPER         LD      A,(TMPPERL)
+                LD      E,A
                 LD      A,(TMPPERH)
-                LD      H,A
-                CALL    PRNHEX12
+                LD      D,A
+                CALL    PRNHEX12        ; HL=WRITE PTR, DE=VALUE; HL ADVANCES BY 3
 .PERDN
 
                 ; 8. WRITE 2 SPACES
-                LD      HL,(BUFADR)
                 LD      (HL)," "
                 INC     HL
                 LD      (HL)," "
                 INC     HL
-                LD      (BUFADR),HL
-                
-                ; 9. DRAW STATUS (4 CHARS)
-                POP     HL              ; HL = STATUS STRING POINTER
-                LD      DE,(BUFADR)
-                LD      A,(HL)
-                LD      (DE),A
-                INC     DE
-                INC     HL
-                LD      A,(HL)
-                LD      (DE),A
-                INC     DE
-                INC     HL
-                LD      A,(HL)
-                LD      (DE),A
-                INC     DE
-                INC     HL
-                LD      A,(HL)
-                LD      (DE),A
-                INC     DE
-                LD      (BUFADR),DE
 
-                ; UPDATE CACHE WITH CURRENT VALUES
-                LD      A,(IX+CHIDX)
-                CALL    CHCADDR         ; HL = CHCACHE + A * 6
+                ; 9. DRAW STATUS (4 CHARS) - LDI COPY FROM (DE) TO (HL)
+                POP     DE              ; DE = STATUS STRING SOURCE
+                EX      DE,HL           ; HL = SOURCE, DE = WRITE PTR
+                LDI
+                LDI
+                LDI
+                LDI
+                EX      DE,HL           ; HL = WRITE PTR + 4
+
+                ; UPDATE CACHE WITH CURRENT VALUES (BASE PTR CACHED EARLIER)
+                LD      HL,(CACHEBP)    ; HL = CHCACHE + CHIDX * 6 (FROM COMPARE)
                 LD      A,(TMPSTAT)
                 LD      C,A             ; C = TMPSTAT (SAVE FOR REUSE)
 
@@ -1553,17 +1466,16 @@ DEC2STR         LD      C,A
 ; - DRAW VOLUME BAR (5 CHARACTERS)
 ; - IN: A = VOLUME (0..15)
 ; -     B = CHAR BASE (#E0 FOR MUSIC, #F0 FOR SFX)
-; -     VRAM TARGET ADDRESS SET PRIOR
-; - OUT: NONE
-; - CLOBBERS: ALL
+; -     HL = WRITE POINTER (SCRBUFF)
+; - OUT: HL = HL + 5
+; - CLOBBERS: A, C, D
 ; -
 
 DRAWBAR         ADD     A,A             ; A = VOL * 2 (0..30 PIXELS)
                 LD      C,5             ; 5 CHARACTER COLUMNS
-                LD      HL,(BUFADR)
 .LOOP           SUB     8
                 JR      C,.PARTIAL
-                
+
                 ; DRAW FULL BLOCK
                 LD      D,A             ; SAVE REMAINDER
                 LD      A,B
@@ -1577,120 +1489,68 @@ DRAWBAR         ADD     A,A             ; A = VOL * 2 (0..30 PIXELS)
 
 .PARTIAL        ADD     A,8             ; RESTORE REMAINDER (0..7)
                 JR      Z,.EMPTY
-                
+
                 ; DRAW PARTIAL BLOCK
                 ADD     A,B             ; BASE + REMAINDER
                 LD      (HL),A
                 INC     HL
                 DEC     C
-                JR      Z,.DONE
+                RET     Z
 .EMPTYLP        LD      (HL)," "        ; SPACE
                 INC     HL
                 DEC     C
                 JR      NZ,.EMPTYLP
-.DONE           LD      (BUFADR),HL
                 RET
 
 .EMPTY          LD      (HL)," "        ; SPACE
                 INC     HL
                 DEC     C
                 JR      NZ,.EMPTY
-                LD      (BUFADR),HL
                 RET
 
 
-
-
-; - GETINSID ---------------------------
-; - GET INSTRUMENT ID FROM POINTER
-; - IN: HL = INSTRUMENT POINTER
-; -     C = CHANNEL INDEX (0..5)
-; - OUT: A = INSTRUMENT ID (0..15), OR 255 IF NONE
-; - CLOBBERS: BC, DE, HL
-; -
-
-GETINSID        LD      A,H
-                OR      L
-                JR      Z,.NONE         ; IF POINTER IS 0, RETURN 255
-                
-                ; CHOOSE TABLE POINTER
-                LD      A,C
-                CP      3
-                JR      NC,.FX
-                LD      DE,(INSTTBL)
-                JR      .SEARCH
-.FX             LD      DE,(FXINST)
-
-.SEARCH         ; SEARCH THE TABLE FOR THE POINTER HL
-                LD      B,16            ; MAX 16 INSTRUMENTS
-                LD      C,0             ; CURRENT ID
-.LOOP           LD      A,D
-                OR      E
-                JR      Z,.NONE         ; IF TABLE POINTER IS 0, END
-                
-                LD      A,(DE)
-                CP      L
-                JR      NZ,.NEXT
-                INC     DE
-                LD      A,(DE)
-                CP      H
-                DEC     DE
-                JR      Z,.FOUND        ; MATCH FOUND!
-                
-.NEXT           INC     DE
-                INC     DE              ; NEXT ENTRY
-                INC     C
-                DJNZ    .LOOP
-.NONE           LD      A,255
-                RET
-.FOUND          LD      A,C
-                RET
 
 
 ; - PRNHEX12 ---------------------------
-; - PRINT 12-BIT HEX VALUE (3 DIGITS)
-; - IN: HL = 12-BIT VALUE
-; -     VRAM TARGET ADDRESS SET PRIOR
-; - OUT: NONE
-; - CLOBBERS: A
+; - PRINT 12-BIT HEX VALUE (3 DIGITS) VIA HEXTBL LOOKUP
+; - IN: HL = WRITE POINTER (SCRBUFF)
+; -     DE = 12-BIT VALUE (D[3:0] HIGH NIBBLE, E = LOW BYTE)
+; - OUT: HL = HL + 3
+; - CLOBBERS: A, BC
 ; -
 
-PRNHEX12        PUSH    DE
-                LD      DE,(BUFADR)
-                
-                ; FIRST DIGIT: LOWER 4 BITS OF H
-                LD      A,H
-                AND     #0F
-                CALL    .HEXCHAR
-                LD      (DE),A
-                INC     DE
-                
-                ; SECOND DIGIT: UPPER 4 BITS OF L
-                LD      A,L
-                SRL     A
-                SRL     A
-                SRL     A
-                SRL     A
-                CALL    .HEXCHAR
-                LD      (DE),A
-                INC     DE
-                
-                ; THIRD DIGIT: LOWER 4 BITS OF L
-                LD      A,L
-                AND     #0F
-                CALL    .HEXCHAR
-                LD      (DE),A
-                INC     DE
-                
-                LD      (BUFADR),DE
-                POP     DE
-                RET
+PRNHEX12        LD      B,HIGH HEXTBL   ; B = HEXTBL HIGH BYTE (CONST)
 
-.HEXCHAR        CP      10
-                JR      C,.DIGIT
-                ADD     A,"A" - 10
-                RET
-.DIGIT          ADD     A,"0"
+                ; FIRST DIGIT: LOWER 4 BITS OF D
+                LD      A,D
+                AND     #0F
+                OR      LOW HEXTBL      ; A = HEXTBL LOW BYTE | NIBBLE
+                LD      C,A
+                LD      A,(BC)
+                LD      (HL),A
+                INC     HL
+
+                ; SECOND DIGIT: UPPER 4 BITS OF E (NIBBLE SWAP VIA RRCA × 4)
+                LD      A,E
+                RRCA
+                RRCA
+                RRCA
+                RRCA
+                AND     #0F
+                OR      LOW HEXTBL
+                LD      C,A
+                LD      A,(BC)
+                LD      (HL),A
+                INC     HL
+
+                ; THIRD DIGIT: LOWER 4 BITS OF E
+                LD      A,E
+                AND     #0F
+                OR      LOW HEXTBL
+                LD      C,A
+                LD      A,(BC)
+                LD      (HL),A
+                INC     HL
                 RET
 
 
@@ -1887,6 +1747,11 @@ SNGNAMTB        DEFW    SHALOMCASTLE.HEADER, .SSHAL
 MUTEBIT         DEFB    #01, #02, #04, #08, #10, #20
 
 
+; --- HEX DIGIT LOOKUP (16-BYTE ALIGNED FOR FAST INDEXED ACCESS)
+                ALIGN   16
+HEXTBL          DEFB    "0123456789ABCDEF"
+
+
 SPLASH          DEFB    "MUSAX JUKEBOX V1.9", 0
 
 VRAMDATA        INCBIN  "VRAM.BIN"
@@ -1909,8 +1774,6 @@ NAMEPRV         DEFS    2
 STATPREV        DEFS    1
 MSTFLPRV       DEFS    1
 FRAMECNT        DEFS    1
-INSCACHE        DEFS    6
-INSTPTRS        DEFS    12
 TMPNOTE         DEFS    1
 TMPVOL          DEFS    1
 TMPSTAT         DEFS    1
@@ -1923,6 +1786,7 @@ LMTPREV       DEFS    1
 FADSPPRV       DEFS    1
 FADVLPRV       DEFS    1
 CHCACHE         DEFS    36
+CACHEBP         DEFS    2               ; CHCACHE BASE PTR FOR CURRENT CHANNEL (CACHED)
 BUFADR          DEFS    2
 SCRBUFF         DEFS    768
 SCRDIRTY        DEFS    1

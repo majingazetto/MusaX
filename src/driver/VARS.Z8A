@@ -10,6 +10,7 @@ MUSVARS
 ; --- CHANNEL STATES                    ----------------------------------------
 
 CHANNELS        DEFS    CHSIZE * 6
+INSID           DEFS    6               ; CURRENT INSTRUMENT ID PER CHANNEL (#FF = NONE)
 
 
 ; --- PSG SHADOW REGS                   ----------------------------------------

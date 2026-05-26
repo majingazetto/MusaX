@@ -44,6 +44,13 @@ MUSINIT         PUSH    AF
                 LD      BC,PSGSIZE - 1
                 LDIR
 
+                ; INITIALIZE INSID[6] TO #FF (NO INSTRUMENT RESOLVED)
+                LD      HL,INSID
+                LD      (HL),#FF
+                LD      DE,INSID + 1
+                LD      BC,5
+                LDIR
+
                 ; READ PHYSICAL R7 MIXER TO PRESERVE BITS 6-7 (I/O CONFIGURATION)
                 LD      A,7
                 OUT     (PSGADR),A
@@ -174,6 +181,17 @@ MUSPLAY         LD      (SONGLMT),A
                 
                 LD      A,15
                 LD      (IX + CHVOL),A
+
+                ; RESET INSID SLOT FOR THIS MUSIC CHANNEL
+                ; HL HOLDS THE SONG HEADER PTR (LIVE ACROSS CALLERS) — PRESERVE IT
+                PUSH    HL
+                LD      A,(IX + CHIDX)
+                LD      L,A
+                LD      H,0
+                LD      DE,INSID
+                ADD     HL,DE
+                LD      (HL),#FF
+                POP     HL
                 RET
 
 
@@ -344,6 +362,14 @@ FXPLAY          PUSH    AF
 .FXS1           LD      A,(PSGSFX + 7)
                 OR      B
                 LD      (PSGSFX + 7),A
+
+                ; RESET INSID SLOT FOR THIS INACTIVE FX CHANNEL
+                LD      A,(IX + CHIDX)
+                LD      L,A
+                LD      H,0
+                LD      DE,INSID
+                ADD     HL,DE
+                LD      (HL),#FF
                 RET
 
 .FXACT          LD      (IX + CHPC),E
@@ -389,6 +415,19 @@ FXPLAY          PUSH    AF
 .FXNOIN         LD      DE,0
 .FXSETIN        LD      (IX + CHINST),E
                 LD      (IX + CHINST + 1),D
+
+                ; UPDATE INSID: 0 IF INSTRUMENT RESOLVED, #FF IF NULL
+                LD      A,D
+                OR      E
+                LD      C,#FF
+                JR      Z,.FXII
+                LD      C,0
+.FXII           LD      A,(IX + CHIDX)
+                LD      L,A
+                LD      H,0
+                LD      DE,INSID
+                ADD     HL,DE
+                LD      (HL),C
                 RET
 
 
@@ -923,7 +962,19 @@ PROCEVT         LD      L,(IX + CHPC)
 
 .PI_SET         LD      (IX + CHINST),E
                 LD      (IX + CHINST + 1),D
-                
+
+                ; UPDATE INSID: C HOLDS REQUESTED ID; FORCE #FF IF NULL RESOLVED
+                LD      A,D
+                OR      E
+                JR      NZ,.PIIDOK
+                LD      C,#FF
+.PIIDOK         LD      A,(IX + CHIDX)
+                LD      L,A
+                LD      H,0
+                LD      DE,INSID
+                ADD     HL,DE
+                LD      (HL),C
+
                 POP     HL              ; RESTORE STREAM PC
                 JP      .FETCH
 
