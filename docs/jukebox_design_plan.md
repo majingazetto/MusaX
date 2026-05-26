@@ -141,15 +141,7 @@ graph TD
 The ISR hooked at `HTIMI` (`#FD9F`) remains extremely lightweight, performing only the physical PSG commit:
 ```assembly
 IRQINT:
-    PUSH    AF
-    PUSH    BC
-    PUSH    DE
-    PUSH    HL
     CALL    MUSCOMM      ; Commit merged shadow register buffer to physical PSG
-    POP     HL
-    POP     DE
-    POP     BC
-    POP     AF
     RET
 ```
 

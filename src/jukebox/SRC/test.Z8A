@@ -16,6 +16,13 @@ HKEYI           EQU     #FD9A           ; KEYBOARD INTERRUPT HOOK ADDRESS
 EXPTBL          EQU     #FCC1           ; BIOS EXPTBL ADDRESS
 ENASLT          EQU     #0024           ; BIOS ENABLE SLOT ENTRY POINT
 RSLREG          EQU     #0138           ; BIOS READ SLOT REGISTER ENTRY POINT
+ENASCR          EQU     #0044           ; BIOS ENABLE SCREEN
+CHGMOD          EQU     #005F           ; BIOS CHANGE SCREEN MODE
+CLS             EQU     #00C3           ; BIOS CLEAR SCREEN
+LDIRVM          EQU     #005C           ; BIOS BLOCK COPY RAM TO VRAM
+FORCLR          EQU     #F3E9           ; FOREGROUND COLOR RAM VARIABLE
+BAKCLR          EQU     #F3EA           ; BACKGROUND COLOR RAM VARIABLE
+CLIKSW          EQU     #F3DB           ; KEY CLICK SWITCH RAM VARIABLE
 
 
 ; --- MSX ROM HEADER                    ----------------------------------------
@@ -68,6 +75,28 @@ ROMINIT         DI
 .NOEXP          OR      C
                 LD      H,#80
                 CALL    ENASLT          ; ENABLE SLOT AT #8000-#BFFF
+
+                ; INITIALIZE SCREEN 1
+                LD      A,15            ; WHITE FOREGROUND
+                LD      (FORCLR),A
+                LD      HL,#0101        ; BLACK BACKGROUND AND BORDER
+                LD      (BAKCLR),HL
+                XOR     A
+                LD      (CLIKSW),A
+                LD      A,1             ; SCREEN 1
+                CALL    CHGMOD
+                CALL    CLS             ; CLEAR SCREEN
+
+                ; LOAD CUSTOM FONT/GRAPHICS BINARY FROM ROM TO VRAM (#0000)
+                LD      HL,VRAMDATA
+                LD      DE,#0000
+                LD      BC,2048         ; 256 CHARACTERS * 8 BYTES
+                CALL    LDIRVM
+
+                CALL    ENASCR          ; ENABLE DISPLAY
+
+                ; SHOW LOGO AND WAIT BEFORE PLAYBACK
+                CALL    LOGO
 
                 ; CLEAR RAM VARIABLES AREA (LDIR)
                 LD      HL,#E000
@@ -286,6 +315,60 @@ POLLKEY         ; --- PROCESS ROW 0 ---
                 RET
 
 
+; - LOGO -------------------------------
+; - SHOW SPLASH LOGO AND DELAY
+; - IN: NONE
+; - OUT: NONE
+; - CLOBBERS: ALL
+; -
+
+LOGO            ; DRAW SPLASH TEXT
+                LD      HL,SPLASH
+                LD      DE,#1AEE        ; BOTTOM RIGHT CORNER (ROW 23, COL 14)
+                CALL    PUTSTR
+
+                ; WAIT 2 SECONDS (120 INTERRUPTS AT 60HZ)
+                LD      B,120
+                EI                      ; ENABLE INTERRUPTS TO TICK VBLANK
+.WAIT           HALT                    ; WAIT FOR NEXT INTERRUPT
+                DJNZ    .WAIT
+                DI                      ; DISABLE INTERRUPTS
+                RET
+
+
+; - PUTSTR -----------------------------
+; - WRITE NULL-TERMINATED STRING TO VRAM
+; - IN: HL = STR ADDRESS, DE = VRAM ADDRESS
+; - OUT: NONE
+; - CLOBBERS: A, HL, DE
+; -
+
+PUTSTR          EX      DE,HL
+                CALL    SETWRT
+                EX      DE,HL
+.LOOP           LD      A,(HL)
+                OR      A
+                RET     Z
+                OUT     (#98),A
+                INC     HL
+                JP      .LOOP
+
+
+; - SETWRT -----------------------------
+; - SET VDP WRITE ADDRESS
+; - IN: HL = VRAM ADDRESS (14-BIT)
+; - OUT: NONE
+; - CLOBBERS: A
+; -
+
+SETWRT          LD      A,L
+                OUT     (#99),A
+                LD      A,H
+                OR      #40
+                OUT     (#99),A
+                RET
+
+
 ; --- INCLUDES                          ----------------------------------------
 
 
@@ -309,6 +392,11 @@ POLLKEY         ; --- PROCESS ROW 0 ---
                 INCLUDE "TMP/porta_test.Z8A"
                 INCLUDE "TMP/detune_test.Z8A"
                 INCLUDE "TMP/chorus_test.Z8A"
+
+
+SPLASH          DEFB    "MusaX Jukebox v1.9", 0
+
+VRAMDATA        INCBIN  "VRAM.BIN"
 
 
 ; --- ROM PADDING                       ----------------------------------------
