@@ -18,8 +18,6 @@ ENASLT          EQU     #0024           ; BIOS ENABLE SLOT ENTRY POINT
 RSLREG          EQU     #0138           ; BIOS READ SLOT REGISTER ENTRY POINT
 ENASCR          EQU     #0044           ; BIOS ENABLE SCREEN
 CHGMOD          EQU     #005F           ; BIOS CHANGE SCREEN MODE
-CLS             EQU     #00C3           ; BIOS CLEAR SCREEN
-LDIRVM          EQU     #005C           ; BIOS BLOCK COPY RAM TO VRAM
 FORCLR          EQU     #F3E9           ; FOREGROUND COLOR RAM VARIABLE
 BAKCLR          EQU     #F3EA           ; BACKGROUND COLOR RAM VARIABLE
 CLIKSW          EQU     #F3DB           ; KEY CLICK SWITCH RAM VARIABLE
@@ -46,6 +44,9 @@ CLIKSW          EQU     #F3DB           ; KEY CLICK SWITCH RAM VARIABLE
 
 ROMINIT         DI
                 LD      SP,#F380        ; PAGE 3 STACK POINTER SETUP
+
+                ; INITIALIZE VDP PORT VARIABLES
+                CALL    SCRINIT
 
                 ; DISABLE INTERRUPT HOOKS TEMPORARILY
                 LD      A,#C9           ; RET INSTRUCTION
@@ -85,7 +86,10 @@ ROMINIT         DI
                 LD      (CLIKSW),A
                 LD      A,1             ; SCREEN 1
                 CALL    CHGMOD
-                CALL    CLS             ; CLEAR SCREEN
+                LD      HL,#1800        ; NAME TABLE VRAM ADDRESS
+                LD      BC,768          ; SCREEN SIZE (32 * 24)
+                LD      A,#20           ; FILL WITH SPACE CHARACTER
+                CALL    FILVRM          ; CLEAR SCREEN DIRECTLY
 
                 ; LOAD CUSTOM FONT/GRAPHICS BINARY FROM ROM TO VRAM (#0000)
                 LD      HL,VRAMDATA
@@ -186,6 +190,83 @@ ROMINIT         DI
                 LD      (SCRDIRTY),A
                 EI
                 JP      .LOOP
+
+
+; - SCRINIT ----------------------------
+; - INITIALIZE VDP PORT VARIABLES FROM BIOS
+; - IN: NONE
+; - OUT: NONE
+; - CLOBBERS: A
+; -
+
+SCRINIT         LD      A,(#0007)
+                LD      (VDPWDATA),A
+                INC     A
+                LD      (VDPWCTRL),A
+                LD      A,(#0006)
+                LD      (VDPRDATA),A
+                INC     A
+                LD      (VDPRCTRL),A
+                RET
+
+
+; - FILVRM -----------------------------
+; - FILL VRAM WITH A CONSTANT VALUE
+; - IN: HL = VRAM ADDRESS, BC = COUNT, A = VALUE
+; - OUT: NONE
+; - CLOBBERS: A, BC, DE, HL
+; -
+
+FILVRM          PUSH    BC
+                LD      B,A
+                LD      A,(VDPWCTRL)
+                LD      C,A
+                OUT     (C),L
+                SET     6,H
+                OUT     (C),H
+                POP     DE
+                LD      A,(VDPWDATA)
+                LD      C,A
+.LOOP           OUT     (C),B
+                DEC     DE
+                LD      A,D
+                OR      E
+                JP      NZ,.LOOP
+                RET
+
+
+; - LDIRVM -----------------------------
+; - TRANSFER RAM DATA TO VRAM USING OUTI LOOPS
+; - IN: HL = RAM SOURCE, DE = VRAM DEST, BC = COUNT
+; - OUT: NONE
+; - CLOBBERS: A, BC, DE, HL
+; -
+
+LDIRVM          PUSH    BC
+                LD      A,(VDPWCTRL)
+                LD      C,A
+                OUT     (C),E
+                SET     6,D
+                OUT     (C),D
+                POP     BC
+                LD      D,B
+                LD      B,C
+                LD      A,(VDPWDATA)
+                LD      C,A
+                LD      A,B
+                AND     A
+                LD      A,D 
+                JP      Z,.LOOP
+.LOW            OUTI
+                JP      NZ,.LOW
+                AND     A
+                RET     Z
+.LOOP           LD      B,0
+.HIGH           OUTI    
+                JP      NZ,.HIGH
+                DEC     A
+                JP      NZ,.LOOP
+                RET
 
 
 ; - APPLYMUTE --------------------------
@@ -1734,3 +1815,7 @@ BUFADR          DEFS    2
 SCRBUFF         DEFS    768
 SCRDIRTY        DEFS    1
 MUTEMSK         DEFS    1
+VDPWDATA        DEFS    1
+VDPWCTRL        DEFS    1
+VDPRDATA        DEFS    1
+VDPRCTRL        DEFS    1
