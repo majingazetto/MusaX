@@ -13,3 +13,13 @@ src/build.lst
 src/musax.bin
 *.bin
 *.lst
+
+# Jukebox build artifacts
+src/jukebox/ROM/
+src/jukebox/TMP/
+
+# Logs and scratch files
+*.log
+scratch_*
+PRU.MSL
+pentears.mml
