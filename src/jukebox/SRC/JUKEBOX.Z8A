@@ -9,6 +9,25 @@
                 OUTPUT  JUKEBOX.raw
 
 
+; --- MACROS                            --------------------------------------------
+
+                ; CHANGE BORDER COLOR
+
+                MACRO BORD COLOR
+                LD      A,COLOR
+                OUT     (#99),A
+                LD      A,128 + 7
+                OUT     (#99),A
+                ENDM
+
+                ; BREAK
+
+                MACRO   BRK
+                DI
+                JP      $
+                ENDM
+
+
 ; --- MSX SYSTEM CONSTANTS              ----------------------------------------
 
 HTIMI           EQU     #FD9F           ; VBLANK INTERRUPT HOOK ADDRESS
@@ -21,6 +40,7 @@ CHGMOD          EQU     #005F           ; BIOS CHANGE SCREEN MODE
 FORCLR          EQU     #F3E9           ; FOREGROUND COLOR RAM VARIABLE
 BAKCLR          EQU     #F3EA           ; BACKGROUND COLOR RAM VARIABLE
 CLIKSW          EQU     #F3DB           ; KEY CLICK SWITCH RAM VARIABLE
+
 
 
 ; --- MSX ROM HEADER                    ----------------------------------------
@@ -168,12 +188,14 @@ ROMINIT         DI
 
 
 .LOOP           HALT
-                DI
                 CALL    POLLKEY         ; POLL KEYBOARD FOR ACTIONS
+                ;BORD    7
                 CALL    MUSUPDAT        ; UPDATE AUDIO SEQUENCE
+                ;BORD    6
                 CALL    APPLYMUTE       ; OVERRIDE MUTED CHANNELS IN PSGREG
-                EI
+                ;BORD    11
                 CALL    DRAWUI          ; DRAW GRAPHICAL DASHBOARD
+                ;BORD    0
                 JP      .LOOP
 
 

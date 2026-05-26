@@ -410,16 +410,19 @@ MUSUPDAT        PUSH    AF
                 AND     1
                 JP      Z,.EXIT
 
-                ; UPDATE 6 STREAMS
-                
+                ; UPDATE 6 STREAMS (UNROLLED)
                 LD      IX,CHANNELS
-                LD      B,6
-.LOOP           PUSH    BC
                 CALL    UPSTREAM
-                LD      DE,CHSIZE
-                ADD     IX,DE
-                POP     BC
-                DJNZ    .LOOP
+                LD      IX,CHANNELS + CHSIZE
+                CALL    UPSTREAM
+                LD      IX,CHANNELS + CHSIZE * 2
+                CALL    UPSTREAM
+                LD      IX,CHANNELS + CHSIZE * 3
+                CALL    UPSTREAM
+                LD      IX,CHANNELS + CHSIZE * 4
+                CALL    UPSTREAM
+                LD      IX,CHANNELS + CHSIZE * 5
+                CALL    UPSTREAM
 
                 ; UPDATE GLOBAL FADE
                 LD      A,(MUSSTAT)
@@ -1060,7 +1063,21 @@ MUSMERGE        PUSH    AF
                 PUSH    HL
 
                 LD      A,(SFXMSK)
-                LD      D,A             ; D = SFXMSK
+                OR      A
+                JR      NZ,.SFXACT      ; SFX ACTIVE: FULL MERGE LOGIC
+
+                ; NO SFX: FAST PATH — COPY PSGMUS TO PSGREG DIRECTLY
+                LD      HL,PSGMUS
+                LD      DE,PSGREG
+                LD      BC,PSGSIZE
+                LDIR
+                POP     HL
+                POP     DE
+                POP     BC
+                POP     AF
+                RET
+
+.SFXACT         LD      D,A             ; D = SFXMSK
 
                 ; --- R0, R1 (PERIOD A) ---
                 BIT     0,D
@@ -1395,6 +1412,7 @@ UPDLFO          PUSH    IY
                 LD      A,(IX + CHLFOP)
                 ADD     A,(IY + INSLSPEE)
                 LD      (IX + CHLFOP),A
+                LD      B,A             ; B = NEW PHASE (CACHE BEFORE A IS CLOBBERED)
 
                 ; 6. WAVE TABLE LOOKUP
                 LD      A,(IY + INSLWAVE)
@@ -1408,8 +1426,7 @@ UPDLFO          PUSH    IY
                 INC     HL
                 LD      D,(HL)          ; DE = WAVE TABLE PTR
 
-                LD      A,(IX + CHLFOP)
-                LD      L,A
+                LD      L,B             ; L = PHASE (FROM CACHE, AVOIDS SECOND IX READ)
                 LD      H,0
                 ADD     HL,DE
                 LD      A,(HL)          ; A = RAW SIGNED BYTE W [-128..127]
@@ -1423,37 +1440,25 @@ UPDLFO          PUSH    IY
 .POS            LD      E,A
                 LD      D,0             ; DE = ABS(W) (D = 0)
 
-                ; 8. SCALE AMPLITUDE (* AMP / 15)
-                ; HL = ABS(W) * AMP (AMP IN 0..15)
-                LD      HL,0
-                LD      A,(IY + INSLAMP)
-                LD      B,4
-.MULOP          SRL     A
-                JR      NC,.NOADD
-                ADD     HL,DE
-.NOADD          EX      DE,HL
-                ADD     HL,HL
-                EX      DE,HL
-                DJNZ    .MULOP
+                ; 8. LOOK UP SCALED AMPLITUDE FROM AMPTBL
+                LD      B,E                     ; B = |W| (SAVE BEFORE DE IS CLOBBERED)
+                LD      A,(IY + INSLAMP)        ; A = AMP (0..15)
+                SRL     A                       ; A = AMP/2, CARRY = AMP BIT 0
+                LD      H,A
+                LD      L,0
+                RR      L                       ; L = #80 IF AMP ODD, ELSE #00
+                LD      DE,AMPTBL
+                ADD     HL,DE                   ; HL = AMPTBL + AMP * 128
+                LD      A,L
+                ADD     A,B                     ; A = ROW OFFSET + |W|
+                LD      L,A                     ; HL = AMPTBL + AMP * 128 + |W|
+                LD      A,(HL)                  ; A = SCALED VALUE [0..127]
 
-                ; MULTIPLY BY 17 AND TAKE HIGH BYTE (>> 8)
-                LD      E,L
-                LD      D,H
-                ADD     HL,HL
-                ADD     HL,HL
-                ADD     HL,HL
-                ADD     HL,HL
-                ADD     HL,DE           ; HL = HL * 17
-
-                ; H = APPROXIMATED SCALED VALUE [0..127]
-                ; RESTORE SIGN
+                ; RESTORE SIGN (C = 0: POSITIVE, C = 1: NEGATIVE)
                 DEC     C
                 JR      NZ,.STORE
-                LD      A,H
                 NEG
-                LD      H,A
-
-.STORE          LD      (IX + CHLFOVAL),H
+.STORE          LD      (IX + CHLFOVAL),A
                 JR      .EXIT
 
 .NOLFO          XOR     A
@@ -1588,19 +1593,16 @@ UPDVOL          LD      A,(IX + CHNOTE)
                 CP      15
                 JR      Z,.NOMUSV
 
-                LD      C,A             ; C = MUSVOL
-                LD      A,(IX + CHVOL)  ; A = CHVOL
-                CALL    MUL8            ; HL = CHVOL * MUSVOL
-                LD      E,L
-                LD      D,H
-                ADD     HL,HL
-                ADD     HL,HL
-                ADD     HL,HL
-                ADD     HL,HL
-                ADD     HL,DE           ; HL = HL * 17
-                LD      DE,128
-                ADD     HL,DE
-                LD      A,H             ; A = BASEVOL
+                LD      C,A             ; C = MUSVOL (0..14)
+                LD      A,(IX + CHVOL)  ; A = CHVOL (0..15)
+                SLA     A               ; A = CHVOL * 2
+                SLA     A               ; A = CHVOL * 4
+                SLA     A               ; A = CHVOL * 8
+                SLA     A               ; A = CHVOL * 16
+                ADD     A,C             ; A = CHVOL * 16 + MUSVOL
+                LD      L,A
+                LD      H,HIGH MVOLTBL
+                LD      A,(HL)          ; A = BASEVOL
                 JR      .DONEBV
 
 .NOMUSV         LD      A,(IX + CHVOL)  ; A = BASEVOL
@@ -1614,14 +1616,12 @@ UPDVOL          LD      A,(IX + CHNOTE)
                 LD      H,A             ; H = BASEVOL
                 LD      A,L             ; A = SCALE
                 CP      255
-                LD      A,H             ; RESTORE BASEVOL TO A
+                LD      A,H             ; A = BASEVOL
                 JR      Z,.SKIPSC       ; IF SCALE == 255, FINALVOL = BASEVOL
 
-                LD      C,L             ; C = SCALE
-                CALL    MUL8            ; HL = BASEVOL * SCALE
-                LD      DE,128
-                ADD     HL,DE
-                LD      A,H             ; A = FINALVOL
+                ADD     A,HIGH VOLATTEN ; A = VOLATTEN PAGE + BASEVOL
+                LD      H,A
+                LD      A,(HL)          ; A = FINALVOL
 .SKIPSC         ; A = FINALVOL
                 PUSH    AF              ; PRESERVE FINALVOL
 
@@ -1830,7 +1830,12 @@ UPDPORTA        LD      A,(IX + CHPORTAS)
 ; - CLOBBERS: AF, BC, DE, HL
 ; -
 
-CALCPER         LD      A,(IX + CHIDX)
+CALCPER         LD      A,(IX + CHNOTE)
+                CP      255
+                RET     Z               ; REST: NOTHING TO DO
+
+                ; COMPUTE SHADOW ADDR
+                LD      A,(IX + CHIDX)
                 ADD     A,A             ; A = CHIDX * 2
                 CP      6
                 JR      C,.UNDER
@@ -1841,15 +1846,7 @@ CALCPER         LD      A,(IX + CHIDX)
                 ADD     HL,DE
                 PUSH    HL              ; SAVE SHADOW ADDR ON STACK
 
-                LD      A,(IX + CHNOTE)
-                CP      255
-                JR      NZ,.NOTRST
-                
-                ; REST: POP SHADOW ADDR AND RETURN
-                POP     HL
-                RET
-
-.NOTRST         ; COMPUTE TOTAL CENTS
+                ; COMPUTE TOTAL CENTS
                 LD      A,(IX + CHDETUNE)
                 LD      C,A
                 
@@ -1873,14 +1870,12 @@ CALCPER         LD      A,(IX + CHIDX)
                 
                 ; CENTS == 0: WRITE BASE PERIOD
                 LD      A,(IX + CHNOTE)
-                LD      H,0
+                ADD     A,A             ; A = NOTE * 2 (0..190, FITS IN 8 BITS)
                 LD      L,A
-                ADD     HL,HL
-                LD      DE,FREQ_TBL
-                ADD     HL,DE
+                LD      H,HIGH FREQ_TBL
                 LD      A,(HL)          ; A = PERIOD_LOW
-                INC     HL
-                LD      H,(HL)          ; H = PERIOD_HIGH; A STILL HOLDS PERIOD_LOW
+                INC     L
+                LD      H,(HL)          ; H = PERIOD_HIGH
                 POP     DE              ; DE = SHADOW ADDR
                 LD      (DE),A
                 INC     DE
@@ -1909,36 +1904,28 @@ CALCPER         LD      A,(IX + CHIDX)
                 JR      Z,.POSMAX
                 INC     A
 .POSMAX         LD      D,A             ; D = NEXT NOTE
-                
+
                 ; LOOKUP P0 (IN HL)
-                LD      A,E
-                LD      H,0
+                LD      A,E             ; A = NOTE (0..95)
+                ADD     A,A             ; A = NOTE * 2 (0..190)
                 LD      L,A
-                ADD     HL,HL
-                PUSH    BC              ; SAVE CENTS
-                LD      BC,FREQ_TBL
-                ADD     HL,BC
-                POP     BC              ; RESTORE CENTS
+                LD      H,HIGH FREQ_TBL
                 LD      A,(HL)
-                INC     HL
+                INC     L
                 LD      H,(HL)
                 LD      L,A             ; HL = P0
                 PUSH    HL              ; SAVE P0
-                
+
                 ; LOOKUP P1 (IN DE)
-                LD      A,D
-                LD      H,0
+                LD      A,D             ; A = NEXT NOTE (0..95)
+                ADD     A,A             ; A = NEXT NOTE * 2 (0..190)
                 LD      L,A
-                ADD     HL,HL
-                PUSH    BC              ; SAVE CENTS
-                LD      BC,FREQ_TBL
-                ADD     HL,BC
-                POP     BC              ; RESTORE CENTS
+                LD      H,HIGH FREQ_TBL
                 LD      A,(HL)
-                INC     HL
+                INC     L
                 LD      H,(HL)
                 LD      L,A             ; HL = P1
-                
+
                 POP     DE              ; DE = P0
                 PUSH    DE              ; SAVE P0 AGAIN
                 
@@ -1946,11 +1933,10 @@ CALCPER         LD      A,(IX + CHIDX)
                 EX      DE,HL
                 OR      A
                 SBC     HL,DE           ; HL = DELTA P
-                
-                ; MULTIPLY BY CENTS (C)
-                CALL    MUL168          ; HL:A = DELTA P * C
-                CALL    DIV24100        ; HL = QUOTIENT
-                
+
+                ; SCALE BY CENTFRAC[CENTS] AND MULTIPLY (REPLACES MUL168 + DIV24100)
+                CALL    CNTMUL          ; HL = (DELTA_P * CENTFRAC[C]) >> 8
+
                 ; PERIOD = P0 - QUOTIENT
                 POP     DE              ; DE = P0
                 EX      DE,HL           ; HL = P0, DE = QUOTIENT
@@ -1984,47 +1970,38 @@ CALCPER         LD      A,(IX + CHIDX)
 .NEGOK          LD      E,A             ; E = NOTE
                 DEC     A               ; A = NOTE - 1
                 LD      D,A             ; D = PREV NOTE
-.NEGMIN         
+.NEGMIN
                 ; LOOKUP P0 (IN HL)
-                LD      A,E
-                LD      H,0
+                LD      A,E             ; A = NOTE (0..95)
+                ADD     A,A             ; A = NOTE * 2 (0..190)
                 LD      L,A
-                ADD     HL,HL
-                PUSH    BC              ; SAVE CENTS
-                LD      BC,FREQ_TBL
-                ADD     HL,BC
-                POP     BC              ; RESTORE CENTS
+                LD      H,HIGH FREQ_TBL
                 LD      A,(HL)
-                INC     HL
+                INC     L
                 LD      H,(HL)
                 LD      L,A             ; HL = P0
                 PUSH    HL              ; SAVE P0
-                
+
                 ; LOOKUP P1 (IN DE)
-                LD      A,D
-                LD      H,0
+                LD      A,D             ; A = PREV NOTE (0..95)
+                ADD     A,A             ; A = PREV NOTE * 2 (0..190)
                 LD      L,A
-                ADD     HL,HL
-                PUSH    BC              ; SAVE CENTS
-                LD      BC,FREQ_TBL
-                ADD     HL,BC
-                POP     BC              ; RESTORE CENTS
+                LD      H,HIGH FREQ_TBL
                 LD      A,(HL)
-                INC     HL
+                INC     L
                 LD      H,(HL)
                 LD      L,A             ; HL = P1
-                
+
                 POP     DE              ; DE = P0
                 PUSH    DE              ; SAVE P0 AGAIN
                 
                 ; COMPUTE DELTA P = P1 - P0
                 OR      A
                 SBC     HL,DE           ; HL = DELTA P
-                
-                ; MULTIPLY BY CENTS (C)
-                CALL    MUL168          ; HL:A = DELTA P * C
-                CALL    DIV24100        ; HL = QUOTIENT
-                
+
+                ; SCALE BY CENTFRAC[CENTS] AND MULTIPLY (REPLACES MUL168 + DIV24100)
+                CALL    CNTMUL          ; HL = (DELTA_P * CENTFRAC[C]) >> 8
+
                 ; PERIOD = P0 + QUOTIENT
                 POP     DE              ; DE = P0
                 ADD     HL,DE           ; HL = QUOTIENT + P0
@@ -2068,6 +2045,35 @@ MUL168          LD      D,H
                 RL      D
                 DJNZ    .LOOP
                 RET
+
+
+; - CNTMUL ----------------------------
+; - MULTIPLY DELTA_P BY CENTFRAC[CENTS] VIA PRECOMPUTED TABLE
+; - IN: HL = DELTA_P (16-BIT), C = CENTS (0..99)
+; - OUT: HL = (DELTA_P * CENTFRAC[CENTS]) >> 8
+; - CLOBBERS: A, BC, DE
+; -
+
+CNTMUL          EX      DE,HL           ; DE = DELTA_P
+                LD      A,C
+                LD      HL,CENTFRAC
+                ADD     A,L
+                LD      L,A
+                JR      NC,.NOINCP
+                INC     H
+.NOINCP         LD      C,(HL)          ; C = CENTFRAC[CENTS]
+                EX      DE,HL           ; HL = DELTA_P
+                LD      A,H
+                OR      A
+                JR      NZ,.BIGDLT      ; DELTA_P > 255: FULL 16x8 MULTIPLY
+                LD      A,L             ; DELTA_P FITS IN 8 BITS: FAST PATH
+                CALL    MUL8            ; HL = A * C (16-BIT PRODUCT)
+                LD      L,H             ; L = HIGH BYTE = RESULT >> 8
+                LD      H,0             ; HL = QUOTIENT (16-BIT)
+                RET
+
+.BIGDLT         CALL    MUL168          ; HL:A = DELTA_P * CENTFRAC (24-BIT)
+                RET                     ; HL = HIGH 16 BITS = RESULT >> 8
 
 
 ; - DIV24100 ---------------------------
