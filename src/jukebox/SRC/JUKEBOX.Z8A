@@ -93,21 +93,13 @@ ROMINIT         DI
                 LD      BC,2048         ; 256 CHARACTERS * 8 BYTES
                 CALL    LDIRVM
 
-                CALL    ENASCR          ; ENABLE DISPLAY
-
-                ; SHOW LOGO AND WAIT BEFORE PLAYBACK
-                CALL    LOGO
-
-                CALL    CLS             ; CLEAR LOGO
-
                 ; INITIALIZE SCREEN 1 COLORS (#2000)
                 LD      HL,COLORDAT
                 LD      DE,#2000
                 LD      BC,32
                 CALL    LDIRVM
 
-                ; INITIALIZE GRAPHICAL LAYOUT SKELETON
-                CALL    INITLAY
+                CALL    ENASCR          ; ENABLE DISPLAY
 
                 ; CLEAR RAM VARIABLES AREA (LDIR)
                 LD      HL,#E000
@@ -115,6 +107,26 @@ ROMINIT         DI
                 LD      BC,#0200        ; CLEAR 512 BYTES OF RAM AT #E000
                 LD      (HL),0
                 LDIR
+
+                ; CLEAR SCREEN BUFFER IN RAM TO SPACES (#20)
+                LD      HL,SCRBUFF
+                LD      (HL),#20
+                LD      DE,SCRBUFF + 1
+                LD      BC,768 - 1
+                LDIR
+
+                ; SHOW LOGO AND WAIT BEFORE PLAYBACK
+                CALL    LOGO
+
+                ; CLEAR LOGO FROM RAM SCREEN BUFFER
+                LD      HL,SCRBUFF
+                LD      (HL),#20
+                LD      DE,SCRBUFF + 1
+                LD      BC,768 - 1
+                LDIR
+
+                ; INITIALIZE GRAPHICAL LAYOUT SKELETON IN RAM BUFFER
+                CALL    INITLAY
 
                 ; INITIALIZE KEYPREV TO #FF (ALL RELEASED)
                 LD      A,#FF
@@ -129,6 +141,9 @@ ROMINIT         DI
                 ; SET FX TABLE POINTER FOR SOUND EFFECTS
                 LD      HL,SFXTEST.FX_TABLE
                 LD      (FXPTR),HL
+
+                ; INITIALIZE UI CACHES
+                CALL    CLRUI
 
                 ; HOOK VBLANK INTERRUPT (HTIMI)
                 LD      A,#C3           ; JP INSTRUCTION
@@ -149,6 +164,23 @@ ROMINIT         DI
                 CALL    POLLKEY         ; POLL KEYBOARD FOR ACTIONS
                 EI
                 CALL    DRAWUI          ; DRAW GRAPHICAL DASHBOARD
+
+                ; CHECK IF SCREEN BUFFER IS DIRTY
+                LD      A,(SCRDIRTY)
+                OR      A
+                JR      Z,.LOOP
+
+                ; DUMP SCREEN BUFFER TO VRAM
+                DI
+                LD      HL,SCRBUFF
+                LD      DE,#1800
+                LD      BC,768
+                CALL    LDIRVM
+
+                ; CLEAR DIRTY FLAG
+                XOR     A
+                LD      (SCRDIRTY),A
+                EI
                 JP      .LOOP
 
 
@@ -269,6 +301,7 @@ POLLKEY         ; --- PROCESS ROW 0 ---
                 BIT     0,D             ; 'S' (BIT 0) - STOP
                 JR      Z,.ROW3
                 CALL    MUSSTOP
+                CALL    RESETUI
 
 .ROW3           ; --- PROCESS ROW 3 ---
                 LD      A,(KEYPREV + 3)
@@ -323,6 +356,7 @@ POLLKEY         ; --- PROCESS ROW 0 ---
 
 .PLAY           PUSH    HL
                 CALL    MUSSTOP
+                CALL    RESETUI
                 POP     HL
                 XOR     A               ; INFINITE LOOPING LIMIT
                 CALL    MUSPLAY
@@ -340,6 +374,14 @@ LOGO            ; DRAW SPLASH TEXT
                 LD      HL,SPLASH
                 LD      DE,#1AEE        ; BOTTOM RIGHT CORNER (ROW 23, COL 14)
                 CALL    PUTSTR
+
+                ; DUMP SCREEN BUFFER TO VRAM SO SKELETON + LOGO IS DISPLAYED
+                DI
+                LD      HL,SCRBUFF
+                LD      DE,#1800
+                LD      BC,768
+                CALL    LDIRVM
+                EI
 
                 ; WAIT 2 SECONDS (120 INTERRUPTS AT 60HZ)
                 LD      B,120
@@ -363,23 +405,51 @@ PUTSTR          EX      DE,HL
 .LOOP           LD      A,(HL)
                 OR      A
                 RET     Z
-                OUT     (#98),A
+                CALL    WRTCHR
                 INC     HL
                 JP      .LOOP
 
 
 ; - SETWRT -----------------------------
-; - SET VDP WRITE ADDRESS
+; - SET RAM SCREEN BUFFER WRITE ADDRESS
 ; - IN: HL = VRAM ADDRESS (14-BIT)
 ; - OUT: NONE
-; - CLOBBERS: A
+; - CLOBBERS: NONE
 ; -
 
-SETWRT          LD      A,L
-                OUT     (#99),A
-                LD      A,H
-                OR      #40
-                OUT     (#99),A
+SETWRT          PUSH    BC
+                PUSH    HL
+                LD      BC,#1800
+                OR      A
+                SBC     HL,BC           ; HL = OFFSET FROM #1800
+                LD      BC,SCRBUFF
+                ADD     HL,BC           ; HL = RAM BUFFER ADDRESS
+                LD      (BUFADR),HL
+                POP     HL
+                POP     BC
+                RET
+
+
+; - WRTCHR -----------------------------
+; - WRITE CHARACTER TO SCREEN BUFFER
+; - IN: A = CHARACTER CODE
+; - OUT: NONE
+; - CLOBBERS: NONE
+; -
+
+WRTCHR          PUSH    HL
+                LD      HL,(BUFADR)
+                LD      (HL),A
+                INC     HL
+                LD      (BUFADR),HL
+
+                ; SET SCREEN BUFFER DIRTY FLAG
+                PUSH    AF
+                LD      A,1
+                LD      (SCRDIRTY),A
+                POP     AF
+
+                POP     HL
                 RET
 
 
@@ -423,7 +493,7 @@ INITLAY         ; DRAW HORIZONTAL DIVIDER LINES AT ROWS 1, 9, 17, 19
                 CALL    SETWRT
                 LD      B,32            ; LINE LENGTH
                 LD      A,#81           ; HORIZONTAL DIVIDER CHAR
-.L1             OUT     (#98),A
+.L1             CALL    WRTCHR
                 DJNZ    .L1
                 RET
 
@@ -494,11 +564,11 @@ DRAWUI          ; 0. FRAME THROTTLE: ONLY DRAW EVERY 2 FRAMES
                 CALL    SETWRT
                 CALL    PRN2DEC         ; PRINTS 2 DIGITS
                 LD      A,"/"
-                OUT     (#98),A
+                CALL    WRTCHR
                 LD      A,"1"
-                OUT     (#98),A
+                CALL    WRTCHR
                 LD      A,"5"
-                OUT     (#98),A
+                CALL    WRTCHR
 .VOLSKP
 
                 ; 4. DRAW LOOP COUNTER
@@ -520,21 +590,21 @@ DRAWUI          ; 0. FRAME THROTTLE: ONLY DRAW EVERY 2 FRAMES
                 LD      A,(SONGLOP)
                 CALL    PRN2DEC
                 LD      A,"/"
-                OUT     (#98),A
+                CALL    WRTCHR
                 LD      A,(SONGLMT)
                 OR      A
                 JR      NZ,.LMT
                 LD      A,"I"
-                OUT     (#98),A
+                CALL    WRTCHR
                 LD      A,"N"
-                OUT     (#98),A
+                CALL    WRTCHR
                 LD      A,"F"
-                OUT     (#98),A
+                CALL    WRTCHR
                 JR      .LPSKP
 .LMT            LD      A,(SONGLMT)
                 CALL    PRN2DEC
                 LD      A," "           ; OVERWRITE "F" FROM "INF"
-                OUT     (#98),A
+                CALL    WRTCHR
 .LPSKP
 
                 ; 5. DRAW STATUS
@@ -584,11 +654,11 @@ DRAWUI          ; 0. FRAME THROTTLE: ONLY DRAW EVERY 2 FRAMES
                 LD      A,B             ; GLBFADVL (SAVED ABOVE)
                 CALL    DEC2STR
                 LD      A,"/"
-                OUT     (#98),A
+                CALL    WRTCHR
                 LD      A,"2"
-                OUT     (#98),A
+                CALL    WRTCHR
                 LD      A,"5"
-                OUT     (#98),A
+                CALL    WRTCHR
 .FDSKP
 .DRPL           ; 7. DRAW PLAYLIST
                 ; CHECK IF SONGPTR OR MUSSTAT CHANGED
@@ -818,16 +888,16 @@ DRAWUI          ; 0. FRAME THROTTLE: ONLY DRAW EVERY 2 FRAMES
                 
                 ; 2. WRITE 1 SPACE
                 LD      A," "
-                OUT     (#98),A
+                CALL    WRTCHR
                 
                 ; 3. DRAW NOTE NAME (3 CHARS)
                 LD      A,(TMPNOTE)
                 CP      255
                 JR      NZ,.PRTNOTE
                 LD      A,"-"
-                OUT     (#98),A
-                OUT     (#98),A
-                OUT     (#98),A
+                CALL    WRTCHR
+                CALL    WRTCHR
+                CALL    WRTCHR
                 JR      .NOTEDN
 .PRTNOTE        LD      L,A
                 LD      H,0
@@ -838,19 +908,19 @@ DRAWUI          ; 0. FRAME THROTTLE: ONLY DRAW EVERY 2 FRAMES
                 LD      DE,NOTENAM
                 ADD     HL,DE
                 LD      A,(HL)
-                OUT     (#98),A
+                CALL    WRTCHR
                 INC     HL
                 LD      A,(HL)
-                OUT     (#98),A
+                CALL    WRTCHR
                 INC     HL
                 LD      A,(HL)
-                OUT     (#98),A
+                CALL    WRTCHR
 .NOTEDN
 
                 ; 4. WRITE 2 SPACES
                 LD      A," "
-                OUT     (#98),A
-                OUT     (#98),A
+                CALL    WRTCHR
+                CALL    WRTCHR
                 
                 ; 5. DRAW INSTRUMENT ID (2 CHARS)
                 LD      A,(TMPSTAT)
@@ -922,30 +992,30 @@ DRAWUI          ; 0. FRAME THROTTLE: ONLY DRAW EVERY 2 FRAMES
 .INSVAL          CP      255
                 JR      NZ,.PRTINS
                 LD      A,"-"
-                OUT     (#98),A
-                OUT     (#98),A
+                CALL    WRTCHR
+                CALL    WRTCHR
                 JR      .INSDN
 .PRTINS          CP      10              ; SINGLE DIGIT (0..9)?
                 JR      NC,.DDIG
                 ADD     A,"0"           ; LEFT-JUSTIFY: DIGIT FIRST
-                OUT     (#98),A
+                CALL    WRTCHR
                 LD      A," "
-                OUT     (#98),A
+                CALL    WRTCHR
                 JR      .INSDN
 .DDIG           PUSH    AF              ; DOUBLE DIGIT (10..15)
                 LD      A,"1"
-                OUT     (#98),A
+                CALL    WRTCHR
                 POP     AF
                 SUB     10
                 ADD     A,"0"
-                OUT     (#98),A
+                CALL    WRTCHR
 .INSDN
 
                 ; 6. WRITE 3 SPACES
                 LD      A," "
-                OUT     (#98),A
-                OUT     (#98),A
-                OUT     (#98),A
+                CALL    WRTCHR
+                CALL    WRTCHR
+                CALL    WRTCHR
                 
                 ; 7. DRAW PERIOD (3 CHARS)
                 LD      A,(TMPSTAT)
@@ -954,9 +1024,9 @@ DRAWUI          ; 0. FRAME THROTTLE: ONLY DRAW EVERY 2 FRAMES
                 
                 ; INACTIVE / OVERRIDDEN: PRINT "---"
                 LD      A,"-"
-                OUT     (#98),A
-                OUT     (#98),A
-                OUT     (#98),A
+                CALL    WRTCHR
+                CALL    WRTCHR
+                CALL    WRTCHR
                 JR      .PERDN
                 
 .PRTPER          LD      A,(TMPPERL)
@@ -968,22 +1038,22 @@ DRAWUI          ; 0. FRAME THROTTLE: ONLY DRAW EVERY 2 FRAMES
 
                 ; 8. WRITE 2 SPACES
                 LD      A," "
-                OUT     (#98),A
-                OUT     (#98),A
+                CALL    WRTCHR
+                CALL    WRTCHR
                 
                 ; 9. DRAW STATUS (4 CHARS)
                 POP     HL              ; HL = STATUS STRING POINTER
                 LD      A,(HL)
-                OUT     (#98),A
+                CALL    WRTCHR
                 INC     HL
                 LD      A,(HL)
-                OUT     (#98),A
+                CALL    WRTCHR
                 INC     HL
                 LD      A,(HL)
-                OUT     (#98),A
+                CALL    WRTCHR
                 INC     HL
                 LD      A,(HL)
-                OUT     (#98),A
+                CALL    WRTCHR
 
                 ; UPDATE CACHE WITH CURRENT VALUES
                 LD      A,(IX+CHIDX)
@@ -1094,10 +1164,10 @@ PRN2DEC         LD      B,0
                 ADD     A,"0"
                 JR      .TNSWR
 .TNSSP          LD      A," "           ; SPACE PADDING FOR TENS
-.TNSWR          OUT     (#98),A
+.TNSWR          CALL    WRTCHR
                 POP     AF
                 ADD     A,"0"
-                OUT     (#98),A
+                CALL    WRTCHR
                 RET
 
 
@@ -1123,7 +1193,7 @@ DEC2STR         LD      C,A
                 ADD     A,"0"
                 JR      .HNDWR
 .HNDSP          LD      A," "           ; SPACE PADDING FOR HUNDREDS
-.HNDWR          OUT     (#98),A
+.HNDWR          CALL    WRTCHR
                 
                 ; TENS
                 LD      A,H
@@ -1144,12 +1214,12 @@ DEC2STR         LD      C,A
                 LD      A," "
                 JR      .TNSWR
 .TNSVL          ADD     A,"0"
-.TNSWR          OUT     (#98),A
+.TNSWR          CALL    WRTCHR
                 
                 ; ONES
                 LD      A,L
                 ADD     A,"0"
-                OUT     (#98),A
+                CALL    WRTCHR
                 RET
 
 
@@ -1171,7 +1241,7 @@ DRAWBAR         ADD     A,A             ; A = VOL * 2 (0..30 PIXELS)
                 LD      D,A             ; SAVE REMAINDER
                 LD      A,B
                 ADD     A,8             ; BASE + 8 (FULL BLOCK)
-                OUT     (#98),A
+                CALL    WRTCHR
                 LD      A,D             ; RESTORE REMAINDER
                 DEC     C
                 JR      NZ,.LOOP
@@ -1182,17 +1252,17 @@ DRAWBAR         ADD     A,A             ; A = VOL * 2 (0..30 PIXELS)
                 
                 ; DRAW PARTIAL BLOCK
                 ADD     A,B             ; BASE + REMAINDER
-                OUT     (#98),A
+                CALL    WRTCHR
                 DEC     C
                 JR      Z,.DONE
 .EMPTYLP        LD      A," "           ; SPACE
-                OUT     (#98),A
+                CALL    WRTCHR
                 DEC     C
                 JR      NZ,.EMPTYLP
 .DONE           RET
 
 .EMPTY          LD      A," "           ; SPACE
-                OUT     (#98),A
+                CALL    WRTCHR
                 DEC     C
                 JR      NZ,.EMPTY
                 RET
@@ -1274,10 +1344,10 @@ PRNHEX12        ; FIRST DIGIT: LOWER 4 BITS OF H
 .PRNCHAR        CP      10
                 JR      C,.DIGIT
                 ADD     A,"A" - 10
-                OUT     (#98),A
+                CALL    WRTCHR
                 RET
 .DIGIT          ADD     A,"0"
-                OUT     (#98),A
+                CALL    WRTCHR
                 RET
 
 
@@ -1299,6 +1369,38 @@ CHCADDR         LD      L,A
                 ADD     HL,DE           ; A * 6
                 LD      DE,CHCACHE
                 ADD     HL,DE           ; HL = CHCACHE + A * 6
+                RET
+
+
+; - CLRUI ------------------------------
+; - INVALIDATE ALL UI CACHES
+; - IN: NONE
+; - OUT: NONE
+; - CLOBBERS: BC, DE, HL
+; -
+
+CLRUI           LD      HL,SONGPREV
+                LD      (HL),#FF
+                LD      DE,SONGPREV + 1
+                LD      BC,CHCACHE + 36 - SONGPREV - 1
+                LDIR
+                RET
+
+
+; - RESETUI ----------------------------
+; - CLEAR SCREEN BUFFER AND REDRAW SKELETON
+; - IN: NONE
+; - OUT: NONE
+; - CLOBBERS: BC, DE, HL
+; -
+
+RESETUI         CALL    CLRUI
+                LD      HL,SCRBUFF
+                LD      (HL),#20
+                LD      DE,SCRBUFF + 1
+                LD      BC,768 - 1
+                LDIR
+                CALL    INITLAY
                 RET
 
 
@@ -1438,7 +1540,7 @@ SNGNAMTB        DEFW    SHALOMCASTLE.HEADER, .SSHAL
 .SCHOR          DEFB    "CHORUS", 0
 
 
-SPLASH          DEFB    "MusaX Jukebox v1.9", 0
+SPLASH          DEFB    "MUSAX JUKEBOX V1.9", 0
 
 VRAMDATA        INCBIN  "VRAM.BIN"
 
@@ -1473,3 +1575,6 @@ LMTPREV       DEFS    1
 FADSPPRV       DEFS    1
 FADVLPRV       DEFS    1
 CHCACHE         DEFS    36
+BUFADR          DEFS    2
+SCRBUFF         DEFS    768
+SCRDIRTY        DEFS    1
