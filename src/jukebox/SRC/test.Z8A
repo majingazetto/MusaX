@@ -147,6 +147,7 @@ ROMINIT         DI
 .LOOP           HALT
                 CALL    POLLKEY         ; POLL KEYBOARD FOR ACTIONS
                 CALL    MUSUPDAT        ; UPDATE ENGINE SEQUENCER
+                CALL    DRAWUI          ; DRAW GRAPHICAL DASHBOARD
                 JP      .LOOP
 
 
@@ -425,6 +426,231 @@ INITLAY         ; DRAW HORIZONTAL DIVIDER LINES AT ROWS 1, 9, 17, 19
                 RET
 
 
+; - DRAWUI -----------------------------
+; - DRAW REAL-TIME VARIABLES AND CHANNEL STATES
+; - IN: NONE
+; - OUT: NONE
+; - CLOBBERS: ALL
+; -
+
+DRAWUI          ; 1. DRAW SONG NAME
+                LD      A,(MUSSTAT)
+                OR      A
+                JR      Z,.NONE
+                
+                LD      HL,(SONGPTR)
+                LD      IX,SNGNAMTB
+.SRCH           LD      E,(IX+0)
+                LD      D,(IX+1)
+                LD      A,D
+                OR      E
+                JR      Z,.NONE         ; NOT FOUND
+                
+                LD      A,L
+                CP      E
+                JR      NZ,.NEXT
+                LD      A,H
+                CP      D
+                JR      Z,.FOUND
+.NEXT           LD      DE,4
+                ADD     IX,DE
+                JP      .SRCH
+.NONE           LD      HL,.SNONE
+                JR      .PRTSNG
+.FOUND          LD      L,(IX+2)
+                LD      H,(IX+3)
+.PRTSNG         LD      DE,#1877
+                CALL    PUTSTR
+
+                ; 2. DRAW BPM
+                CALL    GETBPM          ; A = BPM
+                LD      DE,#1897
+                CALL    SETWRT
+                CALL    DEC2STR         ; PRINTS 3 DIGITS (SPACE PADDED)
+
+                ; 3. DRAW MASTER VOLUME
+                LD      DE,#18B7
+                CALL    SETWRT
+                LD      A,(MUSVOL)
+                CALL    PRN2DEC         ; PRINTS 2 DIGITS
+                LD      A,"/"
+                OUT     (#98),A
+                LD      A,"1"
+                OUT     (#98),A
+                LD      A,"5"
+                OUT     (#98),A
+
+                ; 4. DRAW LOOP COUNTER
+                LD      DE,#18D7
+                CALL    SETWRT
+                LD      A,(SONGLOP)
+                CALL    PRN2DEC
+                LD      A,"/"
+                OUT     (#98),A
+                LD      A,(SONGLMT)
+                OR      A
+                JR      NZ,.LMT
+                LD      A,"I"
+                OUT     (#98),A
+                LD      A,"N"
+                OUT     (#98),A
+                LD      A,"F"
+                OUT     (#98),A
+                JR      .DNLP
+.LMT            LD      A,(SONGLMT)
+                CALL    PRN2DEC
+                LD      A," "           ; OVERWRITE "F" FROM "INF"
+                OUT     (#98),A
+.DNLP           
+
+                ; 5. DRAW STATUS
+                LD      A,(MUSSTAT)
+                BIT     1,A
+                JR      NZ,.FAD
+                BIT     0,A
+                JR      NZ,.PLY
+                LD      HL,.SSTOP
+                JR      .PRTST
+.FAD            LD      HL,.SFAD
+                JR      .PRTST
+.PLY            LD      HL,.SPLY
+.PRTST          LD      DE,#18F7
+                CALL    PUTSTR
+
+                ; 6. DRAW FADE
+                LD      A,(GLBFADSP)
+                OR      A
+                JR      NZ,.FADAC
+                LD      HL,.SIACT
+                LD      DE,#1917
+                CALL    PUTSTR
+                JR      .DONE
+.FADAC          LD      DE,#1917
+                CALL    SETWRT
+                LD      A,(GLBFADVL)
+                CALL    DEC2STR
+                LD      A,"/"
+                OUT     (#98),A
+                LD      A,"2"
+                OUT     (#98),A
+                LD      A,"5"
+                OUT     (#98),A
+                LD      A,"5"
+                OUT     (#98),A
+.DONE           RET
+
+.SNONE          DEFB    "NONE  ", 0
+.SSTOP          DEFB    "STOP  ", 0
+.SFAD           DEFB    "FADING", 0
+.SPLY           DEFB    "PLAY  ", 0
+.SIACT          DEFB    "INACTV", 0
+
+
+; - GETBPM -----------------------------
+; - GET INTEGER BPM FROM CHANNEL 0 BPM STEP
+; - IN: NONE
+; - OUT: A = BPM VALUE
+; - CLOBBERS: BC, DE, HL
+; -
+
+GETBPM          LD      HL,(CHANNELS + CHBPM)
+                ; SHIFT HL RIGHT 4 BITS
+                LD      B,4
+.S1             SRL     H
+                RR      L
+                DJNZ    .S1
+                
+                ; MULTIPLY HL BY 75
+                LD      DE,0
+                LD      B,75
+.M1             EX      HL,DE
+                ADD     HL,DE
+                EX      HL,DE
+                DJNZ    .M1
+                
+                LD      A,D             ; A = DE / 256
+                RET
+
+
+; - PRN2DEC ----------------------------
+; - PRINT 2-DIGIT SPACE-PADDED DECIMAL VALUE TO VRAM
+; - IN: A = VALUE (0..99), VRAM ADDRESS SET PRIOR VIA SETWRT
+; - OUT: NONE
+; - CLOBBERS: A, B
+; -
+
+PRN2DEC         LD      B,0
+.TENS           SUB     10
+                JR      C,.TNSDN
+                INC     B
+                JR      .TENS
+.TNSDN          ADD     A,10
+                PUSH    AF
+                LD      A,B
+                OR      A
+                JR      Z,.TNSSP
+                ADD     A,"0"
+                JR      .TNSWR
+.TNSSP          LD      A," "           ; SPACE PADDING FOR TENS
+.TNSWR          OUT     (#98),A
+                POP     AF
+                ADD     A,"0"
+                OUT     (#98),A
+                RET
+
+
+; - DEC2STR ----------------------------
+; - CONVERT 8-BIT VALUE TO 3-DIGIT SPACE-PADDED ASCII IN VRAM
+; - IN: A = VALUE, VRAM ADDRESS MUST BE SET PRIOR VIA SETWRT
+; - OUT: NONE
+; - CLOBBERS: ALL
+; -
+
+DEC2STR         LD      C,A
+                ; HUNDREDS
+                LD      B,0
+.HUND           SUB     100
+                JR      C,.HNDDN
+                INC     B
+                JR      .HUND
+.HNDDN          ADD     A,100
+                LD      H,A             ; SAVE REMAINDER IN H
+                LD      A,B
+                OR      A
+                JR      Z,.HNDSP
+                ADD     A,"0"
+                JR      .HNDWR
+.HNDSP          LD      A," "           ; SPACE PADDING FOR HUNDREDS
+.HNDWR          OUT     (#98),A
+                
+                ; TENS
+                LD      A,H
+                LD      B,0
+.TENS           SUB     10
+                JR      C,.TNSDN
+                INC     B
+                JR      .TENS
+.TNSDN          ADD     A,10
+                LD      L,A             ; SAVE ONES IN L
+                LD      A,B
+                OR      A
+                JR      NZ,.TNSVL
+                ; IF HUNDREDS WAS SPACE, TENS SHOULD BE SPACE TOO
+                LD      A,C
+                CP      100
+                JR      NC,.TNSVL
+                LD      A," "
+                JR      .TNSWR
+.TNSVL          ADD     A,"0"
+.TNSWR          OUT     (#98),A
+                
+                ; ONES
+                LD      A,L
+                ADD     A,"0"
+                OUT     (#98),A
+                RET
+
+
 ; --- INCLUDES                          ----------------------------------------
 
 
@@ -502,6 +728,29 @@ LAYTBL          DEFW    #1800, STRTITLE
                 DEFW    #1AC0, STRKEY3
                 DEFW    #1AE0, STRKEY4
                 DEFW    0               ; END OF TABLE MARKER
+
+
+; --- SONG NAMES TABLE
+SNGNAMTB        DEFW    SHALOMCASTLE.HEADER, .SSHAL
+                DEFW    ADSRTEST.HEADER, .SADSR
+                DEFW    LFOTEST.HEADER, .SLFO
+                DEFW    SEQTEST.HEADER, .SSEQ
+                DEFW    MODTEST.HEADER, .SMOD
+                DEFW    SFXTEST.HEADER, .SSFX
+                DEFW    PORTATST.HEADER, .SPORT
+                DEFW    DTNTST.HEADER, .SDTN
+                DEFW    CHORTST.HEADER, .SCHOR
+                DEFW    0               ; END OF TABLE MARKER
+
+.SSHAL          DEFB    "SHALOM", 0
+.SADSR          DEFB    "ADSR  ", 0
+.SLFO           DEFB    "LFO   ", 0
+.SSEQ           DEFB    "SEQ   ", 0
+.SMOD           DEFB    "MOD   ", 0
+.SSFX           DEFB    "SFX   ", 0
+.SPORT          DEFB    "PORTA ", 0
+.SDTN           DEFB    "DETUNE", 0
+.SCHOR          DEFB    "CHORUS", 0
 
 
 SPLASH          DEFB    "MusaX Jukebox v1.9", 0
