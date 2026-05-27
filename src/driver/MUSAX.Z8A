@@ -1524,8 +1524,6 @@ UPDLFO          LD      A,(IX + CHLDEST)
                 OR      A
                 RET     Z               ; LFO INACTIVE: RET IMMEDIATELY!
 
-                PUSH    IY
-
                 ; 1. CHECK ADSR ACTIVE
                 LD      A,(IX + CHADSRS)
                 OR      A
@@ -1538,10 +1536,6 @@ UPDLFO          LD      A,(IX + CHLDEST)
                 OR      L
                 JR      Z,.NOLFO
 
-                ; TRANSFER PTR TO IY
-                PUSH    HL
-                POP     IY
-
                 ; 3. PROCESS DELAY
                 LD      A,(IX + CHLFOD)
                 OR      A
@@ -1550,17 +1544,28 @@ UPDLFO          LD      A,(IX + CHLDEST)
                 LD      (IX + CHLFOD),A
                 JR      .NOLFO
 
-.NODELAY        ; 4. UPDATE PHASE
+.NODELAY        ; PRELOAD INSTRUMENT LFO FIELDS (HL = CHINST PTR, INTACT FROM STEP 2)
+                ; INSLWAVE=5, INSLSPEE=6, INSLAMP=7 ARE CONSECUTIVE -> HL SEQUENTIAL READS
+                LD      DE,INSLWAVE             ; D=0, E=INSLWAVE(5)
+                ADD     HL,DE                   ; HL = INSTRUMENT + INSLWAVE
+                LD      D,(HL)                  ; D = INSLWAVE VALUE
+                INC     HL
+                LD      C,(HL)                  ; C = INSLSPEE VALUE
+                INC     HL
+                LD      E,(HL)                  ; E = INSLAMP VALUE
+
+                ; 4. UPDATE PHASE
                 LD      A,(IX + CHLFOP)
-                ADD     A,(IY + INSLSPEE)
+                ADD     A,C                     ; A = PHASE + INSLSPEE (C CONSUMED)
                 LD      (IX + CHLFOP),A
-                LD      B,A             ; B = NEW PHASE (CACHE BEFORE A IS CLOBBERED)
+                LD      B,A             ; B = NEW PHASE (E = INSLAMP STILL INTACT)
 
                 ; 5. WAVE TABLE LOOKUP
-                LD      A,(IY + INSLWAVE)
+                LD      A,D                     ; A = INSLWAVE VALUE (D CONSUMED)
                 AND     3
                 ADD     A,A
-                LD      E,A
+                LD      C,E                     ; C = INSLAMP (SAVE E BEFORE WAVE_IDX CLOBBERS IT)
+                LD      E,A                     ; E = WAVE_IDX * 2
                 LD      D,0
                 LD      HL,LFOWAVES
                 ADD     HL,DE
@@ -1574,6 +1579,7 @@ UPDLFO          LD      A,(IX + CHLDEST)
                 LD      A,(HL)          ; A = RAW SIGNED BYTE W [-128..127]
 
                 ; 6. SIGN AND ABSOLUTE VALUE
+                LD      B,C                     ; B = INSLAMP (SAVE C BEFORE SIGN CLOBBERS IT)
                 LD      C,0
                 OR      A
                 JP      P,.POS
@@ -1583,8 +1589,8 @@ UPDLFO          LD      A,(IX + CHLDEST)
                 LD      D,0             ; DE = ABS(W) (D = 0)
 
                 ; 7. LOOK UP SCALED AMPLITUDE FROM AMPTBL
+                LD      A,B                     ; A = INSLAMP (B CONSUMED)
                 LD      B,E                     ; B = |W| (SAVE BEFORE DE IS CLOBBERED)
-                LD      A,(IY + INSLAMP)        ; A = AMP (0..15)
                 SRL     A                       ; A = AMP/2, CARRY = AMP BIT 0
                 LD      H,A
                 LD      L,0
@@ -1601,11 +1607,10 @@ UPDLFO          LD      A,(IX + CHLDEST)
                 JR      NZ,.STORE
                 NEG
 .STORE          LD      (IX + CHLFOVAL),A
-                JR      .EXIT
+                RET
 
 .NOLFO          XOR     A
                 LD      (IX + CHLFOVAL),A
-.EXIT           POP     IY
                 RET
 
 
@@ -1719,7 +1724,7 @@ UPDVOL          LD      A,(IX + CHNOTE)
 .SKIPGF         ; L = UPDATED SCALE
 
                 ; 4. CALCULATE BASE VOLUME (CHANNEL VOL * MASTER VOL)
-                PUSH    HL              ; SAVE HL (L = SCALE)
+                LD      B,L             ; B = SCALE (SAVE L BEFORE HL IS CLOBBERED BY MVOLTBL)
                 LD      A,(MUSVOL)
                 CP      15
                 JR      Z,.NOMUSV
@@ -1737,7 +1742,7 @@ UPDVOL          LD      A,(IX + CHNOTE)
                 JR      .DONEBV
 
 .NOMUSV         LD      A,(IX + CHVOL)  ; A = BASEVOL
-.DONEBV         POP     HL              ; RESTORE HL (L = SCALE)
+.DONEBV         LD      L,B             ; L = SCALE (RESTORE FROM B)
                 JR      .DONEB2
 
 .SKIPGLB        LD      A,(IX + CHVOL)  ; A = BASEVOL (FOR SFX CHANNEL)
