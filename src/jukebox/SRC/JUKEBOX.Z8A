@@ -1658,7 +1658,7 @@ RESETUI         CALL    CLRUI
 ; --- MUSAX SOUND ENGINE CODE           ----------------------------------------
 
                 DEFINE  _MUSAX_INTEGRATION_
-
+                DEFINE  MUSAX_CONFIG 1          ; MUSAX_CFG_OPT_SIZE
                 INCLUDE "../../driver/CONST.Z8A"
                 INCLUDE "../../driver/MUSAX.Z8A"
                 INCLUDE "../../driver/TABLES.Z8A"

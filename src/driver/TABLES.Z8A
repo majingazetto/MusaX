@@ -41,11 +41,21 @@ FREQ_TBL
 
 ; --- LFO WAVEFORM POINTERS             ----------------------------------------
 
+    IF !(MUSAX_CONFIG & MUSAX_CFG_NO_LFO)
 LFOWAVES
         DEFW    TRITBL                  ; 0 = TRI
+    IF MUSAX_CONFIG & MUSAX_CFG_SINGLE_LFO
+        DEFW    TRITBL                  ; 1 = SAW -> TRI
+        DEFW    TRITBL                  ; 2 = SQR -> TRI
+        DEFW    TRITBL                  ; 3 = SIN -> TRI
+    ELSE
         DEFW    SAWTBL                  ; 1 = SAW
         DEFW    SQRTBL                  ; 2 = SQR
         DEFW    SINTBL                  ; 3 = SIN
+    ENDIF
+    ELSE
+        DEFS    8                       ; PADDING TO PRESERVE ALIGNMENT OF SUBSEQUENT TABLES
+    ENDIF
 
 ; --- TONE MASK TABLES (SHARED PAGE WITH FREQ_TBL) -----------------------------
 ; - OFFSET FROM FREQ_TBL: 192 (LFOWAVES) + 8 = 200 (#C8)
@@ -83,6 +93,7 @@ MIX_PTR_TBL
 
 ; --- LFO WAVEFORMS (256 BYTES EACH)    ----------------------------------------
 
+    IF !(MUSAX_CONFIG & MUSAX_CFG_NO_LFO)
 ; --- TRITBL TABLE (256 BYTES) ---
 TRITBL
         DEFB    #00, #02, #04, #06, #08, #0A, #0C, #0E
@@ -118,6 +129,7 @@ TRITBL
         DEFB    #E1, #E3, #E5, #E7, #E9, #EB, #ED, #EF
         DEFB    #F1, #F3, #F5, #F7, #F9, #FB, #FD, #FF
 
+    IF !(MUSAX_CONFIG & MUSAX_CFG_SINGLE_LFO)
 ; --- SAWTBL TABLE (256 BYTES) ---
 SAWTBL
         DEFB    #80, #81, #82, #83, #84, #85, #86, #87
@@ -222,6 +234,8 @@ SINTBL
         DEFB    #B9, #BC, #BF, #C1, #C4, #C7, #CA, #CD
         DEFB    #CF, #D2, #D5, #D8, #DB, #DE, #E1, #E4
         DEFB    #E7, #EA, #ED, #F0, #F4, #F7, #FA, #FD
+    ENDIF
+    ENDIF
 
 
 ; --- CENTFRAC TABLE (100 BYTES): CENTFRAC[N] = ROUND(N * 256 / 100)  ----------
@@ -242,6 +256,8 @@ CENTFRAC
         DEFB    #F6, #F8, #FB, #FD
 
 
+    IF !(MUSAX_CONFIG & MUSAX_CFG_NO_LFO)
+    IF !(MUSAX_CONFIG & MUSAX_CFG_OPT_SIZE)
 ; --- AMPTBL (2048 BYTES, 256-BYTE ALIGNED): AMPTBL[AMP*128+VAL] = (AMP*VAL*17)>>8
 ; --- AMP: 0..15 (16 ROWS OF 128 BYTES)  ----------------------------------------
 
@@ -519,8 +535,11 @@ AMPTBL
         DEFB    #67, #68, #69, #6A, #6B, #6C, #6D, #6E
         DEFB    #6F, #70, #71, #72, #73, #74, #75, #76
         DEFB    #77, #78, #79, #7A, #7B, #7C, #7D, #7E
+    ENDIF
+    ENDIF
 
 
+    IF !(MUSAX_CONFIG & MUSAX_CFG_OPT_SIZE)
 ; --- VOLATTEN (4096 BYTES, 256-BYTE ALIGNED): VOLATTEN[BV*256+SC]=(BV*SC+128)>>8
 ; --- BV: 0..15 (BASEVOL), SC: 0..255 (SCALE)  ----------------------------
 
@@ -1054,6 +1073,7 @@ VOLATTEN
         DEFB    #0E, #0E, #0E, #0E, #0E, #0E, #0E, #0E
         DEFB    #0E, #0E, #0E, #0E, #0E, #0E, #0E, #0E
         DEFB    #0F, #0F, #0F, #0F, #0F, #0F, #0F, #0F
+    ENDIF
 
 
 ; --- MVOLTBL (256 BYTES, 256-BYTE ALIGNED): MVOLTBL[CV*16+MV]=(CV*MV*17+128)>>8

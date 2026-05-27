@@ -1,6 +1,15 @@
                 IFNDEF  _CONST_Z8A_
                 DEFINE  _CONST_Z8A_
 
+; --- CONFIGURATION BITFIELD MASK ---
+MUSAX_CFG_OPT_SIZE   EQU %001
+MUSAX_CFG_SINGLE_LFO EQU %010
+MUSAX_CFG_NO_LFO     EQU %100
+
+                IFNDEF  MUSAX_CONFIG
+                DEFINE  MUSAX_CONFIG 0
+                ENDIF
+
 ;                                       ****************************************
 ;                                       * MUSAX CONSTANTS                      *
 ;                                       ****************************************
@@ -210,6 +219,20 @@ CHLCOUNT        EQU     11              ; LOOP COUNTER (DEFB)
 CHLADDR         EQU     12              ; LOOP ADDRESS (DEFW)
 CHADSRS         EQU     14              ; ADSR STATE (DEFB)
 CHADSRA         EQU     15              ; ADSR ACC (DEFB)
+    IF MUSAX_CONFIG & MUSAX_CFG_NO_LFO
+CHINSID         EQU     16              ; CURRENT INSTRUMENT ID PER CHANNEL (#FF = NONE)
+CHNOTE          EQU     17              ; CURRENT PLAYING NOTE (DEFB, 255 = REST)
+CHFADVOL        EQU     18              ; CHANNEL FADE VOLUME MULTIPLIER (DEFB, 0..255)
+CHFADTRG        EQU     19              ; CHANNEL FADE TARGET (DEFB, 0..255)
+CHFADSPD        EQU     20              ; CHANNEL FADE SPEED/STEP (DEFB, 0 = INACTIVE)
+CHRET           EQU     21              ; SUBROUTINE RETURN PC (DEFW)
+CHDETUNE        EQU     23              ; DETUNE CENTS (DEFB, SIGNED)
+CHPORTAS        EQU     24              ; PORTAMENTO SPEED (DEFB)
+CHPORTAT        EQU     25              ; PORTAMENTO TIMER (DEFB)
+CHPORTAN        EQU     26              ; PORTAMENTO TARGET NOTE (DEFB)
+CHIDX           EQU     27              ; CHANNEL INDEX (0..5) (DEFB)
+CHSIZE          EQU     28
+    ELSE
 CHLFOP          EQU     16              ; LFO PHASE (DEFB)
 CHLFOD          EQU     17              ; LFO DELAY (DEFB)
 CHINSID         EQU     18              ; CURRENT INSTRUMENT ID PER CHANNEL (#FF = NONE)
@@ -225,8 +248,8 @@ CHPORTAT        EQU     28              ; PORTAMENTO TIMER (DEFB)
 CHPORTAN        EQU     29              ; PORTAMENTO TARGET NOTE (DEFB)
 CHIDX           EQU     30              ; CHANNEL INDEX (0..5) (DEFB)
 CHLDEST         EQU     31              ; ACTIVE LFO DESTINATION COPY (DEFB)
-
 CHSIZE          EQU     32              ; UPDATE TOTAL SIZE (ROUNDED TO POWER-OF-2)
+    ENDIF
 PSGSIZE         EQU     14              ; PSG AUDIO REGISTERS SIZE (R0-R13)
 PSGADR          EQU     #A0             ; PSG ADDRESS SELECT PORT
 PSGWR           EQU     #A1             ; PSG DATA WRITE PORT

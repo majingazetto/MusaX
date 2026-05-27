@@ -768,7 +768,9 @@ UPSTREAM        ; --- TRANSPORT ---
                 
 .MODULAT        CALL    UPDPORTA        ; UPDATE CHROMATIC PORTAMENTO
                 CALL    UPDADSR         ; UPDATE ADSR ENVELOPE
+    IF !(MUSAX_CONFIG & MUSAX_CFG_NO_LFO)
                 CALL    UPDLFO          ; UPDATE LFO
+    ENDIF
                 CALL    CALCPER         ; CALCULATE PERIOD
                 CALL    UPDFADE         ; UPDATE CHANNEL FADE
                 JP      UPDVOL          ; UPDATE CHANNEL VOLUME SCALE
@@ -838,6 +840,7 @@ PROCEVT         LD      L,(IX + CHPC)
                 LD      (IX + CHADSRS),A
 
                 ; CHECK LFO DELAY
+    IF !(MUSAX_CONFIG & MUSAX_CFG_NO_LFO)
                 LD      L,(IX + CHINST)
                 LD      H,(IX + CHINST + 1)
                 LD      A,H
@@ -851,6 +854,7 @@ PROCEVT         LD      L,(IX + CHPC)
 .SETLFO         LD      (IX + CHLFOD),A
                 XOR     A
                 LD      (IX + CHLFOP),A
+    ENDIF
 
                 ; WRITE PSG PERIOD FROM FREQ_TBL (SNAP ONLY)
                 LD      A,(IX + CHIDX)
@@ -1106,6 +1110,7 @@ PROCEVT         LD      L,(IX + CHPC)
                 JR      Z,.PI_NULL2
 
                 ; INSTRUMENT IS VALID: COPY INSLDEST
+    IF !(MUSAX_CONFIG & MUSAX_CFG_NO_LFO)
                 LD      H,D
                 LD      L,E
                 LD      A,L
@@ -1116,19 +1121,24 @@ PROCEVT         LD      L,(IX + CHPC)
 .PI_NOI
                 LD      A,(HL)
                 LD      (IX + CHLDEST),A
+    ENDIF
                 JR      .PIIDOK
 
 .PI_NULL2       ; INSTRUMENT IS NULL: CLEAR LFO DEST AND SET ID TO #FF
+    IF !(MUSAX_CONFIG & MUSAX_CFG_NO_LFO)
                 XOR     A
                 LD      (IX + CHLDEST),A
+    ENDIF
                 LD      C,#FF
 
 .PIIDOK         LD      (IX + CHINSID),C
 
                 ; CLEAR LFO PHASE AND VALUE ON INSTRUMENT CHANGE
+    IF !(MUSAX_CONFIG & MUSAX_CFG_NO_LFO)
                 XOR     A
                 LD      (IX + CHLFOP),A
                 LD      (IX + CHLFOVAL),A
+    ENDIF
 
                 POP     HL              ; RESTORE STREAM PC
                 JP      .FETCH
@@ -1571,6 +1581,7 @@ UPDADSR         LD      A,(IX + CHADSRS)
                 RET
 
 
+    IF !(MUSAX_CONFIG & MUSAX_CFG_NO_LFO)
 ; - UPDLFO -----------------------------
 ; - UPDATE LFO (VIBRATO/TREMOLO) FOR CHANNEL
 ; - IN: IX = CHANNEL STATE POINTER
@@ -1647,6 +1658,18 @@ UPDLFO          LD      A,(IX + CHLDEST)
                 LD      D,0             ; DE = ABS(W) (D = 0)
 
                 ; 7. LOOK UP SCALED AMPLITUDE FROM AMPTBL
+    IF MUSAX_CONFIG & MUSAX_CFG_OPT_SIZE
+                LD      A,B                     ; A = INSLAMP (0..15)
+                ADD     A,A                     ; * 2
+                ADD     A,A                     ; * 4
+                ADD     A,A                     ; * 8
+                ADD     A,A                     ; * 16
+                ADD     A,B                     ; * 17 (A = AMP * 17)
+                PUSH    BC                      ; SAVE SIGN IN C (AND B)
+                LD      C,E                     ; C = |W|
+                CALL    MUL8_HIGH               ; A = (AMP*17 * |W|) >> 8
+                POP     BC                      ; RESTORE SIGN IN C (AND B)
+    ELSE
                 LD      A,B                     ; A = INSLAMP (B CONSUMED)
                 LD      B,E                     ; B = |W| (SAVE BEFORE DE IS CLOBBERED)
                 SRL     A                       ; A = AMP/2, CARRY = AMP BIT 0
@@ -1659,6 +1682,7 @@ UPDLFO          LD      A,(IX + CHLDEST)
                 ADD     A,B                     ; A = ROW OFFSET + |W|
                 LD      L,A                     ; HL = AMPTBL + AMP * 128 + |W|
                 LD      A,(HL)                  ; A = SCALED VALUE [0..127]
+    ENDIF
 
                 ; RESTORE SIGN (C = 0: POSITIVE, C = 1: NEGATIVE)
                 DEC     C
@@ -1670,6 +1694,7 @@ UPDLFO          LD      A,(IX + CHLDEST)
 .NOLFO          XOR     A
                 LD      (IX + CHLFOVAL),A
                 RET
+    ENDIF
 
 
 ; - UPDFADE ----------------------------
@@ -1731,6 +1756,10 @@ UPDVOL          LD      A,(IX + CHNOTE)
                 JP      .CALCDST        ; CALCULATE DESTINATION AND WRITE
 
 .ACTIVE         ; 1. CALCULATE VOLSCALE (ADSR + TREMOLO)
+    IF MUSAX_CONFIG & MUSAX_CFG_NO_LFO
+                LD      A,(IX + CHADSRA)
+                LD      L,A
+    ELSE
                 LD      A,(IX + CHLDEST)
                 CP      2               ; TREMOLO?
                 JR      Z,.TREM
@@ -1755,6 +1784,7 @@ UPDVOL          LD      A,(IX + CHNOTE)
                 JR      .VOLOK
 .V255           LD      L,255
 .VOLOK          ; L = CLAMPED VOLSCALE (0..255)
+    ENDIF
 
                 ; 2. APPLY CHANNEL FADE
                 LD      A,(IX + CHFADVOL)
@@ -1813,9 +1843,14 @@ UPDVOL          LD      A,(IX + CHNOTE)
                 LD      A,H             ; A = BASEVOL
                 JR      Z,.SKIPSC       ; IF SCALE == 255, FINALVOL = BASEVOL
 
+    IF MUSAX_CONFIG & MUSAX_CFG_OPT_SIZE
+                LD      C,L             ; C = SCALE
+                CALL    MUL8_HIGH       ; A = (BASEVOL * SCALE) >> 8
+    ELSE
                 ADD     A,HIGH VOLATTEN ; A = VOLATTEN PAGE + BASEVOL
                 LD      H,A
                 LD      A,(HL)          ; A = FINALVOL
+    ENDIF
 .SKIPSC         ; A = FINALVOL
                 PUSH    AF              ; PRESERVE FINALVOL
 
@@ -2046,6 +2081,7 @@ CALCPER         LD      A,(IX + CHNOTE)
                 LD      A,(IX + CHDETUNE)
                 LD      C,A
                 
+    IF !(MUSAX_CONFIG & MUSAX_CFG_NO_LFO)
                 LD      A,(IX + CHLDEST)
                 CP      1               ; VIBRATO?
                 JR      NZ,.CENTSOK
@@ -2053,6 +2089,7 @@ CALCPER         LD      A,(IX + CHNOTE)
                 ADD     A,C
                 LD      C,A
 .CENTSOK        ; C = TOTAL CENTS (SIGNED)
+    ENDIF
                 LD      A,C
                 OR      A
                 JR      NZ,.INTERP
