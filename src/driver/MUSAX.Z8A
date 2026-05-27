@@ -210,6 +210,49 @@ MUSSTOP         PUSH    AF
                 RET
 
 
+; - MUSPAUS ----------------------------
+; - TOGGLE PLAYBACK PAUSE STATE
+; - IN: NONE
+; - OUT: NONE
+; - CLOBBERS: AF
+; -
+
+MUSPAUS         LD      A,(MUSSTAT)
+                BIT     0,A             ; CHECK IF PLAYING
+                RET     Z               ; IF NOT PLAYING, CANNOT PAUSE
+
+                XOR     %00001000       ; TOGGLE BIT 3 (PAUSED)
+                LD      (MUSSTAT),A
+                BIT     3,A             ; CHECK IF NOW PAUSED
+                RET     Z               ; IF NOW UNPAUSED, JUST EXIT (RESUMES ON NEXT UPDATE)
+
+; - .MUTEMUS ---------------------------
+; - SILENCE MUSIC CHANNELS
+; - IN: NONE
+; - OUT: NONE
+; - CLOBBERS: AF, BC, DE, HL
+; -
+
+                ; READ CURRENT PSGMUS R7 MIXER CONFIG
+                LD      A,(PSGMUS + 7)
+                AND     #C0             ; PRESERVE BITS 6-7
+                OR      #3F             ; DISABLE TONES AND NOISE (BITS 0-5 = 1)
+
+                ; CLEAR PSGMUS (14 BYTES)
+                LD      HL,PSGMUS
+                LD      (HL),0
+                LD      DE,PSGMUS + 1
+                LD      BC,PSGSIZE - 1  ; PSGSIZE = 14
+                LDIR
+
+                LD      (PSGMUS + 7),A
+
+                ; MERGE TO PSGREG AND WRITE TO PSG
+                CALL    MUSMERGE
+                JP      MUSCOMM
+
+
+
 ; - FXPLAY -----------------------------
 ; - PLAY A SOUND EFFECT
 ; - IN: A = EFFECT ID (0-BASED)
@@ -536,22 +579,38 @@ MUSUPDAT        PUSH    AF
                 PUSH    IY
 
                 LD      A,(MUSSTAT)
-                AND     1
+                BIT     0,A             ; CHECK IF PLAYING
                 JP      Z,.EXIT
-
-                ; UPDATE 6 STREAMS (UNROLLED)
+                
+                BIT     3,A             ; CHECK IF PAUSED
+                JR      NZ,.PAUSED      ; IF PAUSED, SKIP MUSIC UPDATES
+                
+                ; --- NORMAL PLAYBACK: UPDATE MUSIC STREAMS (0..2) ---
                 LD      IX,CHANNELS
                 CALL    UPSTREAM
                 LD      IX,CHANNELS + CHSIZE
                 CALL    UPSTREAM
                 LD      IX,CHANNELS + CHSIZE * 2
                 CALL    UPSTREAM
+
+                ; --- UPDATE SFX STREAMS (3..5) ---
                 LD      IX,CHANNELS + CHSIZE * 3
                 CALL    UPSTREAM
                 LD      IX,CHANNELS + CHSIZE * 4
                 CALL    UPSTREAM
                 LD      IX,CHANNELS + CHSIZE * 5
                 CALL    UPSTREAM
+                JR      .CONTUPD
+
+.PAUSED         ; --- PAUSED PLAYBACK: UPDATE SFX STREAMS (3..5) ---
+                LD      IX,CHANNELS + CHSIZE * 3
+                CALL    UPSTREAM
+                LD      IX,CHANNELS + CHSIZE * 4
+                CALL    UPSTREAM
+                LD      IX,CHANNELS + CHSIZE * 5
+                CALL    UPSTREAM
+
+.CONTUPD
 
                 ; UPDATE GLOBAL FADE
                 LD      A,(MUSSTAT)

@@ -32,7 +32,7 @@ SFXPRI          DEFW    0               ; CURRENT FX PRIORITY
 
 ; --- GLOBAL STATE                      ----------------------------------------
 
-MUSSTAT         DEFB    0               ; BIT 0: PLAYING, BIT 1: FADING...
+MUSSTAT         DEFB    0               ; BIT 0: PLAYING, BIT 1: FADING, BIT 2: SFX_ACTIVE, BIT 3: PAUSED
 MUSVOL          DEFB    15              ; GLOBAL MASTER VOLUME
 GLBFADVL       DEFB    255             ; GLOBAL FADE CURRENT VOLUME (0..255)
 GLBFADTG       DEFB    255             ; GLOBAL FADE TARGET VOLUME (0..255)

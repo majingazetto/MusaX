@@ -53,6 +53,7 @@ Use **Ctrl+P** to instantly compile and play your composition in the simulator.
 ### Using the CLI Hub
 Check out the documentation in the `docs/` directory:
 - [Technical Specification](docs/technical_spec.md): Architecture, timing, and core concepts.
+- [Z80 Driver Integration Guide](docs/z80_driver.md): Detailed Z80 driver API reference and memory mapping.
 - [CLI Hub Guide](docs/cli_hub.md): Using the unified `musax.py` developer tool.
 - [Command Reference](docs/commands.md): Comprehensive guide to MusaX bytecode.
 - [Simulator User Guide](docs/simulator.md): How to use `musax_sim.py` for real-time debugging.
