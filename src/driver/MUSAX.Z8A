@@ -771,8 +771,7 @@ UPSTREAM        ; --- TRANSPORT ---
                 CALL    UPDLFO          ; UPDATE LFO
                 CALL    CALCPER         ; CALCULATE PERIOD
                 CALL    UPDFADE         ; UPDATE CHANNEL FADE
-                CALL    UPDVOL          ; UPDATE CHANNEL VOLUME SCALE
-                RET
+                JP      UPDVOL          ; UPDATE CHANNEL VOLUME SCALE
 
 
 ; - PROCEVT ----------------------------

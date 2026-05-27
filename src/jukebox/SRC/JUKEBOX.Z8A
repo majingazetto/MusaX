@@ -618,8 +618,7 @@ POLLKEY         ; --- PROCESS ROW 0 ---
                 CALL    RESETUI
                 POP     HL
                 XOR     A               ; INFINITE LOOPING LIMIT
-                CALL    MUSPLAY
-                RET
+                JP      MUSPLAY
 
 
 ; - LOGO -------------------------------
@@ -1506,8 +1505,7 @@ DEC2STR         LD      C,A
                 ; ONES
                 LD      A,L
                 ADD     A,"0"
-                CALL    WRTCHR
-                RET
+                JP      WRTCHR
 
 
 ; - DRAWBAR ----------------------------
@@ -1651,8 +1649,7 @@ RESETUI         CALL    CLRUI
                 LD      DE,SCRBUFF + 1
                 LD      BC,768 - 1
                 LDIR
-                CALL    INITLAY
-                RET
+                JP      INITLAY
 
 
 ; --- INCLUDES                          ----------------------------------------
