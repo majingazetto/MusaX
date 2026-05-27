@@ -1424,14 +1424,13 @@ UPDADSR         LD      A,(IX + CHADSRS)
                 LD      E,3             ; REL
                 JR      .DISPATCH
 
-.HAVINST        PUSH    IY
-                PUSH    HL
-                POP     IY              ; IY = INSTRUMENT PTR
-                LD      B,(IY + INSATT) ; ATT
-                LD      C,(IY + INSDEC) ; DEC
-                LD      D,(IY + INSUS)  ; SUS
-                LD      E,(IY + INSREL) ; REL
-                POP     IY
+.HAVINST        LD      B,(HL)          ; ATT
+                INC     HL
+                LD      C,(HL)          ; DEC
+                INC     HL
+                LD      D,(HL)          ; SUS
+                INC     HL
+                LD      E,(HL)          ; REL
 
 .DISPATCH       LD      A,(IX + CHADSRS)
                 CP      1
@@ -1543,12 +1542,7 @@ UPDLFO          LD      A,(IX + CHLDEST)
                 PUSH    HL
                 POP     IY
 
-                ; 3. CHECK LFO ACTIVE
-                LD      A,(IY + INSLDEST)
-                OR      A
-                JR      Z,.NOLFO
-
-                ; 4. PROCESS DELAY
+                ; 3. PROCESS DELAY
                 LD      A,(IX + CHLFOD)
                 OR      A
                 JR      Z,.NODELAY
@@ -1556,13 +1550,13 @@ UPDLFO          LD      A,(IX + CHLDEST)
                 LD      (IX + CHLFOD),A
                 JR      .NOLFO
 
-.NODELAY        ; 5. UPDATE PHASE
+.NODELAY        ; 4. UPDATE PHASE
                 LD      A,(IX + CHLFOP)
                 ADD     A,(IY + INSLSPEE)
                 LD      (IX + CHLFOP),A
                 LD      B,A             ; B = NEW PHASE (CACHE BEFORE A IS CLOBBERED)
 
-                ; 6. WAVE TABLE LOOKUP
+                ; 5. WAVE TABLE LOOKUP
                 LD      A,(IY + INSLWAVE)
                 AND     3
                 ADD     A,A
@@ -1579,7 +1573,7 @@ UPDLFO          LD      A,(IX + CHLDEST)
                 ADD     HL,DE
                 LD      A,(HL)          ; A = RAW SIGNED BYTE W [-128..127]
 
-                ; 7. SIGN AND ABSOLUTE VALUE
+                ; 6. SIGN AND ABSOLUTE VALUE
                 LD      C,0
                 OR      A
                 JP      P,.POS
@@ -1588,7 +1582,7 @@ UPDLFO          LD      A,(IX + CHLDEST)
 .POS            LD      E,A
                 LD      D,0             ; DE = ABS(W) (D = 0)
 
-                ; 8. LOOK UP SCALED AMPLITUDE FROM AMPTBL
+                ; 7. LOOK UP SCALED AMPLITUDE FROM AMPTBL
                 LD      B,E                     ; B = |W| (SAVE BEFORE DE IS CLOBBERED)
                 LD      A,(IY + INSLAMP)        ; A = AMP (0..15)
                 SRL     A                       ; A = AMP/2, CARRY = AMP BIT 0
