@@ -1076,6 +1076,13 @@ MVOLTBL
 ; CV = 15
         DEFB    #00, #01, #02, #03, #04, #05, #06, #07
         DEFB    #08, #09, #0A, #0B, #0C, #0D, #0E, #0F
+                ALIGN   256
+SQR_TBL
+V               = 0
+                DUP     512
+                DEFB    ((V * V) + 512) / 1024
+V               = V + 1
+                EDUP
 
 
                 ENDIF

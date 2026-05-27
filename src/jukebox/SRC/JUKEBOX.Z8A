@@ -189,13 +189,12 @@ ROMINIT         DI
 
 .LOOP           HALT
                 CALL    POLLKEY         ; POLL KEYBOARD FOR ACTIONS
-                BORD    7
+                ;BORD    7
                 CALL    MUSUPDAT        ; UPDATE AUDIO SEQUENCE
-                BORD    6
+                ;BORD    0
                 CALL    APPLYMUTE       ; OVERRIDE MUTED CHANNELS IN PSGREG
-                BORD    11
+                ;BORD    11
                 CALL    DRAWUI          ; DRAW GRAPHICAL DASHBOARD
-                BORD    0
                 JP      .LOOP
 
 
@@ -1132,6 +1131,16 @@ DRAWUI          ; 1. DRAW SONG NAME (CACHED)
                 LD      A,(TMPSTAT)
                 CP      (HL)
                 JR      NZ,.DIRTY
+                INC     HL
+
+                ; COMPARE INSTRUMENT ID
+                LD      A,(TMPSTAT)
+                CP      1
+                LD      A,(IX + CHINSID)
+                JR      Z,.CMPINS
+                LD      A,#FF
+.CMPINS         CP      (HL)
+                JR      NZ,.DIRTY
 
                 ; CACHE HIT! SKIP DRAWING
                 POP     HL              ; BALANCE STAT STR POINTER
@@ -1202,15 +1211,8 @@ DRAWUI          ; 1. DRAW SONG NAME (CACHED)
                 CP      1
                 JR      NZ,.INSOFF
 
-                ; READ INSID[CHIDX] (DRIVER-MAINTAINED); HL PRESERVED VIA STACK
-                PUSH    HL
-                LD      A,(IX+CHIDX)
-                LD      E,A
-                LD      D,0
-                LD      HL,INSID
-                ADD     HL,DE
-                LD      A,(HL)
-                POP     HL
+                ; READ CHINSID DIRECTLY FROM CHANNEL STATE
+                LD      A,(IX + CHINSID)
                 JR      .INSVAL
 
 .INSOFF         LD      A,255
@@ -1318,6 +1320,15 @@ DRAWUI          ; 1. DRAW SONG NAME (CACHED)
                 ; STATUS CODE
                 LD      A,C
                 LD      (HL),A
+                INC     HL
+
+                ; INSTRUMENT ID
+                LD      A,C
+                CP      1
+                LD      A,(IX + CHINSID)
+                JR      Z,.WRINS
+                LD      A,#FF
+.WRINS          LD      (HL),A
 
                 POP     IY
                 POP     BC

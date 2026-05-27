@@ -44,12 +44,13 @@ MUSINIT         PUSH    AF
                 LD      BC,PSGSIZE - 1
                 LDIR
 
-                ; INITIALIZE INSID[6] TO #FF (NO INSTRUMENT RESOLVED)
-                LD      HL,INSID
-                LD      (HL),#FF
-                LD      DE,INSID + 1
-                LD      BC,5
-                LDIR
+                ; INITIALIZE CHINSID IN CHANNEL STATES TO #FF (NO INSTRUMENT RESOLVED)
+                LD      HL,CHANNELS + CHINSID
+                LD      DE,CHSIZE
+                LD      B,6
+.SETINS         LD      (HL),#FF
+                ADD     HL,DE
+                DJNZ    .SETINS
 
                 ; READ PHYSICAL R7 MIXER TO PRESERVE BITS 6-7 (I/O CONFIGURATION)
                 LD      A,7
@@ -183,15 +184,8 @@ MUSPLAY         LD      (SONGLMT),A
                 LD      (IX + CHVOL),A
 
                 ; RESET INSID SLOT FOR THIS MUSIC CHANNEL
-                ; HL HOLDS THE SONG HEADER PTR (LIVE ACROSS CALLERS) — PRESERVE IT
-                PUSH    HL
-                LD      A,(IX + CHIDX)
-                LD      L,A
-                LD      H,0
-                LD      DE,INSID
-                ADD     HL,DE
-                LD      (HL),#FF
-                POP     HL
+                LD      A,#FF
+                LD      (IX + CHINSID),A
                 RET
 
 
@@ -363,13 +357,11 @@ FXPLAY          PUSH    AF
                 OR      B
                 LD      (PSGSFX + 7),A
 
-                ; RESET INSID SLOT FOR THIS INACTIVE FX CHANNEL
-                LD      A,(IX + CHIDX)
-                LD      L,A
-                LD      H,0
-                LD      DE,INSID
-                ADD     HL,DE
-                LD      (HL),#FF
+                ; RESET INSID AND CHLDEST FOR THIS INACTIVE FX CHANNEL
+                XOR     A
+                LD      (IX + CHLDEST),A
+                LD      A,#FF
+                LD      (IX + CHINSID),A
                 RET
 
 .FXACT          LD      (IX + CHPC),E
@@ -416,18 +408,26 @@ FXPLAY          PUSH    AF
 .FXSETIN        LD      (IX + CHINST),E
                 LD      (IX + CHINST + 1),D
 
-                ; UPDATE INSID: 0 IF INSTRUMENT RESOLVED, #FF IF NULL
+                ; UPDATE INSID AND CHLDEST: 0 IF INSTRUMENT RESOLVED, #FF IF NULL
                 LD      A,D
                 OR      E
+                JR      Z,.FXNULL
+                
+                ; COPY INSLDEST
+                LD      H,D
+                LD      L,E
+                LD      BC,INSLDEST
+                ADD     HL,BC
+                LD      A,(HL)
+                LD      (IX + CHLDEST),A
+                LD      C,0             ; INSTRUMENT ID FOR FX IS ALWAYS 0 (FX ONLY HAS 1 INST)
+                JR      .FXIDDN
+                
+.FXNULL         XOR     A
+                LD      (IX + CHLDEST),A
                 LD      C,#FF
-                JR      Z,.FXII
-                LD      C,0
-.FXII           LD      A,(IX + CHIDX)
-                LD      L,A
-                LD      H,0
-                LD      DE,INSID
-                ADD     HL,DE
-                LD      (HL),C
+                
+.FXIDDN         LD      (IX + CHINSID),C
                 RET
 
 
@@ -963,17 +963,34 @@ PROCEVT         LD      L,(IX + CHPC)
 .PI_SET         LD      (IX + CHINST),E
                 LD      (IX + CHINST + 1),D
 
-                ; UPDATE INSID: C HOLDS REQUESTED ID; FORCE #FF IF NULL RESOLVED
                 LD      A,D
                 OR      E
-                JR      NZ,.PIIDOK
-                LD      C,#FF
-.PIIDOK         LD      A,(IX + CHIDX)
+                JR      Z,.PI_NULL2
+
+                ; INSTRUMENT IS VALID: COPY INSLDEST
+                LD      H,D
+                LD      L,E
+                LD      A,L
+                ADD     A,INSLDEST
                 LD      L,A
-                LD      H,0
-                LD      DE,INSID
-                ADD     HL,DE
-                LD      (HL),C
+                JR      NC,.PI_NOI
+                INC     H
+.PI_NOI
+                LD      A,(HL)
+                LD      (IX + CHLDEST),A
+                JR      .PIIDOK
+
+.PI_NULL2       ; INSTRUMENT IS NULL: CLEAR LFO DEST AND SET ID TO #FF
+                XOR     A
+                LD      (IX + CHLDEST),A
+                LD      C,#FF
+
+.PIIDOK         LD      (IX + CHINSID),C
+
+                ; CLEAR LFO PHASE AND VALUE ON INSTRUMENT CHANGE
+                XOR     A
+                LD      (IX + CHLFOP),A
+                LD      (IX + CHLFOVAL),A
 
                 POP     HL              ; RESTORE STREAM PC
                 JP      .FETCH
@@ -1428,7 +1445,11 @@ UPDADSR         LD      A,(IX + CHADSRS)
 ; - CLOBBERS: AF, BC, DE, HL
 ; -
 
-UPDLFO          PUSH    IY
+UPDLFO          LD      A,(IX + CHLDEST)
+                OR      A
+                RET     Z               ; LFO INACTIVE: RET IMMEDIATELY!
+
+                PUSH    IY
 
                 ; 1. CHECK ADSR ACTIVE
                 LD      A,(IX + CHADSRS)
@@ -1577,14 +1598,7 @@ UPDVOL          LD      A,(IX + CHNOTE)
                 JP      .CALCDST        ; CALCULATE DESTINATION AND WRITE
 
 .ACTIVE         ; 1. CALCULATE VOLSCALE (ADSR + TREMOLO)
-                LD      L,(IX + CHINST)
-                LD      H,(IX + CHINST + 1)
-                LD      A,H
-                OR      L
-                JR      Z,.NOTREM
-                PUSH    HL
-                POP     IY
-                LD      A,(IY + INSLDEST)
+                LD      A,(IX + CHLDEST)
                 CP      2               ; TREMOLO?
                 JR      Z,.TREM
 .NOTREM         LD      DE,0
@@ -1615,10 +1629,8 @@ UPDVOL          LD      A,(IX + CHNOTE)
                 JR      Z,.SKIPCF
 
                 LD      C,L             ; C = SCALE
-                CALL    MUL8            ; HL = SCALE * CHFADVOL
-                LD      DE,128
-                ADD     HL,DE
-                LD      L,H             ; L = HL >> 8
+                CALL    MUL8_HIGH       ; A = (SCALE * CHFADVOL) >> 8
+                LD      L,A             ; L = UPDATED SCALE
 .SKIPCF         ; L = UPDATED SCALE
 
                 ; CHECK IF MUSIC CHANNEL (INDEX < 3)
@@ -1632,10 +1644,8 @@ UPDVOL          LD      A,(IX + CHNOTE)
                 JR      Z,.SKIPGF
 
                 LD      C,L             ; C = SCALE
-                CALL    MUL8            ; HL = SCALE * GLBFADVL
-                LD      DE,128
-                ADD     HL,DE
-                LD      L,H             ; L = HL >> 8
+                CALL    MUL8_HIGH       ; A = (SCALE * GLBFADVL) >> 8
+                LD      L,A             ; L = UPDATED SCALE
 .SKIPGF         ; L = UPDATED SCALE
 
                 ; 4. CALCULATE BASE VOLUME (CHANNEL VOL * MASTER VOL)
@@ -1696,25 +1706,33 @@ UPDVOL          LD      A,(IX + CHNOTE)
                 RET
 
 
-; - MUL8 -------------------------------
-; - 8-BIT UNSIGNED MULTIPLY (HL = A * C)
+; - MUL8_HIGH --------------------------
+; - 8-BIT UNSIGNED MULTIPLY HIGH BYTE (A = (A * C) >> 8)
 ; - IN: A, C
-; - OUT: HL = A * C
-; - CLOBBERS: A, B, DE
+; - OUT: A = (A * C) >> 8
+; - CLOBBERS: BC, HL
 ; -
 
-MUL8            LD      L,0
-                LD      H,L             ; HL = 0
-                LD      E,C
-                LD      D,0             ; DE = C
-                LD      B,8
-.LOOP           SRL     A
-                JR      NC,.NOADD
-                ADD     HL,DE
-.NOADD          EX      DE,HL
-                ADD     HL,HL
-                EX      DE,HL
-                DJNZ    .LOOP
+MUL8_HIGH       LD      B,A             ; B = A
+                ADD     A,C             ; A = A + C, CARRY = bit 8
+                LD      L,A
+                LD      H,HIGH SQR_TBL
+                JR      NC,.NOINC
+                INC     H
+.NOINC          LD      A,(HL)          ; A = f(A+C)
+                PUSH    AF              ; Save f(A+C)
+                
+                LD      A,B
+                SUB     C
+                JR      NC,.POS
+                NEG
+.POS            LD      L,A
+                LD      H,HIGH SQR_TBL
+                LD      A,(HL)          ; A = f(|A-C|)
+                
+                LD      C,A             ; C = f(|A-C|)
+                POP     AF              ; A = f(A+C)
+                SUB     C               ; A = f(A+C) - f(|A-C|)
                 RET
 
 
@@ -1901,15 +1919,8 @@ CALCPER         LD      A,(IX + CHNOTE)
                 LD      A,(IX + CHDETUNE)
                 LD      C,A
                 
-                LD      L,(IX + CHINST)
-                LD      H,(IX + CHINST + 1)
-                LD      A,H
-                OR      L
-                JR      Z,.CENTSOK
-                PUSH    HL
-                POP     IY
-                LD      A,(IY + INSLDEST)
-                CP      1
+                LD      A,(IX + CHLDEST)
+                CP      1               ; VIBRATO?
                 JR      NZ,.CENTSOK
                 LD      A,(IX + CHLFOVAL)
                 ADD     A,C
@@ -2118,8 +2129,8 @@ CNTMUL          EX      DE,HL           ; DE = DELTA_P
                 OR      A
                 JR      NZ,.BIGDLT      ; DELTA_P > 255: FULL 16x8 MULTIPLY
                 LD      A,L             ; DELTA_P FITS IN 8 BITS: FAST PATH
-                CALL    MUL8            ; HL = A * C (16-BIT PRODUCT)
-                LD      L,H             ; L = HIGH BYTE = RESULT >> 8
+                CALL    MUL8_HIGH       ; A = (A * C) >> 8
+                LD      L,A
                 LD      H,0             ; HL = QUOTIENT (16-BIT)
                 RET
 
