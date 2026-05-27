@@ -221,7 +221,7 @@ FXPLAY          PUSH    AF
                 PUSH    BC
                 PUSH    DE
                 PUSH    HL
-                PUSH    IX
+                PUSH    IY
 
                 ; COMPUTE ENTRY ADDRESS: FXPTR + A * 4
                 LD      L,A
@@ -251,19 +251,19 @@ FXPLAY          PUSH    AF
                 ; CHECK IF SFXMSK IS NON-ZERO
                 LD      A,(SFXMSK)
                 OR      A
-                JR      Z,.PRI_OK       ; IF 0, IGNORE PRIORITY CHECK
+                JR      Z,.PRIOK       ; IF 0, IGNORE PRIORITY CHECK
 
                 ; COMPARISON: SFXPRI VS BC
                 LD      HL,(SFXPRI)     ; HL = CURRENT PRIORITY
                 OR      A               ; CLEAR CARRY FLAG
                 SBC     HL,BC
-                JR      C,.PRI_OK       ; HL < BC, OK
-                JR      Z,.PRI_OK       ; HL == BC, OK
+                JR      C,.PRIOK       ; HL < BC, OK
+                JR      Z,.PRIOK       ; HL == BC, OK
 
                 ; OTHERWISE, HL > BC, REJECT!
                 JP      .FXEXIT
 
-.PRI_OK         LD      (SFXPRI),BC
+.PRIOK          LD      (SFXPRI),BC
 
                 LD      L,E
                 LD      H,D             ; HL = PTR_HDR
@@ -300,22 +300,58 @@ FXPLAY          PUSH    AF
                 ; STORE IN FXINST
                 LD      (FXINST),DE
 
+                ; RESOLVE INSTRUMENT 0 PROPERTIES ONCE
+                LD      A,D
+                OR      E
+                JR      Z,.FXNOIN
+
+                LD      L,E
+                LD      H,D             ; HL = FXINST table
+                LD      C,(HL)
+                INC     HL
+                LD      B,(HL)          ; BC = instrument 0 record address
+
+                LD      A,B
+                OR      C
+                JR      Z,.FXNOIN
+
+                ; Instrument is valid: read LFO destination (offset 4)
+                LD      L,C
+                LD      H,B
+                LD      A,L
+                ADD     A,4             ; INSLDEST = 4
+                LD      L,A
+                JR      NC,.L1
+                INC     H
+.L1             LD      A,(HL)
+                LD      IYL,A           ; IYL = LFO dest
+                LD      IYH,0           ; IYH = CHINSID (0)
+                JR      .FXINSD
+
+.FXNOIN         LD      BC,0
+                LD      IYL,0
+                LD      IYH,#FF
+.FXINSD
+
                 ; INITIALIZE CHANNEL 5 (SFX C)
                 POP     DE              ; DE = PTR_C
-                LD      IX,CHANNELS + CHSIZE * 5
+                LD      HL,CHANNELS + CHSIZE * 5
+                LD      A,4             ; Tone disable mask for Channel 5
                 CALL    .INCHFX
 
                 ; INITIALIZE CHANNEL 4 (SFX B)
                 POP     DE              ; DE = PTR_B
-                LD      IX,CHANNELS + CHSIZE * 4
+                LD      HL,CHANNELS + CHSIZE * 4
+                LD      A,2             ; Tone disable mask for Channel 4
                 CALL    .INCHFX
 
                 ; INITIALIZE CHANNEL 3 (SFX A)
                 POP     DE              ; DE = PTR_A
-                LD      IX,CHANNELS + CHSIZE * 3
+                LD      HL,CHANNELS + CHSIZE * 3
+                LD      A,1             ; Tone disable mask for Channel 3
                 CALL    .INCHFX
 
-.FXEXIT         POP     IX
+.FXEXIT         POP     IY
                 POP     HL
                 POP     DE
                 POP     BC
@@ -323,111 +359,165 @@ FXPLAY          PUSH    AF
                 RET
 
 
-.INCHFX         LD      A,D
+; - .INCHFX ----------------------------
+; - INITIALIZE A SINGLE SFX CHANNEL
+; - IN: HL = CHANNEL STATE ADDR, DE = ENTRY PTR, BC = INSTRUMENT RECORD
+; -     IYL = LFO DEST, IYH = CHINSID, A = TONE DISABLE MASK
+; - OUT: HL CLOBBERED (POINTS TO END OF CH STATE)
+; - CLOBBERS: AF, DE, HL
+; -
+
+.INCHFX         PUSH    BC              ; PRESERVE INSTRUMENT RECORD
+                LD      B,A             ; B = TONE DISABLE MASK
+                LD      A,D
                 OR      E
-                JR      NZ,.FXACT
+                JR      NZ,.ACT
 
-                ; INACTIVE CHANNEL
+                ; --- INACTIVE CHANNEL ---
+                ; HL points to offset 0 (CHPC)
                 XOR     A
-                LD      (IX + CHPC),A
-                LD      (IX + CHPC + 1),A
-                LD      (IX + CHWAIT),A
-                LD      (IX + CHWAIT + 1),A
-                LD      (IX + CHFRAC),A
-                LD      (IX + CHADSRS),A ; STATE = IDLE
-                LD      (IX + CHADSRA),A
-                LD      (IX + CHDETUNE),A
-                LD      (IX + CHPORTAS),A
-                LD      (IX + CHPORTAT),A
-                
-                LD      A,255
-                LD      (IX + CHNOTE),A
-                LD      (IX + CHPORTAN),A
+                LD      (HL),A          ; CHPC = 0
+                INC     HL
+                LD      (HL),A
+                INC     HL              ; HL is at offset 2 (CHWAIT)
 
-                ; DISABLE TONE A/B/C IN PSGSFX R7
-                LD      A,(IX + CHIDX)
-                SUB     3
-                LD      B,1
-                JR      Z,.FXS1
-                DEC     A
-                LD      B,2
-                JR      Z,.FXS1
-                LD      B,4
-.FXS1           LD      A,(PSGSFX + 7)
+                LD      (HL),A          ; CHWAIT = 0
+                INC     HL
+                LD      (HL),A
+                INC     HL              ; HL is at offset 4 (CHFRAC)
+
+                LD      (HL),A          ; CHFRAC = 0
+                INC     HL              ; HL is at offset 5 (CHBPM)
+
+                ; Skip to offset 14 (CHADSRS). DE was 0, so D = 0.
+                LD      E,9
+                ADD     HL,DE           ; HL is at offset 14 (CHADSRS)
+
+                LD      (HL),A          ; CHADSRS = 0 (IDLE)
+                INC     HL
+                LD      (HL),A          ; CHADSRA = 0
+                INC     HL
+                LD      (HL),A          ; CHLFOP = 0
+                INC     HL
+                LD      (HL),A          ; CHLFOD = 0
+                INC     HL              ; HL is at offset 18 (CHINSID)
+
+                LD      (HL),#FF        ; CHINSID = #FF
+                INC     HL              ; HL is at offset 19 (CHLFOVAL)
+
+                LD      (HL),A          ; CHLFOVAL = 0
+                INC     HL              ; HL is at offset 20 (CHNOTE)
+
+                LD      (HL),255        ; CHNOTE = 255
+                INC     HL              ; HL is at offset 21
+
+                ; Skip to offset 29 (CHPORTAN). We can load E = 8 (D is already 0).
+                LD      E,8
+                ADD     HL,DE           ; HL is at offset 29 (CHPORTAN)
+
+                LD      (HL),255        ; CHPORTAN = 255
+                INC     HL
+                INC     HL              ; Skip CHIDX (30) to offset 31 (CHLDEST)
+
+                LD      (HL),A          ; CHLDEST = 0
+
+                ; Now disable Tone in PSGSFX + 7
+                LD      A,(PSGSFX + 7)
                 OR      B
                 LD      (PSGSFX + 7),A
 
-                ; RESET INSID AND CHLDEST FOR THIS INACTIVE FX CHANNEL
-                XOR     A
-                LD      (IX + CHLDEST),A
-                LD      A,#FF
-                LD      (IX + CHINSID),A
+                POP     BC              ; RESTORE INSTRUMENT RECORD
                 RET
 
-.FXACT          LD      (IX + CHPC),E
-                LD      (IX + CHPC + 1),D
+.ACT            ; --- ACTIVE CHANNEL ---
+                ; HL points to offset 0 (CHPC)
+                LD      (HL),E          ; CHPC low
+                INC     HL
+                LD      (HL),D          ; CHPC high
+                INC     HL              ; HL is at offset 2 (CHWAIT)
 
                 XOR     A
-                LD      (IX + CHWAIT),A
-                LD      (IX + CHWAIT + 1),A
-                LD      (IX + CHFRAC),A
-                LD      (IX + CHADSRS),A ; STATE = IDLE
-                LD      (IX + CHADSRA),A
-                LD      (IX + CHDETUNE),A
-                LD      (IX + CHPORTAS),A
-                LD      (IX + CHPORTAT),A
+                LD      (HL),A          ; CHWAIT low = 0
+                INC     HL
+                LD      (HL),A          ; CHWAIT high = 0
+                INC     HL
+                LD      (HL),A          ; CHFRAC = 0
+                INC     HL              ; HL is at offset 5 (CHBPM)
 
-                LD      A,15
-                LD      (IX + CHVOL),A
+                LD      (HL),A          ; CHBPM low = 0
+                INC     HL
+                LD      (HL),#24        ; CHBPM high = #24
+                INC     HL              ; HL is at offset 7 (CHVOL)
+
+                LD      (HL),15         ; CHVOL = 15
+                INC     HL              ; HL is at offset 8 (CHGATE)
+
+                LD      (HL),255        ; CHGATE = 255
+                INC     HL              ; HL is at offset 9 (CHINST)
+
+                POP     DE              ; DE = instrument record address
+                LD      (HL),E          ; CHINST low
+                INC     HL
+                LD      (HL),D          ; CHINST high
+                INC     HL              ; HL is at offset 11 (CHLCOUNT)
+                PUSH    DE              ; PUSH BACK INSTRUMENT RECORD ADDRESS TO KEEP STACK BALANCED
+
+                LD      D,0
+                LD      E,0             ; DE = 0
+
+                LD      (HL),E          ; CHLCOUNT = 0
+                INC     HL
+                LD      (HL),E          ; CHLADDR low = 0
+                INC     HL
+                LD      (HL),D          ; CHLADDR high = 0
+                INC     HL              ; HL is at offset 14 (CHADSRS)
+
+                LD      (HL),E          ; CHADSRS = 0 (IDLE)
+                INC     HL
+                LD      (HL),E          ; CHADSRA = 0
+                INC     HL
+                LD      (HL),E          ; CHLFOP = 0
+                INC     HL
+                LD      (HL),E          ; CHLFOD = 0
+                INC     HL              ; HL is at offset 18 (CHINSID)
+
+                LD      A,IYH
+                LD      (HL),A          ; CHINSID
+                INC     HL              ; HL is at offset 19 (CHLFOVAL)
+
+                LD      (HL),E          ; CHLFOVAL = 0
+                INC     HL              ; HL is at offset 20 (CHNOTE)
 
                 LD      A,255
-                LD      (IX + CHGATE),A
-                LD      (IX + CHNOTE),A
-                LD      (IX + CHPORTAN),A
-                LD      (IX + CHFADVOL),A
-                LD      (IX + CHFADTRG),A
-
-                ; SET CHBPM TO #2400
-                XOR     A
-                LD      (IX + CHBPM),A
-                LD      A,#24
-                LD      (IX + CHBPM + 1),A
-
-                ; LOAD INSTRUMENT 0 POINTER FROM FXINST
-                LD      HL,(FXINST)
-                LD      A,H
-                OR      L
-                JR      Z,.FXNOIN
-
-                LD      E,(HL)
+                LD      (HL),A          ; CHNOTE = 255
                 INC     HL
-                LD      D,(HL)          ; DE = INSTRUMENT 0 RECORD ADDR
-                JR      .FXSETIN
+                LD      (HL),A          ; CHFADVOL = 255
+                INC     HL
+                LD      (HL),A          ; CHFADTRG = 255
+                INC     HL              ; HL is at offset 23 (CHFADSPD)
 
-.FXNOIN         LD      DE,0
-.FXSETIN        LD      (IX + CHINST),E
-                LD      (IX + CHINST + 1),D
+                LD      (HL),E          ; CHFADSPD = 0
+                INC     HL              ; HL is at offset 24 (CHRET)
 
-                ; UPDATE INSID AND CHLDEST: 0 IF INSTRUMENT RESOLVED, #FF IF NULL
-                LD      A,D
-                OR      E
-                JR      Z,.FXNULL
-                
-                ; COPY INSLDEST
-                LD      H,D
-                LD      L,E
-                LD      BC,INSLDEST
-                ADD     HL,BC
-                LD      A,(HL)
-                LD      (IX + CHLDEST),A
-                LD      C,0             ; INSTRUMENT ID FOR FX IS ALWAYS 0 (FX ONLY HAS 1 INST)
-                JR      .FXIDDN
-                
-.FXNULL         XOR     A
-                LD      (IX + CHLDEST),A
-                LD      C,#FF
-                
-.FXIDDN         LD      (IX + CHINSID),C
+                LD      (HL),E          ; CHRET low = 0
+                INC     HL
+                LD      (HL),D          ; CHRET high = 0
+                INC     HL              ; HL is at offset 26 (CHDETUNE)
+
+                LD      (HL),E          ; CHDETUNE = 0
+                INC     HL
+                LD      (HL),E          ; CHPORTAS = 0
+                INC     HL
+                LD      (HL),E          ; CHPORTAT = 0
+                INC     HL              ; HL is at offset 29 (CHPORTAN)
+
+                LD      (HL),A          ; CHPORTAN = 255
+                INC     HL
+                INC     HL              ; Skip CHIDX (30) to offset 31 (CHLDEST)
+
+                LD      A,IYL
+                LD      (HL),A          ; CHLDEST
+                POP     BC              ; RESTORE INSTRUMENT RECORD ADDRESS TO BC
                 RET
 
 
@@ -709,21 +799,19 @@ PROCEVT         LD      L,(IX + CHPC)
                 LD      A,(IX + CHIDX)
                 LD      C,A             ; SAVE CHANNEL INDEX
                 ADD     A,A             ; A = CHIDX * 2
-                CP      6
-                JR      C,.PNDUNDER
-                ADD     A,8             ; PSGSFX STARTS AT PSGMUS + 14
-.PNDUNDER       LD      L,A
-                LD      H,0
-                LD      DE,PSGMUS
-                ADD     HL,DE
+                ADD     A,#DC           ; OFFSET TO PER_PTR_TBL IN FREQ_TBL PAGE
+                LD      L,A
+                LD      H,HIGH FREQ_TBL
+                LD      E,(HL)
+                INC     HL
+                LD      D,(HL)          ; DE = shadow register address
+                EX      DE,HL           ; HL = shadow register address
 
 .PNWRIT         PUSH    HL              ; SAVE DEST ADDR
                 LD      A,(IX + CHNOTE)
-                LD      H,0
+                ADD     A,A             ; A = CHNOTE * 2
                 LD      L,A
-                ADD     HL,HL
-                LD      DE,FREQ_TBL
-                ADD     HL,DE
+                LD      H,HIGH FREQ_TBL
                 LD      A,(HL)
                 INC     HL
                 LD      D,(HL)          ; D = PERIOD HIGH
@@ -738,24 +826,23 @@ PROCEVT         LD      L,(IX + CHPC)
                 CP      3
                 JR      C,.EOK
                 SUB     3
-.EOK            LD      B,1
-                OR      A
-                JR      Z,.EMASKOK
-.EL             SLA     B
-                DEC     A
-                JR      NZ,.EL
-.EMASKOK        LD      A,B
-                CPL
-                LD      B,A             ; B = MASK
-                LD      HL,PSGMUS + 7
-                LD      A,C
-                CP      3
-                JR      C,.R7OK
-                LD      DE,14
-                ADD     HL,DE
-.R7OK           LD      A,(HL)
-                AND     B
-                LD      (HL),A
+.EOK            ; A is now 0, 1, or 2
+                ADD     A,#C8           ; OFFSET TO TONE_ON_MSK IN FREQ_TBL PAGE
+                LD      L,A
+                LD      H,HIGH FREQ_TBL
+                LD      B,(HL)          ; B = MASK (AND to enable tone)
+                
+                LD      A,C             ; A = CHIDX
+                ADD     A,A             ; A = CHIDX * 2
+                ADD     A,#E8           ; OFFSET TO MIX_PTR_TBL IN FREQ_TBL PAGE
+                LD      L,A
+                LD      H,HIGH FREQ_TBL
+                LD      E,(HL)
+                INC     HL
+                LD      D,(HL)          ; DE = shadow R7 register pointer
+                LD      A,(DE)          ; A = CURRENT R7
+                AND     B               ; AND to enable tone
+                LD      (DE),A
 
 .EFIN           POP     HL              ; RESTORE PC
                 JP      .EXIT
@@ -1414,25 +1501,26 @@ UPDADSR         LD      A,(IX + CHADSRS)
                 LD      A,(IX + CHIDX)  ; A = CHANNEL INDEX (0..5)
                 LD      C,A             ; C = CHANNEL INDEX
                 
-                ; COMPUTE B = (1 << (A % 3))
                 CP      3
                 JR      C,.M_OK
                 SUB     3
-.M_OK           LD      B,1
-                OR      A
-                JR      Z,.MASK_OK
-.RL             SLA     B
-                DEC     A
-                JR      NZ,.RL
-.MASK_OK        LD      HL,PSGMUS + 7
-                LD      A,C
-                CP      3
-                JR      C,.R7OK
-                LD      DE,14
-                ADD     HL,DE
-.R7OK           LD      A,(HL)
-                OR      B
-                LD      (HL),A
+.M_OK           ; A is now 0, 1, or 2
+                ADD     A,#CC           ; OFFSET TO TONE_OFF_MSK IN FREQ_TBL PAGE
+                LD      L,A
+                LD      H,HIGH FREQ_TBL
+                LD      B,(HL)          ; B = MASK (OR to disable tone)
+                
+                LD      A,C             ; A = CHIDX
+                ADD     A,A             ; A = CHIDX * 2
+                ADD     A,#E8           ; OFFSET TO MIX_PTR_TBL IN FREQ_TBL PAGE
+                LD      L,A
+                LD      H,HIGH FREQ_TBL
+                LD      E,(HL)
+                INC     HL
+                LD      D,(HL)          ; DE = shadow R7 register pointer
+                LD      A,(DE)          ; A = CURRENT R7
+                OR      B               ; OR to disable tone
+                LD      (DE),A
                 
 .RLFIN          POP     BC
                 RET
@@ -1687,22 +1775,15 @@ UPDVOL          LD      A,(IX + CHNOTE)
                 PUSH    AF              ; PRESERVE FINALVOL
 
 .CALCDST        LD      A,(IX + CHIDX)
-                CP      3
-                JR      NC,.SFXVOL
-                ADD     A,8             ; A = C + 8
-                LD      E,A
-                LD      D,0
-                LD      HL,PSGMUS
-                ADD     HL,DE
-                JR      .DONEV
-.SFXVOL         SUB     3
-                ADD     A,8             ; A = C - 3 + 8 = C + 5
-                LD      E,A
-                LD      D,0
-                LD      HL,PSGSFX
-                ADD     HL,DE
-.DONEV          POP     AF              ; A = FINALVOL
-                LD      (HL),A          ; WRITE TO SHADOW REGISTER
+                ADD     A,A             ; A = CHIDX * 2
+                ADD     A,#D0           ; OFFSET TO VOL_PTR_TBL IN FREQ_TBL PAGE
+                LD      L,A
+                LD      H,HIGH FREQ_TBL
+                LD      E,(HL)
+                INC     HL
+                LD      D,(HL)          ; DE = shadow register pointer
+                POP     AF              ; A = FINALVOL
+                LD      (DE),A          ; WRITE TO SHADOW REGISTER
                 RET
 
 
@@ -1906,14 +1987,13 @@ CALCPER         LD      A,(IX + CHNOTE)
                 ; COMPUTE SHADOW ADDR
                 LD      A,(IX + CHIDX)
                 ADD     A,A             ; A = CHIDX * 2
-                CP      6
-                JR      C,.UNDER
-                ADD     A,8             ; PSGSFX STARTS AT PSGMUS + 14
-.UNDER          LD      L,A
-                LD      H,0
-                LD      DE,PSGMUS
-                ADD     HL,DE
-                PUSH    HL              ; SAVE SHADOW ADDR ON STACK
+                ADD     A,#DC           ; OFFSET TO PER_PTR_TBL IN FREQ_TBL PAGE
+                LD      L,A
+                LD      H,HIGH FREQ_TBL
+                LD      E,(HL)
+                INC     HL
+                LD      D,(HL)          ; DE = shadow register pointer
+                PUSH    DE              ; SAVE SHADOW ADDR ON STACK
 
                 ; COMPUTE TOTAL CENTS
                 LD      A,(IX + CHDETUNE)

@@ -189,9 +189,9 @@ ROMINIT         DI
 
 .LOOP           HALT
                 CALL    POLLKEY         ; POLL KEYBOARD FOR ACTIONS
-                ;BORD    7
+                BORD    7
                 CALL    MUSUPDAT        ; UPDATE AUDIO SEQUENCE
-                ;BORD    0
+                BORD    0
                 CALL    APPLYMUTE       ; OVERRIDE MUTED CHANNELS IN PSGREG
                 ;BORD    11
                 CALL    DRAWUI          ; DRAW GRAPHICAL DASHBOARD
