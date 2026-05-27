@@ -50,11 +50,11 @@ LFOWAVES
 ; --- TONE MASK TABLES (SHARED PAGE WITH FREQ_TBL) -----------------------------
 ; - OFFSET FROM FREQ_TBL: 192 (LFOWAVES) + 8 = 200 (#C8)
 TONE_ON_MSK
-        DEFB    #FE, #FD, #FB, #00
-; - OFFSET FROM FREQ_TBL: 200 + 4 = 204 (#CC)
+        DEFB    #FE, #FD, #FB, #FE, #FD, #FB
+; - OFFSET FROM FREQ_TBL: 200 + 6 = 206 (#CE)
 TONE_OFF_MSK
-        DEFB    #01, #02, #04, #00
-; - OFFSET FROM FREQ_TBL: 204 + 4 = 208 (#D0)
+        DEFB    #01, #02, #04, #01, #02, #04
+; - OFFSET FROM FREQ_TBL: 206 + 6 = 212 (#D4)
 VOL_PTR_TBL
         DEFW    PSGMUS + 8              ; CHIDX 0 (MUSIC CH A VOL)
         DEFW    PSGMUS + 9              ; CHIDX 1 (MUSIC CH B VOL)
@@ -62,7 +62,7 @@ VOL_PTR_TBL
         DEFW    PSGSFX + 8              ; CHIDX 3 (SFX CH A VOL)
         DEFW    PSGSFX + 9              ; CHIDX 4 (SFX CH B VOL)
         DEFW    PSGSFX + 10             ; CHIDX 5 (SFX CH C VOL)
-; - OFFSET FROM FREQ_TBL: 208 + 12 = 220 (#DC)
+; - OFFSET FROM FREQ_TBL: 212 + 12 = 224 (#E0)
 PER_PTR_TBL
         DEFW    PSGMUS + 0              ; CHIDX 0 (MUSIC CH A PERIOD)
         DEFW    PSGMUS + 2              ; CHIDX 1 (MUSIC CH B PERIOD)
@@ -70,7 +70,7 @@ PER_PTR_TBL
         DEFW    PSGSFX + 0              ; CHIDX 3 (SFX CH A PERIOD)
         DEFW    PSGSFX + 2              ; CHIDX 4 (SFX CH B PERIOD)
         DEFW    PSGSFX + 4              ; CHIDX 5 (SFX CH C PERIOD)
-; - OFFSET FROM FREQ_TBL: 220 + 12 = 232 (#E8)
+; - OFFSET FROM FREQ_TBL: 224 + 12 = 236 (#EC)
 MIX_PTR_TBL
         DEFW    PSGMUS + 7              ; CHIDX 0 (MUSIC CH A/B/C R7 MIXER)
         DEFW    PSGMUS + 7              ; CHIDX 1 (MUSIC CH B/C R7 MIXER)

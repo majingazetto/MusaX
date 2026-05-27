@@ -766,6 +766,7 @@ PROCEVT         LD      L,(IX + CHPC)
                 LD      (IX + CHPORTAN),B
                 XOR     A
                 LD      (IX + CHPORTAT),A
+                LD      C,(IX + CHIDX)  ; Cache CHIDX in C for .LEGFIN
                 JR      .LEGFIN
 
 .SNAP           ; SNAP PATH: SET CURRENT NOTE, CLEAR TARGET, TRIGGER ADSR, INIT LFO
@@ -774,13 +775,11 @@ PROCEVT         LD      L,(IX + CHPC)
                 LD      (IX + CHPORTAN),A
                 XOR     A
                 LD      (IX + CHPORTAT),A
-
-                ; TRIGGER ADSR ATTACK (STATE 1, ACC 0)
                 LD      (IX + CHADSRA),A
-                LD      A,1
+                LD      A,1             ; STATE = ATTACK
                 LD      (IX + CHADSRS),A
 
-                ; INITIALIZE LFO DELAY
+                ; CHECK LFO DELAY
                 LD      L,(IX + CHINST)
                 LD      H,(IX + CHINST + 1)
                 LD      A,H
@@ -799,7 +798,7 @@ PROCEVT         LD      L,(IX + CHPC)
                 LD      A,(IX + CHIDX)
                 LD      C,A             ; SAVE CHANNEL INDEX
                 ADD     A,A             ; A = CHIDX * 2
-                ADD     A,#DC           ; OFFSET TO PER_PTR_TBL IN FREQ_TBL PAGE
+                ADD     A,#E0           ; OFFSET TO PER_PTR_TBL IN FREQ_TBL PAGE (shifted!)
                 LD      L,A
                 LD      H,HIGH FREQ_TBL
                 LD      E,(HL)
@@ -808,7 +807,7 @@ PROCEVT         LD      L,(IX + CHPC)
                 EX      DE,HL           ; HL = shadow register address
 
 .PNWRIT         PUSH    HL              ; SAVE DEST ADDR
-                LD      A,(IX + CHNOTE)
+                LD      A,B             ; A = CHNOTE (from cached B)
                 ADD     A,A             ; A = CHNOTE * 2
                 LD      L,A
                 LD      H,HIGH FREQ_TBL
@@ -821,22 +820,16 @@ PROCEVT         LD      L,(IX + CHPC)
                 LD      (HL),D
 
 .LEGFIN         ; ENABLE TONE IN R7 (LEGATO & SNAP)
-                LD      A,(IX + CHIDX)
-                LD      C,A             ; SAVE CHANNEL INDEX
-                CP      3
-                JR      C,.EOK
-                SUB     3
-.EOK            ; A is now 0, 1, or 2
-                ADD     A,#C8           ; OFFSET TO TONE_ON_MSK IN FREQ_TBL PAGE
+                LD      A,C             ; A = CHIDX (cached in C)
+                ADD     A,#C8           ; OFFSET TO TONE_ON_MSK IN FREQ_TBL PAGE (extended!)
                 LD      L,A
                 LD      H,HIGH FREQ_TBL
                 LD      B,(HL)          ; B = MASK (AND to enable tone)
                 
                 LD      A,C             ; A = CHIDX
                 ADD     A,A             ; A = CHIDX * 2
-                ADD     A,#E8           ; OFFSET TO MIX_PTR_TBL IN FREQ_TBL PAGE
+                ADD     A,#EC           ; OFFSET TO MIX_PTR_TBL IN FREQ_TBL PAGE (shifted!)
                 LD      L,A
-                LD      H,HIGH FREQ_TBL
                 LD      E,(HL)
                 INC     HL
                 LD      D,(HL)          ; DE = shadow R7 register pointer
@@ -845,7 +838,7 @@ PROCEVT         LD      L,(IX + CHPC)
                 LD      (DE),A
 
 .EFIN           POP     HL              ; RESTORE PC
-                JP      .EXIT
+                RET
 
 .COMMAND        SUB     #F0             ; A = INDEX (0..15)
                 EX      DE,HL           ; DE = STREAM PC (HL FREE)
@@ -1212,24 +1205,16 @@ MUSMUT          PUSH    AF
 ; - CLOBBERS: NONE
 ; -
 
-MUSMERGE        PUSH    AF
-                PUSH    BC
-                PUSH    DE
-                PUSH    HL
-
-                LD      A,(SFXMSK)
+MUSMERGE        LD      A,(SFXMSK)
                 OR      A
                 JR      NZ,.SFXACT      ; SFX ACTIVE: FULL MERGE LOGIC
 
                 ; NO SFX: FAST PATH — COPY PSGMUS TO PSGREG DIRECTLY
                 LD      HL,PSGMUS
                 LD      DE,PSGREG
-                LD      BC,PSGSIZE
-                LDIR
-                POP     HL
-                POP     DE
-                POP     BC
-                POP     AF
+                DUP     14
+                LDI
+                EDUP
                 RET
 
 .SFXACT         LD      D,A             ; D = SFXMSK
@@ -1352,11 +1337,6 @@ MUSMERGE        PUSH    AF
                 AND     #C0             ; A = PSGMUS_R7 & #C0
                 OR      C               ; A = (PSGMUS_R7 & #C0) | MIXED BITS 0-5
                 LD      (PSGREG + 7),A
-
-                POP     HL
-                POP     DE
-                POP     BC
-                POP     AF
                 RET
 
 
@@ -1367,11 +1347,7 @@ MUSMERGE        PUSH    AF
 ; - CLOBBERS: NONE
 ; -
 
-MUSCOMM         PUSH    AF
-                PUSH    BC
-                PUSH    DE
-                PUSH    HL
-                LD      DE,PSGREG
+MUSCOMM         LD      DE,PSGREG
                 LD      HL,PSGOLD
                 LD      B,PSGSIZE
                 LD      C,0
@@ -1387,10 +1363,6 @@ MUSCOMM         PUSH    AF
                 INC     HL
                 INC     C
                 DJNZ    .COMLOP
-                POP     HL
-                POP     DE
-                POP     BC
-                POP     AF
                 RET
 
 
@@ -1501,20 +1473,15 @@ UPDADSR         LD      A,(IX + CHADSRS)
                 LD      A,(IX + CHIDX)  ; A = CHANNEL INDEX (0..5)
                 LD      C,A             ; C = CHANNEL INDEX
                 
-                CP      3
-                JR      C,.M_OK
-                SUB     3
-.M_OK           ; A is now 0, 1, or 2
-                ADD     A,#CC           ; OFFSET TO TONE_OFF_MSK IN FREQ_TBL PAGE
+                ADD     A,#CE           ; OFFSET TO TONE_OFF_MSK IN FREQ_TBL PAGE (shifted and extended!)
                 LD      L,A
                 LD      H,HIGH FREQ_TBL
                 LD      B,(HL)          ; B = MASK (OR to disable tone)
                 
                 LD      A,C             ; A = CHIDX
                 ADD     A,A             ; A = CHIDX * 2
-                ADD     A,#E8           ; OFFSET TO MIX_PTR_TBL IN FREQ_TBL PAGE
+                ADD     A,#EC           ; OFFSET TO MIX_PTR_TBL IN FREQ_TBL PAGE (shifted!)
                 LD      L,A
-                LD      H,HIGH FREQ_TBL
                 LD      E,(HL)
                 INC     HL
                 LD      D,(HL)          ; DE = shadow R7 register pointer
@@ -1634,13 +1601,13 @@ UPDLFO          LD      A,(IX + CHLDEST)
 ; - CLOBBERS: AF, BC, HL
 ; -
 
-UPDFADE         LD      A,(IX + CHFADSPD)
+UPDFADE         LD      C,(IX + CHFADSPD)
+                LD      A,C
                 OR      A
                 RET     Z               ; INACTIVE IF SPEED IS 0
 
                 LD      A,(IX + CHFADVOL)
                 LD      B,(IX + CHFADTRG)
-                LD      C,(IX + CHFADSPD)
 
                 CP      B
                 JR      Z,.REACH        ; ALREADY EQUAL
@@ -1676,7 +1643,9 @@ UPDFADE         LD      A,(IX + CHFADSPD)
 ; - CLOBBERS: AF, BC, DE, HL
 ; -
 
-UPDVOL          LD      A,(IX + CHNOTE)
+UPDVOL          LD      A,(IX + CHIDX)
+                LD      E,A             ; E = CHIDX (cached!)
+                LD      A,(IX + CHNOTE)
                 CP      255
                 JR      NZ,.ACTIVE
 
@@ -1722,7 +1691,7 @@ UPDVOL          LD      A,(IX + CHNOTE)
 .SKIPCF         ; L = UPDATED SCALE
 
                 ; CHECK IF MUSIC CHANNEL (INDEX < 3)
-                LD      A,(IX + CHIDX)
+                LD      A,E             ; A = CHIDX (cached in E)
                 CP      3
                 JP      NC,.SKIPGLB     ; IF SFX CHANNEL, SKIP GLOBAL FADE AND MASTER VOLUME
 
@@ -1744,10 +1713,10 @@ UPDVOL          LD      A,(IX + CHNOTE)
 
                 LD      C,A             ; C = MUSVOL (0..14)
                 LD      A,(IX + CHVOL)  ; A = CHVOL (0..15)
-                SLA     A               ; A = CHVOL * 2
-                SLA     A               ; A = CHVOL * 4
-                SLA     A               ; A = CHVOL * 8
-                SLA     A               ; A = CHVOL * 16
+                ADD     A,A             ; A = CHVOL * 2
+                ADD     A,A             ; A = CHVOL * 4
+                ADD     A,A             ; A = CHVOL * 8
+                ADD     A,A             ; A = CHVOL * 16
                 ADD     A,C             ; A = CHVOL * 16 + MUSVOL
                 LD      L,A
                 LD      H,HIGH MVOLTBL
@@ -1774,9 +1743,9 @@ UPDVOL          LD      A,(IX + CHNOTE)
 .SKIPSC         ; A = FINALVOL
                 PUSH    AF              ; PRESERVE FINALVOL
 
-.CALCDST        LD      A,(IX + CHIDX)
+.CALCDST        LD      A,E             ; A = CHIDX (cached in E)
                 ADD     A,A             ; A = CHIDX * 2
-                ADD     A,#D0           ; OFFSET TO VOL_PTR_TBL IN FREQ_TBL PAGE
+                ADD     A,#D4           ; OFFSET TO VOL_PTR_TBL IN FREQ_TBL PAGE (shifted!)
                 LD      L,A
                 LD      H,HIGH FREQ_TBL
                 LD      E,(HL)
@@ -1791,7 +1760,7 @@ UPDVOL          LD      A,(IX + CHNOTE)
 ; - 8-BIT UNSIGNED MULTIPLY HIGH BYTE (A = (A * C) >> 8)
 ; - IN: A, C
 ; - OUT: A = (A * C) >> 8
-; - CLOBBERS: BC, HL
+; - CLOBBERS: BC, DE, HL
 ; -
 
 MUL8_HIGH       LD      B,A             ; B = A
@@ -1800,8 +1769,7 @@ MUL8_HIGH       LD      B,A             ; B = A
                 LD      H,HIGH SQR_TBL
                 JR      NC,.NOINC
                 INC     H
-.NOINC          LD      A,(HL)          ; A = f(A+C)
-                PUSH    AF              ; Save f(A+C)
+.NOINC          LD      D,(HL)          ; D = f(A+C)
                 
                 LD      A,B
                 SUB     C
@@ -1812,7 +1780,7 @@ MUL8_HIGH       LD      B,A             ; B = A
                 LD      A,(HL)          ; A = f(|A-C|)
                 
                 LD      C,A             ; C = f(|A-C|)
-                POP     AF              ; A = f(A+C)
+                LD      A,D             ; A = f(A+C)
                 SUB     C               ; A = f(A+C) - f(|A-C|)
                 RET
 
@@ -1932,16 +1900,18 @@ UPDPORTA        LD      A,(IX + CHPORTAS)
                 OR      A
                 RET     Z               ; SPEED == 0: NO PORTAMENTO
                 
+                LD      B,A             ; B = SPEED (cached!)
                 LD      A,(IX + CHNOTE)
                 CP      255
                 RET     Z               ; REST: NO PORTAMENTO
                 
+                LD      D,A             ; D = CURRENT NOTE (cached!)
                 LD      A,(IX + CHPORTAN)
                 CP      255
                 RET     Z               ; NO TARGET: NO PORTAMENTO
                 
                 LD      C,A             ; C = TARGET NOTE
-                LD      A,(IX + CHNOTE)
+                LD      A,D             ; A = CURRENT NOTE
                 CP      C
                 RET     Z               ; ALREADY AT TARGET
                 
@@ -1951,14 +1921,14 @@ UPDPORTA        LD      A,(IX + CHPORTAS)
                 LD      (IX + CHPORTAT),A
                 
                 ; CHECK IF TIMER >= SPEED
-                CP      (IX + CHPORTAS)
+                CP      B               ; CP B instead of CP (IX + CHPORTAS)
                 RET     C               ; TIMER < SPEED: WAIT
                 
                 ; TIMER >= SPEED: RESET TIMER AND STEP NOTE
                 XOR     A
                 LD      (IX + CHPORTAT),A
                 
-                LD      A,(IX + CHNOTE)
+                LD      A,D             ; A = CURRENT NOTE (no re-read!)
                 CP      C
                 JR      NC,.DEC
                 
@@ -1983,11 +1953,12 @@ UPDPORTA        LD      A,(IX + CHPORTAS)
 CALCPER         LD      A,(IX + CHNOTE)
                 CP      255
                 RET     Z               ; REST: NOTHING TO DO
+                LD      B,A             ; B = CHNOTE (cached!)
 
                 ; COMPUTE SHADOW ADDR
                 LD      A,(IX + CHIDX)
                 ADD     A,A             ; A = CHIDX * 2
-                ADD     A,#DC           ; OFFSET TO PER_PTR_TBL IN FREQ_TBL PAGE
+                ADD     A,#E0           ; OFFSET TO PER_PTR_TBL IN FREQ_TBL PAGE (shifted!)
                 LD      L,A
                 LD      H,HIGH FREQ_TBL
                 LD      E,(HL)
@@ -2011,7 +1982,7 @@ CALCPER         LD      A,(IX + CHNOTE)
                 JR      NZ,.INTERP
                 
                 ; CENTS == 0: WRITE BASE PERIOD
-                LD      A,(IX + CHNOTE)
+                LD      A,B             ; A = CHNOTE (from cached B)
                 ADD     A,A             ; A = NOTE * 2 (0..190, FITS IN 8 BITS)
                 LD      L,A
                 LD      H,HIGH FREQ_TBL
@@ -2037,16 +2008,16 @@ CALCPER         LD      A,(IX + CHNOTE)
 
                 ; P0 = FREQ_TBL[NOTE]
                 ; P1 = FREQ_TBL[NOTE+1] (CLAMP TO 95)
-                LD      A,(IX + CHNOTE)
+                LD      A,B             ; A = CHNOTE (from cached B)
                 CP      95
                 JR      C,.POSOK
-                LD      A,95
+                LD      E,95
+                LD      D,95
+                JR      .LOOKUP_P0
 .POSOK          LD      E,A             ; E = NOTE
-                CP      95
-                JR      Z,.POSMAX
                 INC     A
-.POSMAX         LD      D,A             ; D = NEXT NOTE
-
+                LD      D,A             ; D = NEXT NOTE
+.LOOKUP_P0
                 ; LOOKUP P0 (IN HL)
                 LD      A,E             ; A = NOTE (0..95)
                 ADD     A,A             ; A = NOTE * 2 (0..190)
@@ -2102,10 +2073,9 @@ CALCPER         LD      A,(IX + CHNOTE)
                 
                 ; P0 = FREQ_TBL[NOTE]
                 ; P1 = FREQ_TBL[NOTE-1] (CLAMP TO 0)
-                LD      A,(IX + CHNOTE)
+                LD      A,B             ; A = CHNOTE (from cached B)
                 OR      A
                 JR      NZ,.NEGOK
-                XOR     A
                 LD      E,A             ; E = 0
                 LD      D,A             ; D = 0
                 JR      .NEGMIN
