@@ -1205,7 +1205,12 @@ MUSMUT          PUSH    AF
 ; - CLOBBERS: NONE
 ; -
 
-MUSMERGE        LD      A,(SFXMSK)
+MUSMERGE        PUSH    AF
+                PUSH    BC
+                PUSH    DE
+                PUSH    HL
+
+                LD      A,(SFXMSK)
                 OR      A
                 JR      NZ,.SFXACT      ; SFX ACTIVE: FULL MERGE LOGIC
 
@@ -1215,6 +1220,10 @@ MUSMERGE        LD      A,(SFXMSK)
                 DUP     14
                 LDI
                 EDUP
+                POP     HL
+                POP     DE
+                POP     BC
+                POP     AF
                 RET
 
 .SFXACT         LD      D,A             ; D = SFXMSK
@@ -1337,6 +1346,10 @@ MUSMERGE        LD      A,(SFXMSK)
                 AND     #C0             ; A = PSGMUS_R7 & #C0
                 OR      C               ; A = (PSGMUS_R7 & #C0) | MIXED BITS 0-5
                 LD      (PSGREG + 7),A
+                POP     HL
+                POP     DE
+                POP     BC
+                POP     AF
                 RET
 
 
@@ -1347,7 +1360,11 @@ MUSMERGE        LD      A,(SFXMSK)
 ; - CLOBBERS: NONE
 ; -
 
-MUSCOMM         LD      DE,PSGREG
+MUSCOMM         PUSH    AF
+                PUSH    BC
+                PUSH    DE
+                PUSH    HL
+                LD      DE,PSGREG
                 LD      HL,PSGOLD
                 LD      B,PSGSIZE
                 LD      C,0
@@ -1363,6 +1380,10 @@ MUSCOMM         LD      DE,PSGREG
                 INC     HL
                 INC     C
                 DJNZ    .COMLOP
+                POP     HL
+                POP     DE
+                POP     BC
+                POP     AF
                 RET
 
 
@@ -1643,9 +1664,7 @@ UPDFADE         LD      C,(IX + CHFADSPD)
 ; - CLOBBERS: AF, BC, DE, HL
 ; -
 
-UPDVOL          LD      A,(IX + CHIDX)
-                LD      E,A             ; E = CHIDX (cached!)
-                LD      A,(IX + CHNOTE)
+UPDVOL          LD      A,(IX + CHNOTE)
                 CP      255
                 JR      NZ,.ACTIVE
 
@@ -1691,7 +1710,7 @@ UPDVOL          LD      A,(IX + CHIDX)
 .SKIPCF         ; L = UPDATED SCALE
 
                 ; CHECK IF MUSIC CHANNEL (INDEX < 3)
-                LD      A,E             ; A = CHIDX (cached in E)
+                LD      A,(IX + CHIDX)
                 CP      3
                 JP      NC,.SKIPGLB     ; IF SFX CHANNEL, SKIP GLOBAL FADE AND MASTER VOLUME
 
@@ -1743,7 +1762,7 @@ UPDVOL          LD      A,(IX + CHIDX)
 .SKIPSC         ; A = FINALVOL
                 PUSH    AF              ; PRESERVE FINALVOL
 
-.CALCDST        LD      A,E             ; A = CHIDX (cached in E)
+.CALCDST        LD      A,(IX + CHIDX)
                 ADD     A,A             ; A = CHIDX * 2
                 ADD     A,#D4           ; OFFSET TO VOL_PTR_TBL IN FREQ_TBL PAGE (shifted!)
                 LD      L,A
