@@ -186,7 +186,7 @@ def msl2z8a(input_file, output_file=None, song_name=None):
                 if fx_instruments:
                     fx_itbl = f'INST_TABLE_{name}'
                 elif instruments:
-                    fx_itbl = _g(itbl_label, use_module)
+                    fx_itbl = itbl_label
                 else:
                     fx_itbl = '0'
 

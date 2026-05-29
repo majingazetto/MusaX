@@ -47,6 +47,30 @@ CH_C:
 
 // --- Sound Effects (Required to generate SFXTEST.FX_TABLE) ---
 
+// 1. FX_LO: Low priority, simple note run on Channel A
+@FX(FX_LO) {
+    CH_A: @V15 O5 L16 C D E F G A B >C R0
+}
+
+// 2. FX_HI: High priority, siren effect on Channel A
+@FX(FX_HI) {
+    CH_A: @V15 O6 L32 { C < C }8 R0
+}
+
+// 3. FX_FAN: Medium priority, 2-channel Fanfare on Channels A & B
+@FX(FX_FAN) {
+    CH_A: @V15 O5 L16 C E G >C <G E C R0
+    CH_B: @V12 O4 L16 E G >C E <C G E R0
+}
+
+// 4. FX_TRI: High priority, 3-channel power-up sweep on A, B, C
+@FX(FX_TRI) {
+    CH_A: @V15 O4 L16 C D E F G A B >C R0
+    CH_B: @V13 O4 L16 E F G A B >C D E R0
+    CH_C: @V11 O4 L16 G A B >C D E F G R0
+}
+
+// 5. FX_CHORUS_HIT: Sparkly hit
 @FX(FX_CHORUS_HIT) {
     @INST(3, "Hit") {
         ADSR: 255, 8, 0, 0

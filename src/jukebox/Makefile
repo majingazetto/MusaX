@@ -29,7 +29,9 @@ ALL_Z8A     = $(MOG_Z8A) $(Z8A_TESTS)
 
 # --- INCLUDES AND EMULATION
 EMULATOR    = m1 ntsc
-SJASM_OPTS  = --lst=$(TMP_DIR)/test.lst --sym=$(TMP_DIR)/test.sym --outprefix=$(TMP_DIR)/
+SJASM_OPTS  = --lst=$(TMP_DIR)/test.lst --sym=$(TMP_DIR)/test.sym --outprefix=$(TMP_DIR)/ -I $(TMP_DIR)
+MSXTOOLS_DIR = $(MUSAX_DIR)/../msxtools
+PNG2TMS     = $(PYTHON) $(MSXTOOLS_DIR)/scripts/png2tms-sr1-pat.py
 
 # --- DEFAULT TARGET
 all: build
@@ -47,8 +49,14 @@ $(MOG_Z8A): $(MOG_MSL) | $(TMP_DIR)
 	@echo "Compiling song $< to Z8A..."
 	@$(MUSAX_COMP) build $< -o $@
 
+# --- EXTRACT VRAM PATTERNS FROM TILESET PNG
+$(TMP_DIR)/VRAM.BIN: RES/TILESET.PNG | $(TMP_DIR)
+	@echo "Extracting VRAM patterns from $<..."
+	@$(PNG2TMS) $< $(TMP_DIR)/TILESET
+	@mv $(TMP_DIR)/TILESET.PAT $@
+
 # --- ASSEMBLE ROM BINARY
-$(ROM_OUTPUT): $(SRC_FILE) $(ALL_Z8A) | $(ROM_DIR)
+$(ROM_OUTPUT): $(SRC_FILE) $(ALL_Z8A) $(TMP_DIR)/VRAM.BIN | $(ROM_DIR)
 	@echo "Assembling Minimal Test ROM..."
 	@$(ASM) $(SJASM_OPTS) $(SRC_FILE)
 	@cp $(TMP_DIR)/JUKEBOX.raw $(ROM_OUTPUT)

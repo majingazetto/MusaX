@@ -1679,11 +1679,11 @@ RESETUI         CALL    CLRUI
 
 COLORDAT        DEFB    #F1, #F1, #F1, #F1, #F1, #F1, #F1, #F1 ; GROUPS 0-7: WHITE ON BLACK
                 DEFB    #F1, #F1, #F1, #F1                     ; GROUPS 8-11: WHITE ON BLACK (UPPERCASE)
-                DEFB    #71, #71, #71, #71                     ; GROUPS 12-15: CYAN ON BLACK (LOWERCASE / HIGHLIGHT)
-                DEFB    #F1, #F1, #F1, #F1, #71, #71, #F1, #F1 ; GROUPS 16-23: GROUPS 20-21 CYAN (CUSTOM DIGITS)
+                DEFB    #51, #51, #51, #51                     ; GROUPS 12-15: LIGHT BLUE ON BLACK (HIGHLIGHT / LOWERCASE)
+                DEFB    #F1, #F1, #F1, #F1, #51, #51, #F1, #F1 ; GROUPS 16-23: BORDERS WHITE / DIGITS LIGHT BLUE
                 DEFB    #F1, #F1, #F1, #F1                     ; GROUPS 24-27: WHITE ON BLACK
-                DEFB    #31, #31                               ; GROUPS 28-29: LIGHT GREEN ON BLACK (MUSIC BARS)
-                DEFB    #B1, #B1                               ; GROUPS 30-31: LIGHT YELLOW ON BLACK (SFX BARS)
+                DEFB    #21, #21                               ; GROUPS 28-29: MEDIUM GREEN ON BLACK (MUSIC BARS)
+                DEFB    #91, #91                               ; GROUPS 30-31: LIGHT RED ON BLACK (SFX BARS)
 
 ; --- LAYOUT STRINGS
 STRTITLE        DEFB    " MUSAX GRAPHICAL JUKEBOX v1.9   ", 0
@@ -1797,7 +1797,7 @@ MUTEBIT         DEFB    #01, #02, #04, #08, #10, #20
 HEXTBL          DEFB    "0123456789ABCDEF"
 
 
-SPLASH          DEFB    "MUSAX JUKEBOX V1.9", 0
+SPLASH          DEFB    "MUSAX JUKEBOX v1.9", 0
 
 VRAMDATA        INCBIN  "VRAM.BIN"
 
