@@ -1,0 +1,57 @@
+@TITLE "Single-Channel Chorus Demo"
+@AUTHOR "Antigravity"
+@NAMESPACE SFXTEST
+
+@INST(1, "ChorusPad") {
+    ADSR: 42, 16, 200, 24
+    LFO:  1, 0, 50, 1, 0
+    FLAGS: 0
+}
+
+@INST(2, "DryPad") {
+    ADSR: 42, 16, 200, 24
+    LFO:  0, 0, 0, 0, 0
+    FLAGS: 0
+}
+
+// --- Music Channels ---
+
+CH_A:
+    @T120
+    M_A:
+        // First phrase: Dry Pad
+        @V12 @I2
+        O4 L4 C E G >C < B A G F
+        O4 L4 C E G >C < B A G F
+        
+        // Second phrase: Chorus Pad (Hear the warmth and thickness!)
+        @V12 @I1
+        O4 L4 C E G >C < B A G F
+        O4 L4 C E G >C < B A G F
+        
+        @RESTART(M_A)
+
+CH_B:
+    @V8 @I2
+    M_B:
+        O3 L2 C G E G C G E G
+        O3 L2 C G E G C G E G
+        @RESTART(M_B)
+
+CH_C:
+    @V10 @I2
+    M_C:
+        O2 L1 C G C G
+        O2 L1 C G C G
+        @RESTART(M_C)
+
+// --- Sound Effects (Required to generate SFXTEST.FX_TABLE) ---
+
+@FX(FX_CHORUS_HIT) {
+    @INST(3, "Hit") {
+        ADSR: 255, 8, 0, 0
+        LFO:  1, 0, 48, 4, 0 // Fast vibrato for a sparkling hit effect
+        FLAGS: 0
+    }
+    CH_A: @V15 @I3 O6 L32 C E G >C
+}

@@ -1669,7 +1669,7 @@ RESETUI         CALL    CLRUI
                 INCLUDE "TMP/shalomcastle.Z8A"
                 INCLUDE "TMP/adsr_test.Z8A"
                 INCLUDE "TMP/lfo_test.Z8A"
-                INCLUDE "TMP/sfx_priority_test.Z8A"
+                INCLUDE "TMP/1ch_chorus_test.Z8A"
                 INCLUDE "TMP/sequencer_test.Z8A"
                 INCLUDE "TMP/modulation_test.Z8A"
                 INCLUDE "TMP/porta_test.Z8A"
@@ -1742,8 +1742,8 @@ P4W             DEFB    #A4, ".SEQ TEST     ", 0
 P4C             DEFB    #A4, ".seq test     ", 0
 P5W             DEFB    #A5, ".MOD TEST     ", 0
 P5C             DEFB    #A5, ".mod test     ", 0
-P6W             DEFB    #A6, ".SFX PRIORITY ", 0
-P6C             DEFB    #A6, ".sfx priority ", 0
+P6W             DEFB    #A6, ".1CH CHORUS   ", 0
+P6C             DEFB    #A6, ".1ch chorus   ", 0
 
 ; --- PLAYLIST TABLE
 PLAYLSTB        DEFW    SHALOMCASTLE.HEADER, P1C, P1W, #1860
@@ -1782,7 +1782,7 @@ SNGNAMTB        DEFW    SHALOMCASTLE.HEADER, .SSHAL
 .SLFO           DEFB    "LFO   ", 0
 .SSEQ           DEFB    "SEQ   ", 0
 .SMOD           DEFB    "MOD   ", 0
-.SSFX           DEFB    "SFX   ", 0
+.SSFX           DEFB    "1CHCH ", 0
 .SPORT          DEFB    "PORTA ", 0
 .SDTN           DEFB    "DETUNE", 0
 .SCHOR          DEFB    "CHORUS", 0
