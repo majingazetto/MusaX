@@ -152,13 +152,12 @@ ROMINIT         DI
                 ; INITIALIZE GRAPHICAL LAYOUT SKELETON IN RAM BUFFER
                 CALL    INITLAY
 
-                ; INITIALIZE KEYPREV TO #FF (ALL RELEASED)
-                LD      A,#FF
-                LD      (KEYPREV),A
-                LD      (KEYPREV + 1),A
-                LD      (KEYPREV + 2),A
-                LD      (KEYPREV + 3),A
-                LD      (KEYPREV + 4),A
+                ; INITIALIZE KEYPREV REGISTERS TO #FF (ALL RELEASED)
+                LD      HL,KBDPRV0
+                LD      (HL),#FF
+                LD      DE,KBDPRV0 + 1
+                LD      BC,7 - 1        ; We have 7 previous keyboard row variables
+                LDIR
 
                 ; INITIALIZE MUTEMSK TO 0 (ALL UNMUTED)
                 XOR     A
@@ -168,7 +167,7 @@ ROMINIT         DI
                 CALL    MUSINIT
 
                 ; SET FX TABLE POINTER FOR SOUND EFFECTS
-                LD      HL,SFXTEST.FX_TABLE
+                LD      HL,FXTBL
                 LD      (FXPTR),HL
 
                 ; INITIALIZE UI CACHES
@@ -180,21 +179,23 @@ ROMINIT         DI
                 LD      HL,IRQINT
                 LD      (HTIMI + 1),HL
 
-                ; START PLAYBACK OF SHALOMCASTLE SONG
-                LD      HL,SHALOMCASTLE.HEADER
-                XOR     A               ; INFINITE LOOPING LIMIT
-                CALL    MUSPLAY         ; PLAY SONG!
+                ; INITIAL STATE
+                XOR     A
+                LD      (CURPANEL),A
+                LD      (SELSONG),A
+                LD      (SELFX),A
+                LD      (SONGSTART),A
+                LD      (FXSTART),A
+                LD      A,#FF
+                LD      (PLAYINGSNG),A
 
                 EI                      ; ENABLE INTERRUPTS!
 
 
 .LOOP           HALT
                 CALL    POLLKEY         ; POLL KEYBOARD FOR ACTIONS
-                BORD    7
                 CALL    MUSUPDAT        ; UPDATE AUDIO SEQUENCE
-                BORD    0
                 CALL    APPLYMUTE       ; OVERRIDE MUTED CHANNELS IN PSGREG
-                ;BORD    11
                 CALL    DRAWUI          ; DRAW GRAPHICAL DASHBOARD
                 JP      .LOOP
 
@@ -349,10 +350,6 @@ IRQINT          ; CHECK IF SCREEN BUFFER IS DIRTY
                 JR      Z,.CONT
 
                 ; FAST VBLANK DUMP: SCRBUFF → VRAM #1800, 768 BYTES.
-                ; SAFE BECAUSE WE ARE INSIDE VBL (~16K T-STATES BUDGET).
-                ; UNROLLED ×32 OUTI BLOCKS + DEC/JP NZ OUTER LOOP.
-                ; TIMING: 24 × (32×18 + 14) = 14,160 T-STATES TOTAL.
-
                 ; SET VRAM WRITE ADDRESS = #1800
                 LD      A,(VDPWCTRL)
                 LD      C,A
@@ -384,110 +381,84 @@ IRQINT          ; CHECK IF SCREEN BUFFER IS DIRTY
 ; - IN: NONE
 ; - OUT: NONE
 ; - CLOBBERS: ALL
-; -
-
-POLLKEY         ; --- PROCESS ROW 0 ---
-                LD      A,(KEYPREV)
+POLLKEY         ; --- PROCESS ROW 8 (Space & Cursors) ---
+                LD      A,(KBDPRV8)
                 LD      B,A
-                LD      A,(#FBE5)       ; ROW 0: '0','1','2','3','4','5','6','7'
+                LD      A,(#FBED)       ; ROW 8
                 LD      C,A
                 XOR     B
                 AND     B
                 LD      D,A             ; D = transitions (1 for press)
-
                 LD      A,C
-                LD      (KEYPREV),A     ; Save current Row 0
+                LD      (KBDPRV8),A
+                
+                ; Check SPACE (Bit 0)
+                BIT     0,D
+                JR      Z,.NOTSPC
+                CALL    .TRIGGER
+                JR      .ROW7
+                
+.NOTSPC         ; Check UP (Bit 5)
+                BIT     5,D
+                JR      Z,.NOTUP
+                CALL    .MOVEUP
+                JR      .ROW7
+                
+.NOTUP          ; Check DOWN (Bit 6)
+                BIT     6,D
+                JR      Z,.NOTDN
+                CALL    .MOVEDN
+                JR      .ROW7
+                
+.NOTDN          ; Check LEFT (Bit 4)
+                BIT     4,D
+                JR      Z,.NOTLT
+                XOR     A
+                LD      (CURPANEL),A
+                JR      .ROW7
+                
+.NOTLT          ; Check RIGHT (Bit 7)
+                BIT     7,D
+                JR      Z,.ROW7
+                LD      A,1
+                LD      (CURPANEL),A
 
-                ; Check key '1' (Bit 1)
-                BIT     1,D
-                JR      Z,.NOT1
-                LD      HL,SHALOMCASTLE.HEADER
-                CALL    .PLAY
-                JR      .ROW1
-
-.NOT1           BIT     2,D
-                JR      Z,.NOT2
-                LD      HL,ADSRTEST.HEADER
-                CALL    .PLAY
-                JR      .ROW1
-
-.NOT2           BIT     3,D
-                JR      Z,.NOT3
-                LD      HL,LFOTEST.HEADER
-                CALL    .PLAY
-                JR      .ROW1
-
-.NOT3           BIT     4,D
-                JR      Z,.NOT4
-                LD      HL,SEQTEST.HEADER
-                CALL    .PLAY
-                JR      .ROW1
-
-.NOT4           BIT     5,D
-                JR      Z,.NOT5
-                LD      HL,MODTEST.HEADER
-                CALL    .PLAY
-                JR      .ROW1
-
-.NOT5           BIT     6,D
-                JR      Z,.NOT6
-                LD      HL,SFXTEST.HEADER
-                CALL    .PLAY
-                JR      .ROW1
-
-.NOT6           BIT     7,D
-                JR      Z,.NOT7
-                XOR     A               ; FX_LO (ID 0)
-                CALL    FXPLAY
-                JR      .ROW1
-
-.NOT7           BIT     0,D             ; '0'
-                JR      Z,.ROW1
-                LD      A,3             ; FX_TRI (ID 3)
-                CALL    FXPLAY
-
-.ROW1           ; --- PROCESS ROW 1 ---
-                LD      A,(KEYPREV + 1)
+.ROW7           ; --- PROCESS ROW 7 (Return) ---
+                LD      A,(KBDPRV7)
                 LD      B,A
-                LD      A,(#FBE6)       ; ROW 1: '8','9'
+                LD      A,(#FBEC)       ; ROW 7
                 LD      C,A
                 XOR     B
                 AND     B
-                LD      D,A             ; D = transitions
-
+                LD      D,A
                 LD      A,C
-                LD      (KEYPREV + 1),A ; Save current Row 1
-
-                BIT     0,D             ; '8'
-                JR      Z,.NOT8
-                LD      A,1             ; FX_HI (ID 1)
-                CALL    FXPLAY
-                JR      .ROW5
-
-.NOT8           BIT     1,D             ; '9'
+                LD      (KBDPRV7),A
+                
+                BIT     7,D             ; RETURN key
                 JR      Z,.ROW5
-                LD      A,2             ; FX_FAN (ID 2)
-                CALL    FXPLAY
+                CALL    .TRIGGER
 
-.ROW5           ; --- PROCESS ROW 5 ---
-                LD      A,(KEYPREV + 2)
+.ROW5           ; --- PROCESS ROW 5 (S, T, Y, U) ---
+                LD      A,(KBDPRV5)
                 LD      B,A
-                LD      A,(#FBEA)       ; ROW 5: 'S' BIT 0
+                LD      A,(#FBEA)       ; ROW 5
                 LD      C,A
                 XOR     B
                 AND     B
-                LD      D,A             ; D = TRANSITIONS
-
+                LD      D,A
                 LD      A,C
-                LD      (KEYPREV + 2),A ; SAVE CURRENT ROW 5
-
-                BIT     0,D             ; 'S' (BIT 0) - STOP
+                LD      (KBDPRV5),A
+                
+                ; Check S (Bit 0) - Stop
+                BIT     0,D
                 JR      Z,.NOTS
                 CALL    MUSSTOP
+                LD      A,#FF
+                LD      (PLAYINGSNG),A
                 CALL    RESETUI
                 JR      .ROW3
-
-.NOTS           ; CHECK 'T' (BIT 1) - MUTE MUSIC A
+                
+.NOTS           ; Check T (Bit 1) - Mute Music A
                 BIT     1,D
                 JR      Z,.NOTT
                 LD      A,(MUTEMSK)
@@ -495,8 +466,8 @@ POLLKEY         ; --- PROCESS ROW 0 ---
                 LD      (MUTEMSK),A
                 CALL    .MUTEDN
                 JR      .ROW3
-
-.NOTT           ; CHECK 'U' (BIT 2) - MUTE MUSIC C
+                
+.NOTT           ; Check U (Bit 2) - Mute Music C
                 BIT     2,D
                 JR      Z,.NOTU
                 LD      A,(MUTEMSK)
@@ -504,8 +475,8 @@ POLLKEY         ; --- PROCESS ROW 0 ---
                 LD      (MUTEMSK),A
                 CALL    .MUTEDN
                 JR      .ROW3
-
-.NOTU           ; CHECK 'Y' (BIT 6) - MUTE MUSIC B
+                
+.NOTU           ; Check Y (Bit 6) - Mute Music B
                 BIT     6,D
                 JR      Z,.ROW3
                 LD      A,(MUTEMSK)
@@ -513,56 +484,60 @@ POLLKEY         ; --- PROCESS ROW 0 ---
                 LD      (MUTEMSK),A
                 CALL    .MUTEDN
 
-.ROW3           ; --- PROCESS ROW 3 ---
-                LD      A,(KEYPREV + 3)
+.ROW3           ; --- PROCESS ROW 3 (F, I, G, H, J) ---
+                LD      A,(KBDPRV3)
                 LD      B,A
-                LD      A,(#FBE8)       ; ROW 3: C,D,E,F,G,H,I,J (BITS 0..7)
+                LD      A,(#FBE8)       ; ROW 3
                 LD      C,A
                 XOR     B
                 AND     B
-                LD      D,A             ; D = TRANSITIONS
-
+                LD      D,A
                 LD      A,C
-                LD      (KEYPREV + 3),A ; SAVE CURRENT ROW 3
-
-                BIT     0,D             ; 'C' (BIT 0) - PORTA TEST
-                JR      Z,.NOTRC
-                LD      HL,PORTATST.HEADER
-                CALL    .PLAY
-                JR      .RROW3
-
-.NOTRC          BIT     1,D             ; 'D' (BIT 1) - DETUNE TEST
-                JR      Z,.NOTRD
-                LD      HL,DTNTST.HEADER
-                CALL    .PLAY
-                JR      .RROW3
-
-.NOTRD          BIT     2,D             ; 'E' (BIT 2) - CHORUS TEST
-                JR      Z,.NOTRE
-                LD      HL,CHORTST.HEADER
-                CALL    .PLAY
-                JR      .RROW3
-
-.NOTRE          BIT     3,D             ; 'F' (BIT 3) - FADE OUT
+                LD      (KBDPRV3),A
+                
+                ; Check F (Bit 3) - Fade Out
+                BIT     3,D
                 JR      Z,.NOTFD
-                XOR     A               ; TARGET = 0 (SILENCE)
-                LD      H,3             ; SPEED = 3 (~85 FRAMES)
+                XOR     A               ; Target = 0 (silence)
+                LD      H,3             ; Speed = 3
                 CALL    MUSFADE
                 JR      .RROW3
-
-.NOTFD          BIT     6,D             ; 'I' (BIT 6) - FADE IN
+                
+.NOTFD          ; Check I (Bit 6) - Fade In
+                BIT     6,D
                 JR      Z,.NOTFI
-                XOR     A               ; TARGET = 0 (SILENCE)
-                LD      H,255           ; SNAP GLOBAL VOL TO 0
+                XOR     A
+                LD      H,255           ; Snap volume to 0
                 CALL    MUSFADE
-                LD      HL,SHALOMCASTLE.HEADER
-                CALL    .PLAY
-                LD      A,255           ; TARGET = FULL VOLUME
-                LD      H,3             ; SPEED = 3 (~85 FRAMES)
+                
+                ; Play the currently selected song with fade-in!
+                LD      A,(SELSONG)
+                LD      (PLAYINGSNG),A
+                LD      L,A
+                LD      H,0
+                ADD     HL,HL
+                ADD     HL,HL
+                ADD     HL,HL
+                LD      DE,SONGTBL
+                ADD     HL,DE
+                LD      E,(HL)
+                INC     HL
+                LD      D,(HL)
+                LD      L,E
+                LD      H,D
+                PUSH    HL
+                CALL    MUSSTOP
+                CALL    RESETUI
+                POP     HL
+                XOR     A
+                CALL    MUSPLAY
+                
+                LD      A,255           ; Target = Full volume
+                LD      H,3             ; Speed = 3
                 CALL    MUSFADE
                 JR      .RROW3
-
-.NOTFI          ; CHECK 'G' (BIT 4) - MUTE FX A
+                
+.NOTFI          ; Check G (Bit 4) - Mute FX A
                 BIT     4,D
                 JR      Z,.NOTG
                 LD      A,(MUTEMSK)
@@ -570,8 +545,8 @@ POLLKEY         ; --- PROCESS ROW 0 ---
                 LD      (MUTEMSK),A
                 CALL    .MUTEDN
                 JR      .RROW3
-
-.NOTG           ; CHECK 'H' (BIT 5) - MUTE FX B
+                
+.NOTG           ; Check H (Bit 5) - Mute FX B
                 BIT     5,D
                 JR      Z,.NOTH
                 LD      A,(MUTEMSK)
@@ -579,8 +554,8 @@ POLLKEY         ; --- PROCESS ROW 0 ---
                 LD      (MUTEMSK),A
                 CALL    .MUTEDN
                 JR      .RROW3
-
-.NOTH           ; CHECK 'J' (BIT 7) - MUTE FX C
+                
+.NOTH           ; Check J (Bit 7) - Mute FX C
                 BIT     7,D
                 JR      Z,.RROW3
                 LD      A,(MUTEMSK)
@@ -588,37 +563,171 @@ POLLKEY         ; --- PROCESS ROW 0 ---
                 LD      (MUTEMSK),A
                 CALL    .MUTEDN
 
-.RROW3          ; --- PROCESS ROW 4 ---
-                LD      A,(KEYPREV + 4)
+.RROW3          ; --- PROCESS ROW 4 (P) ---
+                LD      A,(KBDPRV4)
                 LD      B,A
-                LD      A,(#FBE9)       ; ROW 4: R,Q,P,O,N,M,L,K
+                LD      A,(#FBE9)       ; ROW 4
                 LD      C,A
                 XOR     B
                 AND     B
-                LD      D,A             ; D = transitions
-                
+                LD      D,A
                 LD      A,C
-                LD      (KEYPREV + 4),A ; Save current Row 4
+                LD      (KBDPRV4),A
                 
-                BIT     5,D             ; 'P' (BIT 5) - PAUSE
+                BIT     5,D             ; P key (Bit 5) - Pause
                 JR      Z,.NOTP
                 CALL    MUSPAUS
 .NOTP           RET
 
+.MUTEDN         RET
 
-
-.MUTEDN         CALL    CLRUI
-                LD      A,1
-                LD      (SCRDIRTY),A
+.MOVEUP         LD      A,(CURPANEL)
+                OR      A
+                JR      NZ,.FXUP
+                
+                ; Song UP
+                LD      A,(SELSONG)
+                OR      A
+                JR      NZ,.SNGUPDEC
+                LD      A,SONGCOUNT - 1
+                LD      (SELSONG),A
+                JR      .UPFIN
+.SNGUPDEC       DEC     A
+                LD      (SELSONG),A
+                JR      .UPFIN
+                
+.FXUP           ; FX UP
+                LD      A,(SELFX)
+                OR      A
+                JR      NZ,.FXUPDEC
+                LD      A,FXCOUNT - 1
+                LD      (SELFX),A
+                JR      .UPFIN
+.FXUPDEC        DEC     A
+                LD      (SELFX),A
+.UPFIN          CALL    UPDSCROLL
                 RET
 
+.MOVEDN         LD      A,(CURPANEL)
+                OR      A
+                JR      NZ,.FXDN
+                
+                ; Song DOWN
+                LD      A,(SELSONG)
+                INC     A
+                CP      SONGCOUNT
+                JR      C,.SNGDNSET
+                XOR     A
+.SNGDNSET       LD      (SELSONG),A
+                JR      .DNFIN
+                
+.FXDN           ; FX DOWN
+                LD      A,(SELFX)
+                INC     A
+                CP      FXCOUNT
+                JR      C,.FXDNSET
+                XOR     A
+.FXDNSET        LD      (SELFX),A
+.DNFIN          CALL    UPDSCROLL
+                RET
 
-.PLAY           PUSH    HL
+.TRIGGER        LD      A,(CURPANEL)
+                OR      A
+                JR      NZ,.TRIGFX
+                
+                ; Trigger Song
+                LD      A,(SELSONG)
+                LD      (PLAYINGSNG),A
+                LD      L,A
+                LD      H,0
+                ADD     HL,HL
+                ADD     HL,HL
+                ADD     HL,HL           ; A * 8
+                LD      DE,SONGTBL
+                ADD     HL,DE
+                LD      E,(HL)
+                INC     HL
+                LD      D,(HL)          ; DE = Song Header
+                
+                LD      L,E
+                LD      H,D
+                PUSH    HL
                 CALL    MUSSTOP
                 CALL    RESETUI
                 POP     HL
-                XOR     A               ; INFINITE LOOPING LIMIT
-                JP      MUSPLAY
+                XOR     A               ; infinite loops
+                CALL    MUSPLAY
+                RET
+                
+.TRIGFX         ; Trigger FX
+                LD      A,(SELFX)
+                LD      L,A
+                LD      H,0
+                LD      E,L
+                LD      D,H
+                ADD     HL,HL           ; A * 2
+                ADD     HL,HL           ; A * 4
+                ADD     HL,DE           ; A * 5
+                ADD     HL,HL           ; HL = A * 10
+                LD      DE,FXTBL
+                ADD     HL,DE
+                
+                LD      E,(HL)
+                INC     HL
+                LD      D,(HL)          ; DE = FX_TABLE address
+                LD      (FXPTR),DE      ; Update driver FX pointer
+                INC     HL
+                
+                LD      A,(HL)          ; A = FX index
+                JP      FXPLAY
+
+; - UPDSCROLL --------------------------
+; - UPDATES SONGSTART/FXSTART BASED ON SELSONG/SELFX
+; - CLOBBERS: AF, BC
+; -
+UPDSCROLL       ; --- SONGS SCROLL ---
+                LD      A,(SELSONG)
+                LD      B,A             ; B = SELSONG
+                LD      A,(SONGSTART)   ; A = SONGSTART
+                CP      B
+                JR      NC,.SNGUP       ; If SONGSTART >= SELSONG, scroll up
+                
+                ; Check if SELSONG >= SONGSTART + 6
+                ADD     A,6             ; A = SONGSTART + 6
+                CP      B
+                JR      C,.SNGDN        ; If SONGSTART + 6 <= SELSONG, scroll down
+                JR      Z,.SNGDN
+                JR      .FXSCROLL       ; No scroll needed
+                
+.SNGUP          LD      A,B
+                LD      (SONGSTART),A
+                JR      .FXSCROLL
+                
+.SNGDN          LD      A,B
+                SUB     5
+                LD      (SONGSTART),A
+                
+.FXSCROLL       ; --- FX SCROLL ---
+                LD      A,(SELFX)
+                LD      B,A             ; B = SELFX
+                LD      A,(FXSTART)     ; A = FXSTART
+                CP      B
+                JR      NC,.FXUP
+                
+                ADD     A,6
+                CP      B
+                JR      C,.FXDN
+                JR      Z,.FXDN
+                RET
+                
+.FXUP           LD      A,B
+                LD      (FXSTART),A
+                RET
+                
+.FXDN           LD      A,B
+                SUB     5
+                LD      (FXSTART),A
+                RET
 
 
 ; - LOGO -------------------------------
@@ -717,15 +826,13 @@ WRTCHR          PUSH    HL
 ; - CLOBBERS: ALL
 ; -
 
-INITLAY         ; DRAW HORIZONTAL DIVIDER LINES AT ROWS 1, 9, 17, 19
+INITLAY         ; DRAW HORIZONTAL DIVIDER LINES AT ROWS 1, 10, 19
                 LD      HL,#1820        ; ROW 1
-                CALL    .DRAWLN
-                LD      HL,#1920        ; ROW 9
-                CALL    .DRAWLN
-                LD      HL,#1A20        ; ROW 17
-                CALL    .DRAWLN
+                CALL    DRAWLN
+                LD      HL,#1940        ; ROW 10
+                CALL    DRAWLN
                 LD      HL,#1A60        ; ROW 19
-                CALL    .DRAWLN
+                CALL    DRAWLN
 
                 ; RENDER STATIC LAYOUT STRINGS FROM TABLE
                 LD      IX,LAYTBL
@@ -746,7 +853,7 @@ INITLAY         ; DRAW HORIZONTAL DIVIDER LINES AT ROWS 1, 9, 17, 19
                 ADD     IX,DE           ; ADVANCE TO NEXT ENTRY
                 JP      .LOOP
 
-.DRAWLN         ; HL = VRAM ADDRESS
+DRAWLN          ; HL = VRAM ADDRESS
                 CALL    SETWRT
                 LD      B,32            ; LINE LENGTH
                 LD      A,#81           ; HORIZONTAL DIVIDER CHAR
@@ -762,231 +869,416 @@ INITLAY         ; DRAW HORIZONTAL DIVIDER LINES AT ROWS 1, 9, 17, 19
 ; - CLOBBERS: ALL
 ; -
 
-DRAWUI          ; 1. DRAW SONG NAME (CACHED)
-                ; LOGICAL KEY: SONGPTR IF PLAYING, ELSE 0 (STOPPED → "NONE")
-                LD      DE,(SONGPTR)
-                LD      A,(MUSSTAT)
-                OR      A
-                JR      NZ,.NMKOK
-                LD      DE,0
-.NMKOK          LD      HL,(NAMEPRV)
+DRAWUI          ; Check if playback info changed
+                LD      A,(PLAYINGSNG)
+                LD      HL,LMTPREV
+                CP      (HL)
+                JR      NZ,.INFO_RD
+                
+                LD      HL,(BPMPREV)
+                EX      DE,HL
+                LD      HL,(CHANNELS + CHBPM)
                 OR      A
                 SBC     HL,DE
-                JR      Z,.NMSKP        ; CACHE HIT → SKIP SEARCH+PUTSTR
-                LD      (NAMEPRV),DE
-
-                LD      A,(MUSSTAT)
-                OR      A
-                JR      Z,.NONE
-
-                LD      HL,(SONGPTR)
-                LD      IX,SNGNAMTB
-.SRCH           LD      E,(IX+0)
-                LD      D,(IX+1)
-                LD      A,D
-                OR      E
-                JR      Z,.NONE         ; NOT FOUND
-
-                LD      A,L
-                CP      E
-                JR      NZ,.NEXT
-                LD      A,H
-                CP      D
-                JR      Z,.FOUND
-.NEXT           LD      DE,4
-                ADD     IX,DE
-                JP      .SRCH
-.NONE           LD      HL,.SNONE
-                JR      .PRTSNG
-.FOUND          LD      L,(IX+2)
-                LD      H,(IX+3)
-.PRTSNG         LD      DE,#1877
-                CALL    PUTSTR
-.NMSKP
-
-                ; 2. DRAW BPM
-                CALL    GETBPM          ; A = BPM
-                LD      HL,BPMPREV
-                CP      (HL)
-                JR      Z,.BPMSKP
-                LD      (HL),A          ; UPDATE CACHE
-                LD      HL,#1897
-                CALL    SETWRT
-                CALL    DEC2STR         ; PRINTS 3 DIGITS (SPACE PADDED)
-.BPMSKP
-
-                ; 3. DRAW MASTER VOLUME
+                JR      NZ,.INFO_RD
+                
                 LD      A,(MUSVOL)
                 LD      HL,VOLPREV
                 CP      (HL)
-                JR      Z,.VOLSKP
-                LD      (HL),A          ; UPDATE CACHE
-                LD      HL,#18B7
-                CALL    SETWRT
-                CALL    PRN2DEC         ; PRINTS 2 DIGITS
-                LD      DE,(BUFADR)
-                LD      A,"/"
-                LD      (DE),A
-                INC     DE
-                LD      A,"1"
-                LD      (DE),A
-                INC     DE
-                LD      A,"5"
-                LD      (DE),A
-                INC     DE
-                LD      (BUFADR),DE
-.VOLSKP
-
-                ; 4. DRAW LOOP COUNTER
+                JR      NZ,.INFO_RD
+                
                 LD      A,(SONGLOP)
                 LD      HL,LOOPPREV
                 CP      (HL)
-                JR      NZ,.LPRDRW
-                LD      A,(SONGLMT)
-                LD      HL,LMTPREV
-                CP      (HL)
-                JR      Z,.LPSKP
-.LPRDRW         LD      A,(SONGLOP)
-                LD      (LOOPPREV),A
-                LD      A,(SONGLMT)
-                LD      (LMTPREV),A
+                JR      NZ,.INFO_RD
                 
-                LD      HL,#18D7
-                CALL    SETWRT
+                LD      A,(MUSSTAT)
+                LD      HL,FADSPPRV
+                CP      (HL)
+                JP      Z,.INFOSKIP     ; If all matched, SKIP drawing playback info!
+                
+.INFO_RD        ; Update cache
+                LD      A,(PLAYINGSNG)
+                LD      (LMTPREV),A
+                LD      HL,(CHANNELS + CHBPM)
+                LD      (BPMPREV),HL
+                LD      A,(MUSVOL)
+                LD      (VOLPREV),A
                 LD      A,(SONGLOP)
-                CALL    PRN2DEC
-                LD      A,"/"
-                CALL    WRTCHR
-                LD      A,(SONGLMT)
-                OR      A
-                JR      NZ,.LMT
-                LD      A,"I"
+                LD      (LOOPPREV),A
+                LD      A,(MUSSTAT)
+                LD      (FADSPPRV),A
+                
+                LD      A,1
+                LD      (SCRDIRTY),A
+                
+                ; --- DRAW PLAYBACK INFO (ROW 2, VRAM #1840) ---
+                ; 1. DRAW SNG: LABEL
+                LD      HL,#1840
+                CALL    SETWRT
+                LD      A,"S"
                 CALL    WRTCHR
                 LD      A,"N"
                 CALL    WRTCHR
-                LD      A,"F"
+                LD      A,"G"
                 CALL    WRTCHR
-                JR      .LPSKP
-.LMT            LD      A,(SONGLMT)
-                CALL    PRN2DEC
-                LD      A," "           ; OVERWRITE "F" FROM "INF"
+                LD      A,":"
                 CALL    WRTCHR
-.LPSKP
-
-                ; 5. DRAW STATUS
-                LD      A,(MUSSTAT)
-                LD      HL,MSTFLPRV
-                CP      (HL)
-                JR      Z,.STSKP
-                LD      (HL),A          ; UPDATE CACHE
                 
-                BIT     3,A             ; IS PAUSED?
-                JR      NZ,.PAUS
-                BIT     1,A
-                JR      NZ,.FAD
-                BIT     0,A
-                JR      NZ,.PLY
-                LD      HL,.SSTOP
-                JR      .PRTST
-.PAUS           LD      HL,.SPAUS
-                JR      .PRTST
-.FAD            LD      HL,.SFAD
-                JR      .PRTST
-.PLY            LD      HL,.SPLY
-.PRTST          LD      DE,#18F7
-                CALL    PUTSTR
-.STSKP
-
-                ; 6. DRAW FADE
-                LD      A,(GLBFADSP)
-                LD      HL,FADSPPRV
-                CP      (HL)
-                JR      NZ,.FDRDRW
-                LD      A,(GLBFADVL)
-                LD      HL,FADVLPRV
-                CP      (HL)
-                JR      Z,.FDSKP
-.FDRDRW          LD      A,(GLBFADSP)
-                LD      (FADSPPRV),A
-                LD      C,A             ; SAVE GLBFADSP IN C
-                LD      A,(GLBFADVL)
-                LD      (FADVLPRV),A
-                LD      B,A             ; SAVE GLBFADVL IN B
-                LD      A,C             ; RESTORE GLBFADSP
-                OR      A
-                JR      NZ,.FADAC
-                LD      HL,.SIACT
-                LD      DE,#1917
-                CALL    PUTSTR
-                JR      .FDSKP
-.FADAC          LD      HL,#1917
+                ; 2. DRAW SONG NAME (6 CHARS)
+                LD      A,(PLAYINGSNG)
+                CP      #FF
+                JR      Z,.SNGNONE
+                
+                ; Look up short name from SONGTBL + PLAYINGSNG * 8
+                LD      L,A
+                LD      H,0
+                ADD     HL,HL
+                ADD     HL,HL
+                ADD     HL,HL           ; HL = A * 8
+                LD      DE,SONGTBL
+                ADD     HL,DE           ; HL = song entry
+                LD      E,(HL)
+                INC     HL
+                LD      D,(HL)          ; DE = Header (discarded)
+                LD      BC,5
+                ADD     HL,BC           ; HL points to SHORT_NAME_PTR
+                LD      E,(HL)
+                INC     HL
+                LD      D,(HL)          ; DE = short name string ptr
+                
+                LD      L,E
+                LD      H,D             ; HL = string ptr
+                LD      DE,#1844
+                JR      .SNGPRT
+                
+.SNGNONE        LD      HL,.SNONE       ; "NONE  "
+                LD      DE,#1844
+.SNGPRT         CALL    PUTSTR          ; Prints exactly 6 chars (padded)
+                
+                ; 3. DRAW BPM
+                LD      HL,#184A        ; B:
                 CALL    SETWRT
-                LD      A,B             ; GLBFADVL (SAVED ABOVE)
-                CALL    DEC2STR
-                LD      A,"/"
+                LD      A," "
                 CALL    WRTCHR
-                LD      A,"2"
+                LD      A,"B"
                 CALL    WRTCHR
-                LD      A,"5"
+                LD      A,":"
                 CALL    WRTCHR
-.FDSKP
-.DRPL           ; 7. DRAW PLAYLIST
-                ; CHECK IF SONGPTR OR MUSSTAT CHANGED
-                LD      HL,(SONGPTR)
-                LD      DE,(SONGPREV)
-                OR      A
-                SBC     HL,DE
-                JR      NZ,.PLREDRAW
+                
+                CALL    GETBPM          ; A = BPM
+                CALL    DEC2STR         ; Prints 3 digits
+                
+                ; 4. DRAW VOLUME
+                LD      HL,#1850        ; V:
+                CALL    SETWRT
+                LD      A," "
+                CALL    WRTCHR
+                LD      A,"V"
+                CALL    WRTCHR
+                LD      A,":"
+                CALL    WRTCHR
+                
+                LD      A,(MUSVOL)
+                CALL    PRN2DEC         ; Prints 2 digits
+                
+                ; 5. DRAW LOOP
+                LD      HL,#1855        ; L:
+                CALL    SETWRT
+                LD      A," "
+                CALL    WRTCHR
+                LD      A,"L"
+                CALL    WRTCHR
+                LD      A,":"
+                CALL    WRTCHR
+                
+                LD      A,(SONGLOP)
+                CALL    PRN2DEC         ; Prints 2 digits
+                
+                ; 6. DRAW STATUS
+                LD      HL,#185A        ; STATUS
+                CALL    SETWRT
+                LD      A," "
+                CALL    WRTCHR
                 
                 LD      A,(MUSSTAT)
+                BIT     3,A             ; PAUSED?
+                JR      NZ,.STPAUS
+                BIT     1,A             ; FADING?
+                JR      NZ,.STFAD
+                BIT     0,A             ; PLAYING?
+                JR      NZ,.STPLAY
+                
+                LD      HL,.SSTOP       ; "STOP"
+                LD      DE,#185B
+                JR      .STPRT
+.STPAUS         LD      HL,.SPAUS       ; "PAUS"
+                LD      DE,#185B
+                JR      .STPRT
+.STFAD          LD      HL,.SFAD        ; "FADE"
+                LD      DE,#185B
+                JR      .STPRT
+.STPLAY         LD      HL,.SPLY        ; "PLAY"
+                LD      DE,#185B
+.STPRT          CALL    PUTSTR
+
+.INFOSKIP
+
+.DRPL           ; Check if any playlist variables changed
+                LD      A,(SELSONG)
+                LD      HL,SONGPREV
+                CP      (HL)
+                JR      NZ,.PL_RD
+                
+                LD      A,(SELFX)
+                LD      HL,SONGPREV + 1
+                CP      (HL)
+                JR      NZ,.PL_RD
+                
+                LD      A,(CURPANEL)
+                LD      HL,NAMEPRV
+                CP      (HL)
+                JR      NZ,.PL_RD
+                
+                LD      A,(SONGSTART)
+                LD      HL,NAMEPRV + 1
+                CP      (HL)
+                JR      NZ,.PL_RD
+                
+                LD      A,(FXSTART)
                 LD      HL,STATPREV
                 CP      (HL)
-                JR      Z,.PLSKIP       ; IF UNCHANGED, SKIP PLAYLIST RENDER!
+                JR      NZ,.PL_RD
                 
-.PLREDRAW        ; UPDATE CACHE
-                LD      HL,(SONGPTR)
-                LD      (SONGPREV),HL
-                EX      DE,HL           ; DE = SONGPTR (NO SECOND READ NEEDED)
-                LD      A,(MUSSTAT)
+                LD      A,(PLAYINGSNG)
+                LD      HL,MSTFLPRV
+                CP      (HL)
+                JP      Z,.PLSKIP       ; If all matched, SKIP drawing playlist!
+                
+.PL_RD          ; Update cache
+                LD      A,(SELSONG)
+                LD      (SONGPREV),A
+                LD      A,(SELFX)
+                LD      (SONGPREV + 1),A
+                LD      A,(CURPANEL)
+                LD      (NAMEPRV),A
+                LD      A,(SONGSTART)
+                LD      (NAMEPRV + 1),A
+                LD      A,(FXSTART)
                 LD      (STATPREV),A
+                LD      A,(PLAYINGSNG)
+                LD      (MSTFLPRV),A
+                
+                LD      A,1
+                LD      (SCRDIRTY),A
+                
+                ; --- DRAW DUAL PLAYLISTS (ROWS 4 TO 9) ---
+                ; For each screen row Y = 0 to 5:
+                ; Calculate VRAM address: #1880 + Y * 32
+                ; Draw Left Panel:
+                ;   - #80
+                ;   - Cursor ('>' or ' ')
+                ;   - Bullet (#A1 + Y)
+                ;   - Song name (13 chars)
+                ;   - #80
+                ; Draw Right Panel:
+                ;   - Cursor ('>' or ' ')
+                ;   - Bullet (#A1 + Y)
+                ;   - FX name (11 chars)
+                ;   - #80
+                
+                LD      B,6             ; 6 rows to draw
+                LD      C,0             ; C = row index Y (0 to 5)
+                LD      IY,#1880        ; IY = VRAM Row start address
+                
+.ROWLP          PUSH    BC
+                PUSH    IY
+                PUSH    IY
+                POP     HL              ; HL = VRAM address for this row (IY)
+                CALL    SETWRT          ; Set BUFADR to RAM screen buffer address
+                
+                ; Write left border
+                LD      A,#80
+                CALL    WRTCHR
+                
+                ; Write cursor: check if CURPANEL == 0 and SELSONG == SONGSTART + Y
+                LD      A,(CURPANEL)
                 OR      A
-                JR      NZ,.ACTOK
-                LD      DE,0            ; IF MUSIC STOPPED, NO HIGHLIGHT
-.ACTOK          LD      IX,PLAYLSTB
-.PLLP           LD      L,(IX+0)
-                LD      H,(IX+1)
-                LD      A,H
-                OR      L
-                JR      Z,.PLDN         ; END OF TABLE
-
-                PUSH    DE              ; SAVE ACTIVE POINTER
-                OR      A
-                SBC     HL,DE
-                JR      NZ,.UNSEL
+                JR      NZ,.LNCCUR
                 
-                ; SELECTED
-                LD      L,(IX+2)
-                LD      H,(IX+3)
-                JR      .PLDR
+                LD      A,(SONGSTART)
+                ADD     A,C             ; A = SONGSTART + Y
+                LD      E,A             ; E = index
+                LD      A,(SELSONG)
+                CP      E
+                JR      NZ,.LNCCUR
                 
-.UNSEL          LD      L,(IX+4)
-                LD      H,(IX+5)
+                LD      A,">"
+                JR      .LWRTCR
+.LNCCUR         LD      A," "
+.LWRTCR         CALL    WRTCHR
                 
-.PLDR           LD      E,(IX+6)
-                LD      D,(IX+7)
-                PUSH    IX
-                CALL    PUTSTR
-                POP     IX
+                ; Write space instead of number
+                LD      A," "
+                CALL    WRTCHR
+                
+                ; Write song name
+                LD      A,(SONGSTART)
+                ADD     A,C             ; A = index
+                LD      E,A
+                LD      A,SONGCOUNT
+                CP      E
+                JR      Z,.LNEMPTY      ; If SONGCOUNT <= index, empty
+                JR      C,.LNEMPTY
+                
+                ; Valid song index: look up strings from SONGTBL + E * 8
+                LD      L,E
+                LD      H,0
+                ADD     HL,HL
+                ADD     HL,HL
+                ADD     HL,HL           ; HL = E * 8
+                LD      DE,SONGTBL
+                ADD     HL,DE           ; HL = song entry pointer
+                
+                ; Check if this song is currently playing: PLAYINGSNG == E
+                LD      A,(PLAYINGSNG)
+                CP      E
+                JR      NZ,.LUNSEL
+                
+                ; Currently playing: use CYAN name pointer (offset 2)
+                INC     HL
+                INC     HL
+                LD      E,(HL)
+                INC     HL
+                LD      D,(HL)          ; DE = CYAN name pointer
+                JR      .LPRTNM
+                
+.LUNSEL         ; Not playing: use WHITE name pointer (offset 4)
+                INC     HL
+                INC     HL
+                INC     HL
+                INC     HL
+                LD      E,(HL)
+                INC     HL
+                LD      D,(HL)          ; DE = WHITE name pointer
+                JR      .LPRTNM
+                
+.LNEMPTY        LD      DE,.SPACES13    ; 13 spaces
+.LPRTNM         LD      L,E
+                LD      H,D             ; HL = string pointer
+                PUSH    IY
                 POP     DE
+                INC     DE
+                INC     DE
+                INC     DE              ; DE = IY + 3
+                CALL    PUTSTR          ; Draw song name (13 chars)
                 
-                LD      BC,8
-                ADD     IX,BC
-                JP      .PLLP
-.PLDN           
+                ; Write middle border (end of left panel)
+                LD      A,#80
+                CALL    WRTCHR
+                
+                ; 2. DRAW RIGHT PANEL START
+                ; Write cursor: check if CURPANEL == 1 and SELFX == FXSTART + Y
+                LD      A,(CURPANEL)
+                DEC     A               ; Is CURPANEL == 1?
+                JR      NZ,.RNCCUR
+                
+                LD      A,(FXSTART)
+                ADD     A,C             ; A = FXSTART + Y
+                LD      E,A             ; E = index
+                LD      A,(SELFX)
+                CP      E
+                JR      NZ,.RNCCUR
+                
+                LD      A,">"
+                JR      .RWRTCR
+.RNCCUR         LD      A," "
+.RWRTCR         CALL    WRTCHR
+                
+                ; Write space instead of number
+                LD      A," "
+                CALL    WRTCHR
+                
+                ; Write FX name
+                LD      A,(FXSTART)
+                ADD     A,C             ; A = index
+                LD      E,A
+                LD      A,FXCOUNT
+                CP      E
+                JR      Z,.RNEMPTY
+                JR      C,.RNEMPTY
+                
+                ; Valid FX index: look up string from FXTBL + E * 10
+                LD      L,E
+                LD      H,0
+                LD      C,L
+                LD      B,H
+                ADD     HL,HL           ; E * 2
+                ADD     HL,HL           ; E * 4
+                ADD     HL,BC           ; E * 5
+                ADD     HL,HL           ; HL = E * 10
+                LD      DE,FXTBL
+                ADD     HL,DE           ; HL = FX entry pointer
+                
+                ; Check if this FX is focused: SELFX == E and CURPANEL == 1
+                LD      A,(CURPANEL)
+                DEC     A
+                JR      NZ,.RUNSEL
+                
+                LD      A,(SELFX)
+                CP      E
+                JR      NZ,.RUNSEL
+                
+                ; Focused FX in active panel: use CYAN name pointer (offset 4)
+                LD      BC,4
+                ADD     HL,BC
+                LD      E,(HL)
+                INC     HL
+                LD      D,(HL)          ; DE = CYAN name pointer
+                JR      .RPRTNM
+                
+.RUNSEL         ; Unfocused/White: use WHITE name pointer (offset 6)
+                LD      BC,6
+                ADD     HL,BC
+                LD      E,(HL)
+                INC     HL
+                LD      D,(HL)          ; DE = WHITE name pointer
+                JR      .RPRTNM
+                
+.RNEMPTY        LD      DE,.SPACES11    ; 11 spaces
+.RPRTNM         PUSH    DE
+                PUSH    IY
+                POP     HL
+                LD      BC,19
+                ADD     HL,BC
+                EX      DE,HL           ; DE = IY + 19
+                POP     HL              ; HL = string pointer
+                CALL    PUTSTR          ; Draw FX name (11 chars)
+                
+                ; Write right border (space padding at col 30, vertical bar at col 31)
+                LD      A," "
+                CALL    WRTCHR
+                LD      A,#80
+                CALL    WRTCHR
+                
+                ; --- NEXT ROW ---
+                POP     IY
+                LD      DE,#20          ; 32 characters in a row
+                ADD     IY,DE           ; Advance VRAM address
+                
+                POP     BC
+                INC     C               ; C = C + 1 (next row index Y)
+                DEC     B
+                JP      NZ,.ROWLP
+                
+                JP      .PLSKIP         ; Proceed to channel mixing grid
+
+.SPACES13       DEFB    "             ", 0
+.SPACES11       DEFB    "           ", 0
 
 .PLSKIP                 ; 8. DRAW CHANNEL GRID
                 LD      IX,CHANNELS
-                LD      IY,#1960        ; START VRAM ROW ADDRESS
+                LD      IY,#19A0        ; START VRAM ROW ADDRESS (Row 13)
                 LD      B,6             ; 6 CHANNELS
 .CHLP           PUSH    BC
                 PUSH    IY
@@ -1183,11 +1475,14 @@ DRAWUI          ; 1. DRAW SONG NAME (CACHED)
                 JP      .CHADV
 
 .DIRTY          ; CACHE MISS! DRAW ROW
-                ; COMPUTE PERSISTENT SCRBUFF WRITE POINTER (HL) FROM IY + 6
+                LD      A,1
+                LD      (SCRDIRTY),A
+                
+                ; COMPUTE PERSISTENT SCRBUFF WRITE POINTER (HL) FROM IY + 3
                 PUSH    IY
                 POP     HL              ; HL = IY (VRAM ADDR)
-                LD      DE,6
-                ADD     HL,DE           ; HL = IY + 6 (VRAM COL 6)
+                LD      DE,3
+                ADD     HL,DE           ; HL = IY + 3 (VRAM COL 3)
                 LD      DE,#1800
                 OR      A
                 SBC     HL,DE           ; HL = OFFSET FROM #1800
@@ -1274,9 +1569,7 @@ DRAWUI          ; 1. DRAW SONG NAME (CACHED)
                 INC     HL
 .INSDN
 
-                ; 6. WRITE 3 SPACES
-                LD      (HL)," "
-                INC     HL
+                ; 6. WRITE 2 SPACES
                 LD      (HL)," "
                 INC     HL
                 LD      (HL)," "
@@ -1303,9 +1596,10 @@ DRAWUI          ; 1. DRAW SONG NAME (CACHED)
                 CALL    PRNHEX12        ; HL=WRITE PTR, DE=VALUE; HL ADVANCES BY 3
 .PERDN
 
-                ; 8. WRITE 2 SPACES
+                ; 8. DRAW LFO VALUE (3 CHARS)
                 LD      (HL)," "
                 INC     HL
+                CALL    PRNLFO
                 LD      (HL)," "
                 INC     HL
 
@@ -1375,9 +1669,7 @@ DRAWUI          ; 1. DRAW SONG NAME (CACHED)
                 DEC     B
                 JP      NZ,.CHLP
                 
-.DONE           LD      A,1
-                LD      (SCRDIRTY),A
-                RET
+.DONE           RET
 
 .SOFF           DEFB    "OFF ", 0
 .SGHST          DEFB    "GHST", 0
@@ -1389,7 +1681,6 @@ DRAWUI          ; 1. DRAW SONG NAME (CACHED)
 .SSTOP          DEFB    "STOP  ", 0
 .SFAD           DEFB    "FADING", 0
 .SPLY           DEFB    "PLAY  ", 0
-.SIACT          DEFB    "INACTV", 0
 .SPAUS          DEFB    "PAUSE ", 0
 
 
@@ -1556,6 +1847,63 @@ DRAWBAR         ADD     A,A             ; A = VOL * 2 (0..30 PIXELS)
 
 
 
+; - PRNLFO -----------------------------
+; - DRAW SIGNED 8-BIT LFO VALUE TO SCREEN BUFFER (3 CHARACTERS)
+; - IN: IX = CHANNEL STATE POINTER
+; -     HL = WRITE POINTER (SCRBUFF)
+; - OUT: HL = HL + 3
+; - CLOBBERS: A, B, C
+; -
+
+PRNLFO          LD      A,(IX + CHLDEST)
+                OR      A
+                JR      NZ,.LFOACT
+
+                ; INACTIVE: PRINT "---"
+                LD      (HL),"-"
+                INC     HL
+                LD      (HL),"-"
+                INC     HL
+                LD      (HL),"-"
+                INC     HL
+                RET
+
+.LFOACT         LD      A,(IX + CHLFOVAL)
+                ; CHECK SIGN
+                OR      A
+                JP      P,.LFOPOS
+
+                ; NEGATIVE LFO: PRINT "-" THEN NEGATE A
+                LD      (HL),"-"
+                INC     HL
+                NEG
+                JR      .LFOPRT
+
+.LFOPOS         ; POSITIVE LFO: PRINT "+"
+                LD      (HL),"+"
+                INC     HL
+
+.LFOPRT         ; PRINT A AS 2-DIGIT DECIMAL (00..99)
+                LD      C,0
+.LFODIV         SUB     10
+                JR      C,.LFODN
+                INC     C
+                JR      .LFODIV
+
+.LFODN          ADD     A,10            ; A = UNITS DIGIT (0..9)
+                LD      B,A             ; SAVE UNITS IN B
+                LD      A,C             ; A = TENS DIGIT (0..9)
+                ADD     A,"0"
+                LD      (HL),A          ; WRITE TENS
+                INC     HL
+                LD      A,B
+                ADD     A,"0"
+                LD      (HL),A          ; WRITE UNITS
+                INC     HL
+                RET
+
+
+
 
 ; - PRNHEX12 ---------------------------
 ; - PRINT 12-BIT HEX VALUE (3 DIGITS) VIA HEXTBL LOOKUP
@@ -1666,15 +2014,7 @@ RESETUI         CALL    CLRUI
 
 ; --- COMPILED SONG DATA                ----------------------------------------
 
-                INCLUDE "TMP/shalomcastle.Z8A"
-                INCLUDE "TMP/adsr_test.Z8A"
-                INCLUDE "TMP/lfo_test.Z8A"
-                INCLUDE "TMP/1ch_chorus_test.Z8A"
-                INCLUDE "TMP/sequencer_test.Z8A"
-                INCLUDE "TMP/modulation_test.Z8A"
-                INCLUDE "TMP/porta_test.Z8A"
-                INCLUDE "TMP/detune_test.Z8A"
-                INCLUDE "TMP/chorus_test.Z8A"
+                INCLUDE "TMP/PLAYLIST.Z8A"
 
 
 COLORDAT        DEFB    #F1, #F1, #F1, #F1, #F1, #F1, #F1, #F1 ; GROUPS 0-7: WHITE ON BLACK
@@ -1686,73 +2026,37 @@ COLORDAT        DEFB    #F1, #F1, #F1, #F1, #F1, #F1, #F1, #F1 ; GROUPS 0-7: WHI
                 DEFB    #91, #91                               ; GROUPS 30-31: LIGHT RED ON BLACK (SFX BARS)
 
 ; --- LAYOUT STRINGS
-STRTITLE        DEFB    " MUSAX GRAPHICAL JUKEBOX v1.9   ", 0
-STRSUB          DEFB    " PLAYLIST         PLAYBACK INFO ", 0
-STRPLAY1        DEFB    "                  SONG: ", 0
-STRPLAY2        DEFB    "                  BPM : ", 0
-STRPLAY3        DEFB    "                  VOL : ", 0
-STRPLAY4        DEFB    "                  LOOP: ", 0
-STRPLAY5        DEFB    "                  STAT: ", 0
-STRPLAY6        DEFB    "                  FADE: ", 0
-STRCHHDR        DEFB    "CH TY VOL   NOT  IN   PER  STAT ", 0
-STRCH0          DEFB    "0A MU ", 0
-STRCH1          DEFB    "1B MU ", 0
-STRCH2          DEFB    "2C MU ", 0
-STRCH3          DEFB    "3A FX ", 0
-STRCH4          DEFB    "4B FX ", 0
-STRCH5          DEFB    "5C FX ", 0
-STRSFX          DEFB    " sfx: ", #A7, ":LO  ", #A8, ":HI  ", #A9, ":FAN  ", #A0, ":TRI  ", 0
-STRKEY1         DEFB    " keys: ", #A1, "-", #A6, " PLAY   ", #80, " s STOP p PAUS", 0
-STRKEY2         DEFB    "       c PORTA    ", #80, " f/i FADE O/I", 0
-STRKEY3         DEFB    "       e CHORUS   ", #80, " t,y,u MUT MU", 0
-STRKEY4         DEFB    "       d DETUNE   ", #80, " g,h,j MUT FX", 0
+STRTITLE        DEFB    " MUSAX DYNAMIC JUKEBOX v2.0     ", 0
+STRCHHDR        DEFB    "CH  VOL  NOTE INS PER LFO STAT  ", 0
+STRCH0          DEFB    "A  ", 0
+STRCH1          DEFB    "B  ", 0
+STRCH2          DEFB    "C  ", 0
+STRCH3          DEFB    "A  ", 0
+STRCH4          DEFB    "B  ", 0
+STRCH5          DEFB    "C  ", 0
+STRKEY1         DEFB    " KEYS: cursors nav | space PLAY ", 0
+STRKEY2         DEFB    " s:STOP  p:PAUSE f:FADEO i:FADEI", 0
+STRKEY3         DEFB    " MUTE MUS: t:CHA  y:CHB  u:CHC  ", 0
+STRKEY4         DEFB    " MUTE FX : g:CHA  h:CHB  j:CHC  ", 0
+
+STRPLTOP        DEFB    #80, #81, #81, " SONGS ", #81, #81, #81, #81, #81, #81, #80, #81, #81, #81, " SOUND FX ", #81, #80, 0
 
 ; --- LAYOUT TABLE
 LAYTBL          DEFW    #1800, STRTITLE
-                DEFW    #1840, STRSUB
-                DEFW    #1860, STRPLAY1
-                DEFW    #1880, STRPLAY2
-                DEFW    #18A0, STRPLAY3
-                DEFW    #18C0, STRPLAY4
-                DEFW    #18E0, STRPLAY5
-                DEFW    #1900, STRPLAY6
-                DEFW    #1940, STRCHHDR
-                DEFW    #1960, STRCH0
-                DEFW    #1980, STRCH1
-                DEFW    #19A0, STRCH2
-                DEFW    #19C0, STRCH3
-                DEFW    #19E0, STRCH4
-                DEFW    #1A00, STRCH5
-                DEFW    #1A40, STRSFX
+                DEFW    #1860, STRPLTOP
+                DEFW    #1980, STRCHHDR
+                DEFW    #19A0, STRCH0
+                DEFW    #19C0, STRCH1
+                DEFW    #19E0, STRCH2
+                DEFW    #1A00, STRCH3
+                DEFW    #1A20, STRCH4
+                DEFW    #1A40, STRCH5
                 DEFW    #1A80, STRKEY1
                 DEFW    #1AA0, STRKEY2
                 DEFW    #1AC0, STRKEY3
                 DEFW    #1AE0, STRKEY4
                 DEFW    0               ; END OF TABLE MARKER
 
-
-; --- PLAYLIST STRINGS (WHITE AND CYAN)
-P1W             DEFB    #A1, ".SHALOM CASTLE", 0
-P1C             DEFB    #A1, ".shalom castle", 0
-P2W             DEFB    #A2, ".ADSR TEST    ", 0
-P2C             DEFB    #A2, ".adsr test    ", 0
-P3W             DEFB    #A3, ".LFO TEST     ", 0
-P3C             DEFB    #A3, ".lfo test     ", 0
-P4W             DEFB    #A4, ".SEQ TEST     ", 0
-P4C             DEFB    #A4, ".seq test     ", 0
-P5W             DEFB    #A5, ".MOD TEST     ", 0
-P5C             DEFB    #A5, ".mod test     ", 0
-P6W             DEFB    #A6, ".1CH CHORUS   ", 0
-P6C             DEFB    #A6, ".1ch chorus   ", 0
-
-; --- PLAYLIST TABLE
-PLAYLSTB        DEFW    SHALOMCASTLE.HEADER, P1C, P1W, #1860
-                DEFW    ADSRTEST.HEADER,     P2C, P2W, #1880
-                DEFW    LFOTEST.HEADER,      P3C, P3W, #18A0
-                DEFW    SEQTEST.HEADER,      P4C, P4W, #18C0
-                DEFW    MODTEST.HEADER,      P5C, P5W, #18E0
-                DEFW    SFXTEST.HEADER,      P6C, P6W, #1900
-                DEFW    0
 
 ; --- NOTE NAMES TABLE
 NOTENAM         DEFB    "C-0C#0D-0D#0E-0F-0F#0G-0G#0A-0A#0B-0"
@@ -1765,29 +2069,6 @@ NOTENAM         DEFB    "C-0C#0D-0D#0E-0F-0F#0G-0G#0A-0A#0B-0"
                 DEFB    "C-7C#7D-7D#7E-7F-7F#7G-7G#7A-7A#7B-7"
 
 
-; --- SONG NAMES TABLE
-SNGNAMTB        DEFW    SHALOMCASTLE.HEADER, .SSHAL
-                DEFW    ADSRTEST.HEADER, .SADSR
-                DEFW    LFOTEST.HEADER, .SLFO
-                DEFW    SEQTEST.HEADER, .SSEQ
-                DEFW    MODTEST.HEADER, .SMOD
-                DEFW    SFXTEST.HEADER, .SSFX
-                DEFW    PORTATST.HEADER, .SPORT
-                DEFW    DTNTST.HEADER, .SDTN
-                DEFW    CHORTST.HEADER, .SCHOR
-                DEFW    0               ; END OF TABLE MARKER
-
-.SSHAL          DEFB    "SHALOM", 0
-.SADSR          DEFB    "ADSR  ", 0
-.SLFO           DEFB    "LFO   ", 0
-.SSEQ           DEFB    "SEQ   ", 0
-.SMOD           DEFB    "MOD   ", 0
-.SSFX           DEFB    "1CHCH ", 0
-.SPORT          DEFB    "PORTA ", 0
-.SDTN           DEFB    "DETUNE", 0
-.SCHOR          DEFB    "CHORUS", 0
-
-
 ; --- CHANNEL BIT MASK TABLE (FOR MUTEMSK / SFXMSK INDEXING)
 MUTEBIT         DEFB    #01, #02, #04, #08, #10, #20
 
@@ -1797,7 +2078,7 @@ MUTEBIT         DEFB    #01, #02, #04, #08, #10, #20
 HEXTBL          DEFB    "0123456789ABCDEF"
 
 
-SPLASH          DEFB    "MUSAX JUKEBOX v1.9", 0
+SPLASH          DEFB    "MUSAX JUKEBOX v2.0", 0
 
 VRAMDATA        INCBIN  "VRAM.BIN"
 
@@ -1813,26 +2094,38 @@ VRAMDATA        INCBIN  "VRAM.BIN"
 
                 ORG     #E000
                 INCLUDE "../../driver/VARS.Z8A"
-KEYPREV         DEFS    5
+KBDPRV0         DEFS    1
+KBDPRV1         DEFS    1
+KBDPRV3         DEFS    1
+KBDPRV4         DEFS    1
+KBDPRV5         DEFS    1
+KBDPRV7         DEFS    1
+KBDPRV8         DEFS    1
 SONGPREV        DEFS    2
 NAMEPRV         DEFS    2
 STATPREV        DEFS    1
-MSTFLPRV       DEFS    1
+MSTFLPRV        DEFS    1
 FRAMECNT        DEFS    1
 TMPNOTE         DEFS    1
 TMPVOL          DEFS    1
 TMPSTAT         DEFS    1
 TMPPERL         DEFS    1
 TMPPERH         DEFS    1
-BPMPREV         DEFS    1
+BPMPREV         DEFS    2
 VOLPREV         DEFS    1
 LOOPPREV        DEFS    1
-LMTPREV       DEFS    1
-FADSPPRV       DEFS    1
-FADVLPRV       DEFS    1
+LMTPREV         DEFS    1
+FADSPPRV        DEFS    1
+FADVLPRV        DEFS    1
 CHCACHE         DEFS    36
 CACHEBP         DEFS    2               ; CHCACHE BASE PTR FOR CURRENT CHANNEL (CACHED)
 BUFADR          DEFS    2
+CURPANEL        DEFS    1               ; Focus column: 0=Songs, 1=FX
+SELSONG         DEFS    1               ; Selected song index
+SELFX           DEFS    1               ; Selected FX index
+SONGSTART       DEFS    1               ; Scroll offset for Songs
+FXSTART         DEFS    1               ; Scroll offset for FX
+PLAYINGSNG      DEFS    1               ; Currently playing song index (#FF if stopped)
 SCRBUFF         DEFS    768
 SCRDIRTY        DEFS    1
 MUTEMSK         DEFS    1

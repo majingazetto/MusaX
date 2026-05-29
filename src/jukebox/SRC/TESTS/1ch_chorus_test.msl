@@ -77,5 +77,5 @@ CH_C:
         LFO:  1, 0, 48, 4, 0 // Fast vibrato for a sparkling hit effect
         FLAGS: 0
     }
-    CH_A: @V15 @I3 O6 L32 C E G >C
+    CH_A: @V15 @I3 O6 L32 C E G >C R0
 }

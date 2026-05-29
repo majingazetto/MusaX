@@ -21,11 +21,7 @@ SRC_FILE    = $(SRC_DIR)/JUKEBOX.Z8A
 
 # Test files lists
 MSL_TESTS   = $(wildcard $(SRC_DIR)/TESTS/*.msl)
-Z8A_TESTS   = $(patsubst $(SRC_DIR)/TESTS/%.msl,$(TMP_DIR)/%.Z8A,$(MSL_TESTS))
 MOG_MSL     = $(MUSAX_DIR)/examples/msl/shalomcastle.msl
-MOG_Z8A     = $(TMP_DIR)/shalomcastle.Z8A
-
-ALL_Z8A     = $(MOG_Z8A) $(Z8A_TESTS)
 
 # --- INCLUDES AND EMULATION
 EMULATOR    = m1 ntsc
@@ -40,14 +36,10 @@ all: build
 $(ROM_DIR) $(TMP_DIR):
 	@mkdir -p $@
 
-# --- COMPILE MSL SONG TO Z8A
-$(TMP_DIR)/%.Z8A: $(SRC_DIR)/TESTS/%.msl | $(TMP_DIR)
-	@echo "Compiling test $< to Z8A..."
-	@$(MUSAX_COMP) build $< -o $@
-
-$(MOG_Z8A): $(MOG_MSL) | $(TMP_DIR)
-	@echo "Compiling song $< to Z8A..."
-	@$(MUSAX_COMP) build $< -o $@
+# --- GENERATE PLAYLIST AND COMPILE ALL SONGS
+$(TMP_DIR)/PLAYLIST.Z8A: $(MOG_MSL) $(MSL_TESTS) | $(TMP_DIR)
+	@echo "Generating playlist and compiling songs..."
+	@$(PYTHON) $(MUSAX_DIR)/tools/generate_playlist.py
 
 # --- EXTRACT VRAM PATTERNS FROM TILESET PNG
 $(TMP_DIR)/VRAM.BIN: RES/TILESET.PNG | $(TMP_DIR)
@@ -56,7 +48,7 @@ $(TMP_DIR)/VRAM.BIN: RES/TILESET.PNG | $(TMP_DIR)
 	@mv $(TMP_DIR)/TILESET.PAT $@
 
 # --- ASSEMBLE ROM BINARY
-$(ROM_OUTPUT): $(SRC_FILE) $(ALL_Z8A) $(TMP_DIR)/VRAM.BIN | $(ROM_DIR)
+$(ROM_OUTPUT): $(SRC_FILE) $(TMP_DIR)/PLAYLIST.Z8A $(TMP_DIR)/VRAM.BIN | $(ROM_DIR)
 	@echo "Assembling Minimal Test ROM..."
 	@$(ASM) $(SJASM_OPTS) $(SRC_FILE)
 	@cp $(TMP_DIR)/JUKEBOX.raw $(ROM_OUTPUT)
@@ -73,3 +65,4 @@ run: build
 clean:
 	@echo "Cleaning intermediate files..."
 	@rm -rf $(TMP_DIR) $(ROM_DIR)
+
