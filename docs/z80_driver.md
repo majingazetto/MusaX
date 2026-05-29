@@ -229,12 +229,17 @@ When modifying or expanding the driver, several strict architecture rules must b
 
 ## 9. CPU Cycle Optimizations & Performance
 
-MusaX uses precomputed tables to minimize CPU usage, saving over **7,100 T-states per frame** compared to linear implementations.
+MusaX uses precomputed tables, register caching, and unrolled loops to minimize CPU usage, saving over **7,100 T-states per frame** compared to linear implementations.
 
-- **Fast Multiplier**: The 8-bit multiplier `MUL8` is replaced with a precomputed quarter-square lookup table `SQR_TBL` (512 bytes aligned to 256 bytes) using `MUL8_HIGH`, completing in ~108 T-states (3x faster than shift-and-add).
-- **LFO Inactive Fast-Exit**: The channel state caches `CHLDEST` (offset 31). If LFO is inactive, `UPDLFO` exits immediately in 28 T-states.
+- **Fast Multiplier (`MUL8_HIGH` via `SQR_TBL`)**: The 8-iteration loop multiplier `MUL8` is replaced with a precalculated quarter-square lookup table `SQR_TBL` (`f(x) = (x^2+512)/1024` occupying 512 bytes aligned to 256) via `MUL8_HIGH`, making 8-bit multiplication 3x faster (~108 T-states). It eliminates stack `PUSH/POP AF` overhead by routing operations through register `D`.
+- **LFO Inactive Fast-Exit & Direct Channel Cache**: The active instrument ID (`CHINSID` at offset 18) and LFO destination (`CHLDEST` at offset 31) are stored directly in the channel state. If LFO is inactive, `UPDLFO` exits immediately in 28 T-states, bypassing null checking and `IY` resolution (saving ~364 T-states per channel when LFO is inactive and ~204 T-states when active).
+- **Extended Tone on/off masks**: `TONE_ON_MSK` and `TONE_OFF_MSK` are extended to 6 entries to allow direct channel index indexing, removing the `CP 3 / SUB 3` check from `PROCEVT` `.LEGFIN` and `UPDADSR` `.RLDONE` paths.
 - **Fast VBL VRAM Dump**: The jukebox visual buffer `SCRBUFF` utilizes an inline unrolled `OUTI` loop in the interrupt handler (`IRQINT`), copying 768 bytes in ~14,160 T-states (safely fitting within NTSC's VBLANK window).
-- **Direct Pointer Lookups**: Branchless mapping tables (`VOL_PTR_TBL`, `PER_PTR_TBL`, `MIX_PTR_TBL`) map channel indices directly to shadow address registers without dynamic offset logic.
+- **Direct Pointer Lookups**: Branchless mapping tables (`VOL_PTR_TBL`, `PER_PTR_TBL`, `MIX_PTR_TBL`) placed in the aligned `FREQ_TBL` page padding map channel indices directly to shadow address registers, bypassing dynamic shadow register address calculations across the update cycle (saving ~230+ T-states per frame).
+- **Register Caching**: Note index is cached in `B` (inside `CALCPER`) and note/speed in `D`/`B` (inside `UPDPORTA`), eliminating redundant RAM reads.
+- **Note Path Exit Optimization**: Bypasses redundant `CHPC` writes at the note path exit via direct `POP HL / RET`.
+- **Fast-path shadow register copy**: Unrolled `MUSMERGE` copy via 14× `LDI` with `BC` preservation.
+- **Register Preservation Safety**: Restored register preservation (`PUSH`/`POP` of `AF, BC, DE, HL`) in `MUSMERGE` and `MUSCOMM` to guarantee interrupt and asynchronous execution safety.
 
 ---
 

@@ -166,3 +166,26 @@ IRQINT:
 
 5. **Phase 5: Refinement & Testing**:
    * Verify on emulator (`m1 ntsc`) and optimize code size and CPU usage.
+
+---
+
+## 7. Jukebox v2.0 Optimizations & Cache Control
+
+Jukebox v2.0 implements several visual caching strategies and CPU cycles optimizations to maintain a rock-solid 60Hz playback and avoid dropped frames:
+
+* **UI Cache Reset Subroutines (`CLRUI` & `RESETUI`):**
+  * `CLRUI`: Invalidate all visual caches (setting previous visual status values to `#FF` inside `CHCACHE` and `SONGPREV`). This forces redrawing on the next frame.
+  * `RESETUI`: Invokes `CLRUI`, clears the 768-byte screen buffer (`SCRBUFF`) with spaces (`#20`), and calls `INITLAY` to draw the layout borders from scratch. Called on startup, song change, or playback stop.
+* **BPM Caching via `BPMPREV`:**
+  * Compares the 16-bit BPM step value (`CHANNELS + CHBPM` from the active channel) with the cached value in `BPMPREV` using 16-bit subtraction (`SBC HL, DE`).
+  * If unchanged, the visualizer completely bypasses the expensive `GETBPM` routine (saving ~1,900 T-states of loop divisions every frame on the fast path).
+* **Mute Bit Table (`MUTEBIT`):**
+  * Employs a direct lookup table to map active channel mute states, replacing expensive `SRL` bit-shifting loops.
+* **Name Caching (`NAMEPRV`):**
+  * Tracks the active song name index. Bypasses song name string lookup and `PUTSTR` rendering into the RAM buffer if the playing song has not changed.
+* **Selective Screen Invalidation:**
+  * Navigation inputs (`UP`, `DOWN`, `LEFT`, `RIGHT`) and Mute inputs (`T`, `Y`, `U`, `G`, `H`, `J`) selectively update only the changed visual cells. They do not trigger global visual cache clears (`CLRUI`), avoiding visual flicker and CPU spikes.
+* **Visualizer Grid Revisions:**
+  * The redundant logical channel column is replaced by a single `CH` column showing the hardware channels (`A`, `B`, `C`).
+  * Added a signed real-time `LFO` modulation visualizer column (`PRNLFO` subroutine rendering signed values, e.g., `+03` or `-12`).
+
