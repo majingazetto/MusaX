@@ -905,7 +905,7 @@ PROCEVT         LD      L,(IX + CHPC)
 .COMMAND        SUB     #F0             ; A = INDEX (0..15)
                 EX      DE,HL           ; DE = STREAM PC (HL FREE)
                 LD      HL,.CMDTBL      ; HL = JUMP TABLE BASE
-                JP      CALFUN          ; COMPUTE INDEX, RESOLVE AND JUMP
+                JP      MUSCALFUN       ; COMPUTE INDEX, RESOLVE AND JUMP
 
 .CMDTBL         DEFW    .PCRET          ; #F0 (RET)
                 DEFW    .PCCALL         ; #F1 (CALL)
@@ -1940,53 +1940,53 @@ MUSFADE         PUSH    AF
                 RET
 
 
-; - ADDHLA -----------------------------
+; - MXADDHLA ---------------------------
 ; - ADD A TO HL (HL = HL + A)
 ; - IN: A, HL
 ; - OUT: HL = HL + A
 ; - CLOBBERS: AF, HL
 ; -
 
-ADDHLA          ADD     A,L
+MXADDHLA        ADD     A,L
                 LD      L,A
                 RET     NC
                 INC     H
                 RET
 
 
-; - ADDHLPNT ---------------------------
+; - MXADDHLPNT -------------------------
 ; - MULTIPLY A * 2 AND ADD TO HL
 ; - IN: A, HL
 ; - OUT: HL = HL + A * 2
 ; - CLOBBERS: AF, HL
 ; -
 
-ADDHLPNT        ADD     A,A
-                JP      ADDHLA
+MXADDHLPNT      ADD     A,A
+                JP      MXADDHLA
 
 
-; - PNTHL ------------------------------
+; - MXPNTHL ----------------------------
 ; - RESOLVE 16-BIT POINTER POINTED BY HL
 ; - IN: HL = SOURCE ADDRESS
 ; - OUT: HL = 16-BIT POINTER VALUE
 ; - CLOBBERS: AF, HL
 ; -
 
-PNTHL           LD      A,(HL)
+MXPNTHL         LD      A,(HL)
                 INC     HL
                 LD      H,(HL)
                 LD      L,A
                 RET
 
 
-; - CALFUN -----------------------------
+; - MUSCALFUN --------------------------
 ; - COMPUTE POINTER IN JUMP TABLE AND RET-JUMP
 ; - IN: A = INDEX, HL = TABLE BASE, DE = TARGET STREAM PC
 ; - OUT: JUMPS TO TARGET WITH HL = STREAM PC
 ; - CLOBBERS: AF, DE, HL
 ; -
 
-CALFUN          ADD     A,A             ; A = INDEX * 2
+MUSCALFUN       ADD     A,A             ; A = INDEX * 2
                 ADD     A,L
                 LD      L,A
                 JR      NC,.NOINC
