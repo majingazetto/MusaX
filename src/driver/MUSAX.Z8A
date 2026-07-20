@@ -905,7 +905,7 @@ PROCEVT         LD      L,(IX + CHPC)
 .COMMAND        SUB     #F0             ; A = INDEX (0..15)
                 EX      DE,HL           ; DE = STREAM PC (HL FREE)
                 LD      HL,.CMDTBL      ; HL = JUMP TABLE BASE
-                JP      MUSCALFUN       ; COMPUTE INDEX, RESOLVE AND JUMP
+                JP      MXCALFUN        ; COMPUTE INDEX, RESOLVE AND JUMP
 
 .CMDTBL         DEFW    .PCRET          ; #F0 (RET)
                 DEFW    .PCCALL         ; #F1 (CALL)
@@ -1954,14 +1954,14 @@ MXADDHLA        ADD     A,L
                 RET
 
 
-; - MXADDHLPNT -------------------------
+; - MXADDHLP ---------------------------
 ; - MULTIPLY A * 2 AND ADD TO HL
 ; - IN: A, HL
 ; - OUT: HL = HL + A * 2
 ; - CLOBBERS: AF, HL
 ; -
 
-MXADDHLPNT      ADD     A,A
+MXADDHLP        ADD     A,A
                 JP      MXADDHLA
 
 
@@ -1979,14 +1979,14 @@ MXPNTHL         LD      A,(HL)
                 RET
 
 
-; - MUSCALFUN --------------------------
+; - MXCALFUN ---------------------------
 ; - COMPUTE POINTER IN JUMP TABLE AND RET-JUMP
 ; - IN: A = INDEX, HL = TABLE BASE, DE = TARGET STREAM PC
 ; - OUT: JUMPS TO TARGET WITH HL = STREAM PC
 ; - CLOBBERS: AF, DE, HL
 ; -
 
-MUSCALFUN       ADD     A,A             ; A = INDEX * 2
+MXCALFUN        ADD     A,A             ; A = INDEX * 2
                 ADD     A,L
                 LD      L,A
                 JR      NC,.NOINC
