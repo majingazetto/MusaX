@@ -117,3 +117,17 @@ A reverse-engineering utility to convert register capture dumps into editable MS
 ## 7. Legacy Wrapper (`msl2z8a.py`)
 
 A deprecated, backward-compatibility CLI script that maps simple arguments directly to the core compilation classes inside `msl_compiler.py`. It is retained for legacy builds but has been replaced by the unified CLI hub (`musax.py`).
+
+---
+
+## 8. Global CLI Installer (`install_wrappers.sh`)
+
+Installs standalone CLI wrappers for `msl_editor` and `musax` into `~/.local/bin/`.
+
+* **Generated Wrappers:**
+  * `~/.local/bin/msl_editor`: Launches `MusaX/tools/msl_editor.py` with forwarded arguments.
+  * `~/.local/bin/musax`: Launches `MusaX/tools/musax.py` with forwarded arguments.
+* **Usage:**
+  ```bash
+  ./tools/install_wrappers.sh
+  ```
