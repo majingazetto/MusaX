@@ -7,20 +7,34 @@ BIN_DIR="$HOME/.local/bin"
 
 mkdir -p "$BIN_DIR"
 
-# 1. msl_editor wrapper
-cat << EOF > "$BIN_DIR/msl_editor"
-#!/bin/bash
-exec python3 "$SCRIPT_DIR/msl_editor.py" "\$@"
-EOF
-chmod +x "$BIN_DIR/msl_editor"
-echo "Installed: $BIN_DIR/msl_editor -> $SCRIPT_DIR/msl_editor.py"
+tools=(
+    "musax:musax.py"
+    "msl_editor:msl_editor.py"
+    "musax_sim:musax_sim.py"
+    "psglog2msl:psglog2msl.py"
+    "msl2z8a:msl2z8a.py"
+)
 
-# 2. musax CLI hub wrapper
-cat << EOF > "$BIN_DIR/musax"
+echo "Installing MusaX CLI wrappers to $BIN_DIR..."
+
+for entry in "${tools[@]}"; do
+    wrapper="${entry%%:*}"
+    script="${entry#*:}"
+    script_path="$SCRIPT_DIR/$script"
+    wrapper_path="$BIN_DIR/$wrapper"
+
+    if [ -f "$script_path" ]; then
+        echo "Creating wrapper: $wrapper_path -> $script_path"
+        cat << EOF > "$wrapper_path"
 #!/bin/bash
-exec python3 "$SCRIPT_DIR/musax.py" "\$@"
+exec python3 "$script_path" "\$@"
 EOF
-chmod +x "$BIN_DIR/musax"
-echo "Installed: $BIN_DIR/musax -> $SCRIPT_DIR/musax.py"
+        chmod +x "$wrapper_path"
+        chmod +x "$script_path"
+        echo "  Successfully installed $wrapper"
+    else
+        echo "Warning: Script not found: $script_path"
+    fi
+done
 
 echo "MusaX CLI wrappers successfully installed in $BIN_DIR"

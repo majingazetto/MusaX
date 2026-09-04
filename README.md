@@ -41,13 +41,25 @@ python3 -m pip install --user textual --break-system-packages
 - `docs/`: Technical specifications and hardware frequency tables.
 - `examples/`: Example songs and usage patterns.
 
-## Getting Started
+### Installation & Global Access
+
+You can install wrapper scripts to run the MusaX tools from any directory without typing `python3` in front. To install them to your `~/.local/bin/` folder, run:
+```bash
+./MusaX/tools/install_wrappers.sh
+```
+This installs the following global commands:
+* `musax` — CLI Hub (compilation, playback, info)
+* `msl_editor` — Full-screen TUI editor & instrument manager
+* `musax_sim` — Real-time software simulator/renderer
+* `psglog2msl` — openMSX PSG register log to MSL decompiler
 
 ### Using the TUI Editor
-The fastest way to compose is using the new TUI-based editor:
+The fastest way to compose is using the TUI editor:
 ```bash
-./MusaX/tools/msl_editor.sh
+msl_editor [file.msl]
 ```
+*(Or `./MusaX/tools/msl_editor.py` if not globally installed)*
+
 Use **Ctrl+P** to instantly compile and play your composition in the simulator.
 
 ### Using the CLI Hub
@@ -58,14 +70,14 @@ Check out the documentation in the `docs/` directory:
 - [Command Reference](docs/commands.md): Comprehensive guide to MusaX bytecode.
 - [Simulator User Guide](docs/simulator.md): How to use `musax_sim.py` for real-time debugging.
 
-To try the engine immediately, use the **CLI Hub** to play an example:
+To try the engine immediately, play an example using the global `musax` tool:
 ```bash
-python3 tools/musax.py play examples/msl/song_demo.msl
+musax play examples/msl/song_demo.msl
 ```
 
 Or run the chorus demonstration directly from Z8A:
 ```bash
-python3 tools/musax.py play examples/z8a/chorus_test.Z8A
+musax play examples/z8a/chorus_test.Z8A
 ```
 
 ---

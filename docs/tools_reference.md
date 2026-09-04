@@ -122,11 +122,14 @@ A deprecated, backward-compatibility CLI script that maps simple arguments direc
 
 ## 8. Global CLI Installer (`install_wrappers.sh`)
 
-Installs standalone CLI wrappers for `msl_editor` and `musax` into `~/.local/bin/`.
+Installs standalone CLI wrappers for `musax`, `msl_editor`, `musax_sim`, `psglog2msl`, and `msl2z8a` into `~/.local/bin/`.
 
 * **Generated Wrappers:**
-  * `~/.local/bin/msl_editor`: Launches `MusaX/tools/msl_editor.py` with forwarded arguments.
   * `~/.local/bin/musax`: Launches `MusaX/tools/musax.py` with forwarded arguments.
+  * `~/.local/bin/msl_editor`: Launches `MusaX/tools/msl_editor.py` with forwarded arguments.
+  * `~/.local/bin/musax_sim`: Launches `MusaX/tools/musax_sim.py` with forwarded arguments.
+  * `~/.local/bin/psglog2msl`: Launches `MusaX/tools/psglog2msl.py` with forwarded arguments.
+  * `~/.local/bin/msl2z8a`: Launches `MusaX/tools/msl2z8a.py` with forwarded arguments.
 * **Usage:**
   ```bash
   ./tools/install_wrappers.sh
