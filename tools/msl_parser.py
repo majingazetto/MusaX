@@ -144,7 +144,7 @@ BASE_TICK = 768
 
 # Enhanced regex to capture all MSL constructs
 TOKEN_REGEX = re.compile(
-    r'(//[^\n]*)|'                             # Group 1: Comments
+    r'(//[^\n]*|\|)|'                          # Group 1: Comments & Barline separators (|)
     r'(@INST\s*\([^)]*\)\s*\{[^}]*\})|'        # Group 2: @INST blocks
     r'(PHRASE\s*\([^)]*\)\s*\{)|'              # Group 3: PHRASE blocks
     r'(@(?:MODULE|NAMESPACE)\s+[A-Za-z_][A-Za-z0-9_]*|@[A-Z0-9#\_\-]+(?:\s*(?:\([^)]*\)|"[^"]*"))?)|' # Group 4: @-commands (MODULE/NAMESPACE bare-ident or general)

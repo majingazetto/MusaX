@@ -48,10 +48,11 @@ You can install wrapper scripts to run the MusaX tools from any directory withou
 ./MusaX/tools/install_wrappers.sh
 ```
 This installs the following global commands:
-* `musax` — CLI Hub (compilation, playback, info)
+* `musax` — CLI Hub (compilation, playback, info, import)
 * `msl_editor` — Full-screen TUI editor & instrument manager
 * `musax_sim` — Real-time software simulator/renderer
 * `psglog2msl` — openMSX PSG register log to MSL decompiler
+* `mscz2msl` — MuseScore (.mscz/.mscx) to MSL score importer
 
 ### Using the TUI Editor
 The fastest way to compose is using the TUI editor:
@@ -62,6 +63,16 @@ msl_editor [file.msl]
 
 Use **Ctrl+P** to instantly compile and play your composition in the simulator.
 
+### Importing from MuseScore
+You can transcribe compositions directly from MuseScore into MusaX:
+```bash
+# Convert a MuseScore score to MSL
+mscz2msl song.mscz
+
+# Or via the unified CLI hub
+musax import song.mscz --play
+```
+
 ### Using the CLI Hub
 Check out the documentation in the `docs/` directory:
 - [Technical Specification](docs/technical_spec.md): Architecture, timing, and core concepts.
@@ -69,6 +80,7 @@ Check out the documentation in the `docs/` directory:
 - [CLI Hub Guide](docs/cli_hub.md): Using the unified `musax.py` developer tool.
 - [Command Reference](docs/commands.md): Comprehensive guide to MusaX bytecode.
 - [Simulator User Guide](docs/simulator.md): How to use `musax_sim.py` for real-time debugging.
+- [Tools Reference](docs/tools_reference.md): Detailed technical guide for all Python tools.
 
 To try the engine immediately, play an example using the global `musax` tool:
 ```bash

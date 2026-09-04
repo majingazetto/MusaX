@@ -81,6 +81,66 @@ def cmd_info(args):
     else:
         print("Info command currently only supports .MSL files.")
 
+def cmd_import(args):
+    """Imports MuseScore (.mscz/.mscx) score into MSL."""
+    try:
+        from MusaX.tools.mscz2msl import MsczReader, MslEmitter, print_score_info
+    except ImportError:
+        from mscz2msl import MsczReader, MslEmitter, print_score_info
+
+    try:
+        reader = MsczReader(args.input)
+    except Exception as e:
+        print(f"Error reading MuseScore score: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    if args.info:
+        print_score_info(reader)
+        return
+
+    staff_map = {s.staff_id: s for s in reader.staves}
+    assigned_mappings = {}
+    channels = ["CH_A", "CH_B", "CH_C"]
+    user_picks = [args.channel_a, args.channel_b, args.channel_c]
+
+    for ch_name, pick in zip(channels, user_picks):
+        if pick is not None:
+            if str(pick) in staff_map:
+                assigned_mappings[ch_name] = staff_map[str(pick)]
+            else:
+                try:
+                    idx = int(pick) - 1
+                    if 0 <= idx < len(reader.staves):
+                        assigned_mappings[ch_name] = reader.staves[idx]
+                except ValueError:
+                    pass
+
+    auto_idx = 0
+    for ch_name in channels:
+        if ch_name not in assigned_mappings:
+            while auto_idx < len(reader.staves):
+                candidate = reader.staves[auto_idx]
+                auto_idx += 1
+                if candidate not in assigned_mappings.values():
+                    assigned_mappings[ch_name] = candidate
+                    break
+
+    bars_per_line = 4 if getattr(args, "compact", False) else getattr(args, "bars_per_line", 1)
+    repeat_mode = getattr(args, "repeats", "phrases")
+    emitter = MslEmitter(chord_mode=args.chord, transpose=args.transpose, bars_per_line=bars_per_line, repeat_mode=repeat_mode)
+    msl_content = emitter.generate_full_msl(reader, assigned_mappings)
+
+    output_path = args.output or f"{os.path.splitext(args.input)[0]}.msl"
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(msl_content)
+    print(f"Successfully converted: {args.input} -> {output_path}")
+
+    if args.play:
+        class PlayArgs:
+            input = output_path
+            loops = 0
+        cmd_play(PlayArgs())
+
 def main():
     parser = argparse.ArgumentParser(description="MusaX CLI Hub - Unified Developer Tool")
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
@@ -99,6 +159,21 @@ def main():
     # Info command
     p_info = subparsers.add_parser("info", help="Show file information")
     p_info.add_argument("input", help="Input .MSL file")
+
+    # Import command
+    p_import = subparsers.add_parser("import", help="Import MuseScore (.mscz/.mscx) to MSL")
+    p_import.add_argument("input", help="Input MuseScore file (.mscz or .mscx)")
+    p_import.add_argument("-o", "--output", help="Output .msl file path")
+    p_import.add_argument("--info", action="store_true", help="Display score metadata and track listing")
+    p_import.add_argument("-a", "--channel-a", help="Staff ID to map to CH_A")
+    p_import.add_argument("-b", "--channel-b", help="Staff ID to map to CH_B")
+    p_import.add_argument("-c", "--channel-c", help="Staff ID to map to CH_C")
+    p_import.add_argument("--chord", choices=["top", "bottom"], default="top", help="Chord resolution strategy")
+    p_import.add_argument("--transpose", type=int, default=0, help="Semitone transposition")
+    p_import.add_argument("--bars-per-line", type=int, default=1, help="Number of measures per line")
+    p_import.add_argument("--compact", action="store_true", help="Format 4 measures per line separated by '|'")
+    p_import.add_argument("--repeats", choices=["phrases", "unroll"], default="phrases", help="How to handle repeats: 'phrases' (default, subroutines) or 'unroll'")
+    p_import.add_argument("--play", action="store_true", help="Play immediately after import")
     
     args = parser.parse_args()
     
@@ -108,6 +183,8 @@ def main():
         cmd_play(args)
     elif args.command == "info":
         cmd_info(args)
+    elif args.command == "import":
+        cmd_import(args)
     else:
         parser.print_help()
 

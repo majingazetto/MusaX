@@ -13,6 +13,7 @@ tools=(
     "musax_sim:musax_sim.py"
     "psglog2msl:psglog2msl.py"
     "msl2z8a:msl2z8a.py"
+    "mscz2msl:mscz2msl.py"
 )
 
 echo "Installing MusaX CLI wrappers to $BIN_DIR..."
