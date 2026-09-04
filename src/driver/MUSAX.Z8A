@@ -832,10 +832,8 @@ UPSTREAM        ; --- TRANSPORT ---
                 LD      (IX + CHWAIT + 1),H
                 JR      .MODULAT        ; STILL WAITING
 
-.EXPIRED        XOR     A
-                LD      (IX + CHWAIT),A
-                LD      (IX + CHWAIT + 1),A
-                LD      (IX + CHFRAC),A
+.EXPIRED        LD      (IX + CHWAIT),L
+                LD      (IX + CHWAIT + 1),H
                 
 .PROCESS        CALL    PROCEVT         ; PROCESS BYTECODE EVENTS
                 
@@ -872,15 +870,17 @@ PROCEVT         LD      L,(IX + CHPC)
 
                 LD      B,A             ; B = NOTE ID (GUARANTEED 0..#EF)
 
-                ; LOAD DURATION INTO CHWAIT
-                LD      A,(HL)
+                ; LOAD AND ADD DURATION TO CHWAIT (PRESERVES SIGNED REMAINDER)
+                LD      E,(HL)
                 INC     HL
+                LD      D,(HL)
+                INC     HL
+                LD      A,(IX + CHWAIT)
+                ADD     A,E
                 LD      (IX + CHWAIT),A
-                LD      A,(HL)
-                INC     HL
+                LD      A,(IX + CHWAIT + 1)
+                ADC     A,D
                 LD      (IX + CHWAIT + 1),A
-                XOR     A
-                LD      (IX + CHFRAC),A
 
                 ; SAVE STREAM PC
                 LD      (IX + CHPC),L
@@ -1009,12 +1009,13 @@ PROCEVT         LD      L,(IX + CHPC)
                 LD      A,(IX + CHIDX)  ; FX CHANNEL?
                 CP      3
                 JP      NC,.SFXRST      ; FX CHANNEL + DURATION 0: STOP
-.PRWAIT         LD      A,C
+.PRWAIT         ; ADD DURATION TO CHWAIT (PRESERVES SIGNED REMAINDER)
+                LD      A,(IX + CHWAIT)
+                ADD     A,C
                 LD      (IX + CHWAIT),A
-                LD      A,D
+                LD      A,(IX + CHWAIT + 1)
+                ADC     A,D
                 LD      (IX + CHWAIT + 1),A
-                XOR     A
-                LD      (IX + CHFRAC),A
                 LD      A,255
                 LD      (IX + CHNOTE),A ; CHNOTE = 255 (REST/SILENT)
 

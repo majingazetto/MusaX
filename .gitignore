@@ -17,6 +17,8 @@ src/musax.bin
 # Jukebox build artifacts
 src/jukebox/ROM/
 src/jukebox/TMP/
+src/jukebox/*.raw
+*.raw
 
 # Logs and scratch files
 *.log

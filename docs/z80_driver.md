@@ -240,6 +240,7 @@ MusaX uses precomputed tables, register caching, and unrolled loops to minimize 
 - **Note Path Exit Optimization**: Bypasses redundant `CHPC` writes at the note path exit via direct `POP HL / RET`.
 - **Fast-path shadow register copy**: Unrolled `MUSMERGE` copy via 14× `LDI` with `BC` preservation.
 - **Register Preservation Safety**: Restored register preservation (`PUSH`/`POP` of `AF, BC, DE, HL`) in `MUSMERGE` and `MUSCOMM` to guarantee interrupt and asynchronous execution safety.
+- **Continuous 24-bit Transport Accumulator**: Preserves the signed integer remainder in `CHWAIT` and fractional sub-tick residue in `CHFRAC` across note expirations and additively loads new note/rest durations into `CHWAIT`, completely eliminating frame rounding error and multi-channel drift at non-integer step tempos.
 
 ---
 
