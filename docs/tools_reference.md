@@ -152,14 +152,17 @@ A standalone converter that translates MuseScore scores (`.mscz` compressed arch
   * **3-Channel PSG Assignment:** Map arbitrary staves/voices to `CH_A`, `CH_B`, and `CH_C` with monophonic chord resolution (`top` or `bottom`).
   * **Measure-by-Measure Formatting:** Emits aligned `// [Bar XX]` comments with 4-measure system dividers, or multi-measure lines separated by `|` via `--compact`.
   * **Automatic Phrase Subroutines:** Detects score repeats (`<startRepeat/>` / `<endRepeat>`) and extracts them into MusaX `PHRASE(NAME) { ... }` subroutines invoked via `@CALL(NAME)`. Reduces compiled Z80 bytecode footprint by 40–50% while preserving sample-accurate channel synchronization.
+  * **Smart Sound Design Merge:** When the destination `.msl` file already exists (or via `--template <file>`), automatically preserves hand-crafted sound design—including `@INST` instrument blocks (and comments), `@FX` sound effects, custom channel preambles (`@I`, `@V`, `@CH`, `@D`, etc.), and metadata tags (`@AUTHOR`, `@NAMESPACE`, `@MODULE`, `@DESC`)—updating only the notes, timing, phrase subroutines, and tempo from the score. Pass `-f` / `--force` to bypass and regenerate from scratch.
 * **Usage:**
   ```bash
-  mscz2msl song.mscz                      # Convert to song.msl (phrases enabled by default)
+  mscz2msl song.mscz                      # Convert to song.msl (phrases & smart merge enabled by default)
   mscz2msl song.mscz --info               # Inspect tracks, tempo, repeats, and measure counts
   mscz2msl song.mscz -a 1 -b 2 -c 4       # Explicit staff-to-channel routing
   mscz2msl song.mscz --transpose 12       # Transpose by semitones
   mscz2msl song.mscz --compact            # Format 4 measures per line separated by '|'
   mscz2msl song.mscz --repeats unroll     # Unroll repeats linearly instead of using PHRASEs
+  mscz2msl song.mscz -f                   # Force clean conversion, ignoring existing sound design
+  mscz2msl song.mscz --template prev.msl  # Import instruments/FX/channel setups from template MSL
   mscz2msl song.mscz --play               # Convert and immediate simulation audition
   ```
 

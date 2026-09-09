@@ -18,12 +18,13 @@ Features:
 
 import sys
 import os
+import re
 import zipfile
 import argparse
 import tempfile
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Tuple, Union
+from typing import List, Dict, Optional, Tuple, Union, Any
 
 # Ensure MusaX tools are in sys.path for optional --play integration
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -162,6 +163,15 @@ class StaffData:
     staff_id: str
     instrument_name: str
     measures: List[MeasureData] = field(default_factory=list)
+
+
+@dataclass
+class ExistingMslState:
+    metadata: Dict[str, str] = field(default_factory=dict)
+    instruments: List[Dict[str, Any]] = field(default_factory=list)
+    fx_blocks: List[Dict[str, Any]] = field(default_factory=list)
+    channel_setups: Dict[str, str] = field(default_factory=dict)
+    source_path: str = ""
 
 
 # --- Score Parser ---
@@ -425,6 +435,148 @@ class MsczReader:
             self.staves.append(staff_data)
 
 
+# --- Existing MSL State Extraction (Smart Merge) ---
+
+def extract_existing_msl_state(filepath: str) -> Optional[ExistingMslState]:
+    """Extracts instruments, FX blocks, channel preambles, and custom metadata from an existing MSL file."""
+    if not os.path.isfile(filepath):
+        return None
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            content = f.read()
+    except Exception as e:
+        print(f"Warning: Could not read existing MSL file '{filepath}': {e}", file=sys.stderr)
+        return None
+
+    lines = content.splitlines(keepends=True)
+    n_lines = len(lines)
+
+    # 1. Metadata (@AUTHOR, @NAMESPACE, @MODULE, @DESC, @TITLE)
+    metadata: Dict[str, str] = {}
+    for m in re.finditer(r"^\s*@(AUTHOR|NAMESPACE|MODULE|DESC|TITLE)\s+(?:\"([^\"]*)\"|([A-Za-z0-9_]+))", content, re.MULTILINE):
+        key = m.group(1).upper()
+        val = m.group(2) if m.group(2) is not None else m.group(3)
+        if val:
+            metadata[key] = val.strip()
+
+    # 2. Extract @FX blocks first (so nested @INST blocks aren't treated as song-level instruments)
+    fx_blocks: List[Dict[str, Any]] = []
+    fx_line_indices = set()
+    i = 0
+    while i < n_lines:
+        line = lines[i]
+        if re.search(r"^\s*@FX\s*\(", line):
+            comm_lines = []
+            k = i - 1
+            while k >= 0:
+                prev_line = lines[k].strip()
+                if prev_line.startswith("//"):
+                    comm_lines.insert(0, lines[k])
+                    k -= 1
+                else:
+                    break
+
+            start_idx = i
+            block_lines = []
+            depth = 0
+            started = False
+            while i < n_lines:
+                cur_l = lines[i]
+                block_lines.append(cur_l)
+                if "{" in cur_l:
+                    depth += cur_l.count("{")
+                    started = True
+                if "}" in cur_l:
+                    depth -= cur_l.count("}")
+                if started and depth <= 0:
+                    break
+                i += 1
+
+            for idx_line in range(start_idx, min(i + 1, n_lines)):
+                fx_line_indices.add(idx_line)
+
+            comm_str = "".join(comm_lines).rstrip("\n")
+            blk_str = "".join(block_lines).strip()
+            m_name = re.search(r"@FX\s*\(\s*([A-Za-z0-9_]+)\s*\)", blk_str)
+            fx_name = m_name.group(1) if m_name else f"FX_{len(fx_blocks)}"
+            fx_blocks.append({"name": fx_name, "comments": comm_str, "block": blk_str})
+        i += 1
+
+    # 3. Extract top-level @INST blocks (skipping those inside @FX)
+    instruments: List[Dict[str, Any]] = []
+    i = 0
+    while i < n_lines:
+        if i in fx_line_indices:
+            i += 1
+            continue
+        line = lines[i]
+        if re.search(r"^\s*@INST\s*\(", line):
+            comm_lines = []
+            k = i - 1
+            while k >= 0:
+                prev_line = lines[k].strip()
+                if prev_line.startswith("//"):
+                    comm_lines.insert(0, lines[k])
+                    k -= 1
+                else:
+                    break
+
+            block_lines = []
+            depth = 0
+            started = False
+            while i < n_lines:
+                cur_l = lines[i]
+                block_lines.append(cur_l)
+                if "{" in cur_l:
+                    depth += cur_l.count("{")
+                    started = True
+                if "}" in cur_l:
+                    depth -= cur_l.count("}")
+                if started and depth <= 0:
+                    break
+                i += 1
+
+            comm_str = "".join(comm_lines).rstrip("\n")
+            blk_str = "".join(block_lines).strip()
+            m_inst = re.search(r"@INST\s*\(\s*(\d+)\s*,\s*\"([^\"]*)\"\s*\)", blk_str)
+            inst_id = int(m_inst.group(1)) if m_inst else len(instruments)
+            inst_name = m_inst.group(2) if m_inst else f"Inst_{inst_id}"
+            instruments.append({"id": inst_id, "name": inst_name, "comments": comm_str, "block": blk_str})
+        i += 1
+
+    # 4. Extract channel preambles (CH_A, CH_B, CH_C)
+    channel_setups: Dict[str, str] = {}
+    for ch_name in ["CH_A", "CH_B", "CH_C"]:
+        m = re.search(r"^[ \t]*" + ch_name + r":[ \t]*\n(.*?)(?=\n[ \t]*CH_[A-Z]:|\Z)", content, re.DOTALL | re.MULTILINE)
+        if m:
+            ch_body = m.group(1)
+            tokens = []
+            for l in ch_body.splitlines():
+                l_str = l.strip()
+                if not l_str or l_str.startswith("//"):
+                    continue
+                cmd_matches = re.findall(r"(@[A-Z0-9_\-]+(?:\([^)]*\))?|[OL]\d+)", l_str, re.IGNORECASE)
+                is_setup = True
+                for c in cmd_matches:
+                    cu = c.upper()
+                    if cu.startswith("@CALL") or cu.startswith("@RESTART") or cu.startswith("@GOTO"):
+                        is_setup = False
+                        break
+                    tokens.append(c)
+                if not is_setup or tokens:
+                    break
+            if tokens:
+                channel_setups[ch_name] = " ".join(tokens)
+
+    return ExistingMslState(
+        metadata=metadata,
+        instruments=instruments,
+        fx_blocks=fx_blocks,
+        channel_setups=channel_setups,
+        source_path=filepath
+    )
+
+
 # --- Polyphony and Formatting Engine ---
 
 class MslEmitter:
@@ -587,11 +739,22 @@ class MslEmitter:
         return lines, current_oct
 
     def format_staff_and_phrases(
-        self, staff: StaffData, channel_label: str, inst_id: int, repeats: List[RepeatSection]
+        self, staff: StaffData, channel_label: str, inst_id: int, repeats: List[RepeatSection],
+        channel_setup: Optional[str] = None
     ) -> Tuple[List[str], Dict[str, List[str]]]:
         lines: List[str] = []
         lines.append(f"{channel_label}:")
-        lines.append(f"    @I{inst_id} @V14 O4 L4")
+        if channel_setup:
+            setup_tokens = channel_setup.split()
+            has_o = any(re.match(r"^O\d+$", t, re.IGNORECASE) for t in setup_tokens)
+            has_l = any(re.match(r"^L\d+$", t, re.IGNORECASE) for t in setup_tokens)
+            if not has_o:
+                setup_tokens.append("O4")
+            if not has_l:
+                setup_tokens.append("L4")
+            lines.append(f"    {' '.join(setup_tokens)}")
+        else:
+            lines.append(f"    @I{inst_id} @V14 O4 L4")
 
         phrases: Dict[str, List[str]] = {}
         suffix = channel_label[-1]
@@ -709,7 +872,10 @@ class MslEmitter:
         lines.append(f"\n    @RESTART({channel_label})\n")
         return lines, phrases
 
-    def generate_full_msl(self, score: MsczReader, staff_mappings: Dict[str, StaffData]) -> str:
+    def generate_full_msl(
+        self, score: MsczReader, staff_mappings: Dict[str, StaffData],
+        existing_state: Optional[ExistingMslState] = None
+    ) -> str:
         out: List[str] = []
         out.append("// ============================================================================")
         out.append(f"// MusaX MSL Score: {score.title}")
@@ -720,12 +886,47 @@ class MslEmitter:
         
         clean_title = score.title.replace('"', '\\"')
         out.append(f'@TITLE "{clean_title}"')
+
+        # Preserved metadata from existing MSL
+        if existing_state:
+            meta = existing_state.metadata
+            if "AUTHOR" in meta and meta["AUTHOR"]:
+                out.append(f'@AUTHOR "{meta["AUTHOR"]}"')
+            if "NAMESPACE" in meta and meta["NAMESPACE"]:
+                out.append(f'@NAMESPACE {meta["NAMESPACE"]}')
+            elif "MODULE" in meta and meta["MODULE"]:
+                out.append(f'@MODULE {meta["MODULE"]}')
+            if "DESC" in meta and meta["DESC"]:
+                out.append(f'@DESC "{meta["DESC"]}"')
+
         out.append(f"@T{score.bpm}\n")
 
-        # Standard clean audible PSG instruments template (instant attack, solid sustain)
-        out.append('@INST(0, "Lead")    { ADSR: 255, 10, 200, 15 LFO: 0, 0, 0, 0, 0 }')
-        out.append('@INST(1, "Harmony") { ADSR: 255, 10, 180, 15 LFO: 0, 0, 0, 0, 0 }')
-        out.append('@INST(2, "Bass")    { ADSR: 255, 15, 120, 20 LFO: 0, 0, 0, 0, 0 }\n')
+        # Instruments: preserved or default templates
+        if existing_state and existing_state.instruments:
+            first_comm = existing_state.instruments[0].get("comments", "")
+            if "// --- Instruments ---" not in first_comm:
+                out.append("// --- Instruments ---")
+            for inst in existing_state.instruments:
+                if inst.get("comments"):
+                    out.append(inst["comments"])
+                out.append(inst["block"])
+            out.append("")
+        else:
+            # Standard clean audible PSG instruments template (instant attack, solid sustain)
+            out.append('@INST(0, "Lead")    { ADSR: 255, 10, 200, 15 LFO: 0, 0, 0, 0, 0 }')
+            out.append('@INST(1, "Harmony") { ADSR: 255, 10, 180, 15 LFO: 0, 0, 0, 0, 0 }')
+            out.append('@INST(2, "Bass")    { ADSR: 255, 15, 120, 20 LFO: 0, 0, 0, 0, 0 }\n')
+
+        # Sound FX blocks (preserved from existing MSL)
+        if existing_state and existing_state.fx_blocks:
+            first_fx_comm = existing_state.fx_blocks[0].get("comments", "")
+            if "// --- Sound FX ---" not in first_fx_comm:
+                out.append("// --- Sound FX ---")
+            for fx in existing_state.fx_blocks:
+                if fx.get("comments"):
+                    out.append(fx["comments"])
+                out.append(fx["block"])
+            out.append("")
 
         inst_indices = {"CH_A": 0, "CH_B": 1, "CH_C": 2}
         all_phrases: List[str] = []
@@ -734,7 +935,10 @@ class MslEmitter:
         for ch_name in ["CH_A", "CH_B", "CH_C"]:
             staff = staff_mappings.get(ch_name)
             if staff is not None:
-                lines, phrases = self.format_staff_and_phrases(staff, ch_name, inst_indices[ch_name], score.repeats)
+                ch_setup = existing_state.channel_setups.get(ch_name) if existing_state else None
+                lines, phrases = self.format_staff_and_phrases(
+                    staff, ch_name, inst_indices[ch_name], score.repeats, channel_setup=ch_setup
+                )
                 for p_lines in phrases.values():
                     all_phrases.extend(p_lines)
                 channel_blocks.extend(lines)
@@ -813,6 +1017,10 @@ def main():
                         help="How to handle score repeats: 'phrases' (extract into PHRASE subroutines with @CALL, saves Z80 memory) or 'unroll' (duplicate measures sequentially)")
     parser.add_argument("--play", action="store_true",
                         help="Immediately compile and audition the generated MSL using the MusaX simulator")
+    parser.add_argument("-f", "--force", action="store_true",
+                        help="Force full conversion from scratch, ignoring any existing destination MSL sound design")
+    parser.add_argument("--template",
+                        help="Path to an existing MSL file to preserve sound design (instruments/FX/channel setups) from")
 
     args = parser.parse_args()
 
@@ -862,13 +1070,30 @@ def main():
 
     bars_per_line = 4 if args.compact else args.bars_per_line
     emitter = MslEmitter(chord_mode=args.chord, transpose=args.transpose, bars_per_line=bars_per_line, repeat_mode=args.repeats)
-    msl_content = emitter.generate_full_msl(reader, assigned_mappings)
 
     # Output path
     output_path = args.output
     if not output_path:
         base_name = os.path.splitext(args.input)[0]
         output_path = f"{base_name}.msl"
+
+    # Smart merge: detect existing sound design to preserve
+    existing_state: Optional[ExistingMslState] = None
+    target_for_state = args.template if args.template else (output_path if not args.force and os.path.isfile(output_path) else None)
+    if target_for_state and os.path.isfile(target_for_state):
+        existing_state = extract_existing_msl_state(target_for_state)
+        if existing_state:
+            inst_count = len(existing_state.instruments)
+            fx_count = len(existing_state.fx_blocks)
+            print(f"[Smart Merge] Preserving sound design from '{target_for_state}':")
+            print(f"  - {inst_count} instrument(s) preserved")
+            if fx_count > 0:
+                print(f"  - {fx_count} sound FX block(s) preserved")
+            ch_list = [ch for ch, s in existing_state.channel_setups.items() if s]
+            if ch_list:
+                print(f"  - Channel preamble/effects preserved for: {', '.join(ch_list)}")
+
+    msl_content = emitter.generate_full_msl(reader, assigned_mappings, existing_state=existing_state)
 
     try:
         with open(output_path, "w", encoding="utf-8") as f:

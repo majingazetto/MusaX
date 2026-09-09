@@ -84,9 +84,9 @@ def cmd_info(args):
 def cmd_import(args):
     """Imports MuseScore (.mscz/.mscx) score into MSL."""
     try:
-        from MusaX.tools.mscz2msl import MsczReader, MslEmitter, print_score_info
+        from MusaX.tools.mscz2msl import MsczReader, MslEmitter, print_score_info, extract_existing_msl_state
     except ImportError:
-        from mscz2msl import MsczReader, MslEmitter, print_score_info
+        from mscz2msl import MsczReader, MslEmitter, print_score_info, extract_existing_msl_state
 
     try:
         reader = MsczReader(args.input)
@@ -128,9 +128,28 @@ def cmd_import(args):
     bars_per_line = 4 if getattr(args, "compact", False) else getattr(args, "bars_per_line", 1)
     repeat_mode = getattr(args, "repeats", "phrases")
     emitter = MslEmitter(chord_mode=args.chord, transpose=args.transpose, bars_per_line=bars_per_line, repeat_mode=repeat_mode)
-    msl_content = emitter.generate_full_msl(reader, assigned_mappings)
 
     output_path = args.output or f"{os.path.splitext(args.input)[0]}.msl"
+
+    existing_state = None
+    force = getattr(args, "force", False)
+    template = getattr(args, "template", None)
+    target_for_state = template if template else (output_path if not force and os.path.isfile(output_path) else None)
+    if target_for_state and os.path.isfile(target_for_state):
+        existing_state = extract_existing_msl_state(target_for_state)
+        if existing_state:
+            inst_count = len(existing_state.instruments)
+            fx_count = len(existing_state.fx_blocks)
+            print(f"[Smart Merge] Preserving sound design from '{target_for_state}':")
+            print(f"  - {inst_count} instrument(s) preserved")
+            if fx_count > 0:
+                print(f"  - {fx_count} sound FX block(s) preserved")
+            ch_list = [ch for ch, s in existing_state.channel_setups.items() if s]
+            if ch_list:
+                print(f"  - Channel preamble/effects preserved for: {', '.join(ch_list)}")
+
+    msl_content = emitter.generate_full_msl(reader, assigned_mappings, existing_state=existing_state)
+
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(msl_content)
     print(f"Successfully converted: {args.input} -> {output_path}")
@@ -174,6 +193,8 @@ def main():
     p_import.add_argument("--compact", action="store_true", help="Format 4 measures per line separated by '|'")
     p_import.add_argument("--repeats", choices=["phrases", "unroll"], default="phrases", help="How to handle repeats: 'phrases' (default, subroutines) or 'unroll'")
     p_import.add_argument("--play", action="store_true", help="Play immediately after import")
+    p_import.add_argument("-f", "--force", action="store_true", help="Force clean conversion, ignoring existing destination MSL sound design")
+    p_import.add_argument("--template", help="Path to an existing MSL file to preserve sound design from")
     
     args = parser.parse_args()
     
