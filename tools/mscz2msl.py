@@ -136,6 +136,8 @@ class RestEvent:
 class MeasureData:
     measure_number: int
     events: List[Union[ChordEvent, RestEvent]] = field(default_factory=list)
+    time_sig: Tuple[int, int] = (4, 4)
+    ticks: int = 3072
 
 
 @dataclass
@@ -327,18 +329,24 @@ class MsczReader:
 
             inst_name = part_instruments.get(sid, f"Staff {sid}")
             staff_data = StaffData(staff_id=sid, instrument_name=inst_name)
+            current_time_sig = self.time_sig
 
             for m_idx, m_xml in enumerate(measures_xml):
-                m_data = MeasureData(measure_number=m_idx + 1)
-                
                 # Check for measure-level time signature update
                 ts_n = m_xml.findtext(".//TimeSig/sigN")
                 ts_d = m_xml.findtext(".//TimeSig/sigD")
                 if ts_n and ts_d:
                     try:
-                        self.time_sig = (int(ts_n), int(ts_d))
+                        current_time_sig = (int(ts_n), int(ts_d))
                     except ValueError:
                         pass
+
+                calc_m_ticks = int((current_time_sig[0] * 4 * BASE_TICK) / current_time_sig[1])
+                m_data = MeasureData(
+                    measure_number=m_idx + 1,
+                    time_sig=current_time_sig,
+                    ticks=calc_m_ticks
+                )
 
                 # Parse voices (default voice 1 is the primary line)
                 voices = m_xml.findall("voice")
@@ -396,8 +404,7 @@ class MsczReader:
 
                         if dtype == "measure":
                             # Measure rest: duration equals full measure ticks
-                            num, den = self.time_sig
-                            calc_t = int((num * 4 * BASE_TICK) / den)
+                            calc_t = m_data.ticks
                         else:
                             base_t = DURATION_BASE_TICKS.get(dtype, 768)
                             calc_t = base_t
@@ -497,12 +504,9 @@ class MslEmitter:
         while idx < ev_count:
             ev = m.events[idx]
             if isinstance(ev, RestEvent):
-                if ev.duration_type == "measure":
-                    tokens.append("R1")
-                else:
-                    dur_tokens = self._ticks_to_duration_tokens(ev.ticks, ev.is_triplet)
-                    for dur_str in dur_tokens:
-                        tokens.append(f"R{dur_str}")
+                dur_tokens = self._ticks_to_duration_tokens(ev.ticks, ev.is_triplet)
+                for dur_str in dur_tokens:
+                    tokens.append(f"R{dur_str}")
                 idx += 1
             elif isinstance(ev, ChordEvent):
                 note = self._select_note(ev)
@@ -552,7 +556,12 @@ class MslEmitter:
                     else:
                         lines.append(f"{indent}{notes_str}  {bar_label}")
                 else:
-                    lines.append(f"{indent}{'R1':<36} {bar_label}")
+                    empty_tokens = self._ticks_to_duration_tokens(m.ticks)
+                    empty_str = " ".join(f"R{d}" for d in empty_tokens)
+                    if len(empty_str) < 36:
+                        lines.append(f"{indent}{empty_str:<36} {bar_label}")
+                    else:
+                        lines.append(f"{indent}{empty_str}  {bar_label}")
         else:
             chunk_size = self.bars_per_line
             for chunk_start in range(0, total_m, chunk_size):
@@ -566,7 +575,11 @@ class MslEmitter:
                 bar_parts = []
                 for m in chunk:
                     tokens, current_oct = self._extract_measure_tokens(m, current_oct)
-                    m_str = " ".join(tokens) if tokens else "R1"
+                    if tokens:
+                        m_str = " ".join(tokens)
+                    else:
+                        empty_tokens = self._ticks_to_duration_tokens(m.ticks)
+                        m_str = " ".join(f"R{d}" for d in empty_tokens)
                     bar_parts.append(m_str)
 
                 lines.append(f"{indent}" + " | ".join(bar_parts))
