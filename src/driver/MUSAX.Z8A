@@ -104,6 +104,13 @@ MUSPLAY         LD      (SONGLMT),A
                 LD      A,1
                 LD      (MUSSTAT),A
 
+                ; RESET GLOBAL FADE TO FULL VOLUME
+                LD      A,255
+                LD      (GLBFADVL),A
+                LD      (GLBFADTG),A
+                XOR     A
+                LD      (GLBFADSP),A
+
                 ; INITIALIZE MASKS
                 XOR     A
                 LD      (SONGACT),A
@@ -2003,8 +2010,18 @@ MUSFADE         PUSH    AF
                 LD      (GLBFADTG),A
                 LD      A,H
                 LD      (GLBFADSP),A
-                
-                ; SET BIT 1 OF MUSSTAT
+
+                ; IF TARGET > 0 AND CURRENT VOL >= TARGET: AUTO-START FROM 0 FOR FADE-IN
+                LD      A,C
+                OR      A
+                JR      Z,.STARTF
+                LD      A,(GLBFADVL)
+                CP      C
+                JR      C,.STARTF
+                XOR     A
+                LD      (GLBFADVL),A
+
+.STARTF         ; SET BIT 1 OF MUSSTAT
                 LD      A,(MUSSTAT)
                 OR      2               ; %00000010
                 LD      (MUSSTAT),A
