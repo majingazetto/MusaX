@@ -166,3 +166,23 @@ A standalone converter that translates MuseScore scores (`.mscz` compressed arch
   mscz2msl song.mscz --play               # Convert and immediate simulation audition
   ```
 
+---
+
+## 10. MuseScore Score Exporter (`msl2mscz.py`)
+
+A standalone exporter that translates MusaX Sound Language (`.msl`) source back into MuseScore 4 (`.mscz` compressed score archives), universal MusicXML 3.1 (`.musicxml`), and Standard MIDI Type 1 (`.mid`).
+
+* **Key Capabilities:**
+  * **Pure Python Standard Library:** Zero third-party pip dependencies.
+  * **Multi-Format Export:** Produces `.mscz`, `.musicxml`, and `.mid` in a single command.
+  * **Subroutine Resolution:** Automatically expands `@CALL(PHRASE)` subroutines to reconstruct the full score linear timeline.
+  * **Multi-Staff Routing:** Automatically splits and maps PSG channels to dedicated instruments (e.g. `Irish Whistle`, `Bowed Bass`, `Mandolin`) with proper clefs (Treble / Bass).
+  * **Template Preservation:** When `--template-mscz` is supplied, preserves existing layout stylesheets (`score_style.mss`), text frames, and chord symbol annotations (`<Harmony>`).
+  * **Accurate Enharmonics & TPC:** Generates exact MusicXML pitch alters and MuseScore Tonal Pitch Class tags.
+* **Usage:**
+  ```bash
+  msl2mscz song.msl                       # Export to song.musicxml and song.mid
+  msl2mscz song.msl --template-mscz s.mscz # Merge into s.mscz with preserved styling
+  msl2mscz song.msl -o out.mscz --xml out.musicxml --mid out.mid
+  ```
+
