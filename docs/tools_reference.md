@@ -119,6 +119,15 @@ A reverse-engineering utility to convert register capture dumps into editable MS
 
 A deprecated, backward-compatibility CLI script that maps simple arguments directly to the core compilation classes inside `msl_compiler.py`. It is retained for legacy builds but has been replaced by the unified CLI hub (`musax.py`).
 
+* **SX80 output (`--sx80 NAME`):** writes one relocatable module for SXDEV's SX80 (the WRECK cartridge) instead of the sjasmplus source:
+  * `INCLUDE "MUSAX.INC"` (WRECK's copy of `CONST.Z8A`, same names), no `MODULE`, no `@`.
+  * `PUBLIC NAME` (1-8 letters or digits): the song header; for an FX-only file, the FX table; a file with both exports the header as `NAME` and the FX table as the first 6 characters of `NAME` + `FX`.
+  * Every other label is module-local: upper case, letters and digits, 8 characters at most, unique and clear of Z80 words and `MUSAX.INC` names (a numeric suffix when needed). MSL labels that change are listed in the file's header comment.
+  * House style: CR LF, 7-bit ASCII, 61 columns, 8 bytes per `DEFB`.
+  * The bytes are those of the sjasmplus output; WRECK's `make test` assembles both and compares them.
+  * `python3 MusaX/tools/msl2z8a.py SONG.MSL -o SONG.Z8A --sx80 SONG`
+* Exit code 1 when the MSL has errors (it was always 0).
+
 ---
 
 ## 8. Global CLI Installer (`install_wrappers.sh`)
